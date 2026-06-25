@@ -75,20 +75,40 @@ document.addEventListener('DOMContentLoaded', () => {
       const selectedZone = zoneSelect.value;
       
       if (!empId) {
-        showLoginError("Employee ID is required.");
+        showLoginError("Credentials are required.");
         return;
       }
 
+      // 1. Try validating as worker
       const worker = window.dbClient.validateWorker(empId, selectedZone);
       if (worker) {
         currentWorker = worker;
         localStorage.setItem('waterhall_session', JSON.stringify(worker));
+        localStorage.removeItem('waterhall_resident_session'); // Clear resident session
         loginErrorMsg.style.display = 'none';
         showApp(worker);
-        showToast(`Logged in as ${worker.name}`);
-      } else {
-        showLoginError(`ID "${empId}" not recognized. Access restricted to registered field techs.`);
+        showToast(`Logged in as Tech: ${worker.name}`);
+        return;
       }
+
+      // 2. Try validating as resident
+      const households = window.dbClient.getHouseholds();
+      const resident = households.find(h => 
+        h.house_id.toUpperCase() === empId.toUpperCase() || 
+        h.account_number.toUpperCase() === empId.toUpperCase()
+      );
+
+      if (resident) {
+        localStorage.removeItem('waterhall_session'); // Clear worker session
+        currentWorker = null;
+        showResidentPortal(resident.house_id);
+        loginErrorMsg.style.display = 'none';
+        showToast(`Logged in as Resident: ${resident.owner_name}`);
+        return;
+      }
+
+      // 3. Fallback: invalid credentials
+      showLoginError(`Credentials "${empId}" not recognized. Check details.`);
     });
   }
 

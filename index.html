@@ -54,16 +54,16 @@
 
           <div class="login-form">
             <div class="login-error" id="login-error-msg">
-              Invalid Employee ID. Please use <strong>EMP-304</strong>.
+              Invalid credentials. Use <strong>EMP-304</strong> or <strong>TAG-2026-0041</strong>.
             </div>
 
             <div class="form-group">
-              <label for="employee-id">Employee ID</label>
+              <label for="employee-id">Credentials (ID or Account #)</label>
               <div class="input-wrapper">
                 <svg viewBox="0 0 24 24">
                   <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                 </svg>
-                <input type="text" id="employee-id" class="form-input" placeholder="e.g. EMP-304" value="EMP-304" required>
+                <input type="text" id="employee-id" class="form-input" placeholder="e.g. EMP-304 or TAG-2026-0041" value="EMP-304" required>
               </div>
             </div>
 
@@ -702,6 +702,90 @@
         <span id="floating-role-switch-text">Switch to Resident</span>
       </button>
 
+      <!-- HOUSE DETAILS MODAL DRAWER OVERLAY -->
+      <div class="modal-overlay" id="house-detail-modal">
+        <div class="modal-content">
+          
+          <div class="modal-header">
+            <div class="modal-header-left">
+              <h3 id="modal-owner-name">Household Owner</h3>
+              <p id="modal-acct-num">TAG-2026-0000</p>
+            </div>
+            <button class="modal-close-btn" id="btn-close-modal">
+              <svg viewBox="0 0 24 24">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="modal-body">
+            
+            <!-- Live Pipe Leak Toggle -->
+            <div class="toggle-panel">
+              <div class="toggle-label-group">
+                <span class="toggle-main-label" id="modal-leak-title">Meter Pipe Flow Status</span>
+                <span class="toggle-desc" id="modal-leak-desc">Green: Normal Flow | Red: Leak Risk</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="modal-leak-toggle">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <!-- Meter Details Row -->
+            <div class="metrics-row">
+              <div class="metric-card">
+                <span class="metric-card-lbl">Current Usage</span>
+                <div class="metric-card-val"><span id="modal-current-m3">0.0</span> m³</div>
+              </div>
+              <div class="metric-card">
+                <span class="metric-card-lbl">Flow Speed</span>
+                <div class="metric-card-val"><span id="modal-flow-rate">0.00</span> L/s</div>
+              </div>
+            </div>
+
+            <!-- Water Consumption Monthly History Chart -->
+            <div class="chart-card">
+              <span class="chart-title">Water Consumption Trend (m³)</span>
+              <div class="chart-canvas-wrapper" id="chart-container">
+                <!-- Custom responsive SVG Line chart will be generated here -->
+              </div>
+            </div>
+
+            <!-- Log Maintenance Task form -->
+            <div class="log-form-card">
+              <span class="log-form-title">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+                </svg>
+                Submit Maintenance Report
+              </span>
+              
+              <div class="log-form-field">
+                <label for="log-desc">Repairs / Actions Taken</label>
+                <textarea id="log-desc" class="log-textarea" placeholder="e.g. Tightened compression valve, replaced rubber gasket..."></textarea>
+              </div>
+
+              <div class="log-checkbox-row">
+                <input type="checkbox" id="log-resolved" class="log-checkbox" checked>
+                <label for="log-resolved">Mark Issue as Resolved / Flow Normal</label>
+              </div>
+
+              <button type="button" class="submit-log-btn" id="btn-submit-log">Submit & Update Firestore</button>
+            </div>
+
+            <!-- Historical logs for this household -->
+            <div class="modal-logs-card">
+              <span class="modal-logs-title">Inspection Log History</span>
+              <div class="log-scroller" id="modal-historical-logs">
+                <!-- Household logs injected here -->
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
     </div> <!-- End App Screen -->
 
     <!-- Phone Home Indicator swipe simulated bar -->
@@ -710,91 +794,6 @@
     </div>
 
   </div> <!-- End Simulated Mobile Container -->
-
-
-  <!-- HOUSE DETAILS MODAL DRAWER OVERLAY -->
-  <div class="modal-overlay" id="house-detail-modal">
-    <div class="modal-content">
-      
-      <div class="modal-header">
-        <div class="modal-header-left">
-          <h3 id="modal-owner-name">Household Owner</h3>
-          <p id="modal-acct-num">TAG-2026-0000</p>
-        </div>
-        <button class="modal-close-btn" id="btn-close-modal">
-          <svg viewBox="0 0 24 24">
-            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-          </svg>
-        </button>
-      </div>
-
-      <div class="modal-body">
-        
-        <!-- Live Pipe Leak Toggle -->
-        <div class="toggle-panel">
-          <div class="toggle-label-group">
-            <span class="toggle-main-label" id="modal-leak-title">Meter Pipe Flow Status</span>
-            <span class="toggle-desc" id="modal-leak-desc">Green: Normal Flow | Red: Leak Risk</span>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="modal-leak-toggle">
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <!-- Meter Details Row -->
-        <div class="metrics-row">
-          <div class="metric-card">
-            <span class="metric-card-lbl">Current Usage</span>
-            <div class="metric-card-val"><span id="modal-current-m3">0.0</span> m³</div>
-          </div>
-          <div class="metric-card">
-            <span class="metric-card-lbl">Flow Speed</span>
-            <div class="metric-card-val"><span id="modal-flow-rate">0.00</span> L/s</div>
-          </div>
-        </div>
-
-        <!-- Water Consumption Monthly History Chart -->
-        <div class="chart-card">
-          <span class="chart-title">Water Consumption Trend (m³)</span>
-          <div class="chart-canvas-wrapper" id="chart-container">
-            <!-- Custom responsive SVG Line chart will be generated here -->
-          </div>
-        </div>
-
-        <!-- Log Maintenance Task form -->
-        <div class="log-form-card">
-          <span class="log-form-title">
-            <svg viewBox="0 0 24 24">
-              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-            </svg>
-            Submit Maintenance Report
-          </span>
-          
-          <div class="log-form-field">
-            <label for="log-desc">Repairs / Actions Taken</label>
-            <textarea id="log-desc" class="log-textarea" placeholder="e.g. Tightened compression valve, replaced rubber gasket..."></textarea>
-          </div>
-
-          <div class="log-checkbox-row">
-            <input type="checkbox" id="log-resolved" class="log-checkbox" checked>
-            <label for="log-resolved">Mark Issue as Resolved / Flow Normal</label>
-          </div>
-
-          <button type="button" class="submit-log-btn" id="btn-submit-log">Submit & Update Firestore</button>
-        </div>
-
-        <!-- Historical logs for this household -->
-        <div class="modal-logs-card">
-          <span class="modal-logs-title">Inspection Log History</span>
-          <div class="log-scroller" id="modal-historical-logs">
-            <!-- Household logs injected here -->
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </div>
 
   <script src="db.js"></script>
   <script src="app.js"></script>
