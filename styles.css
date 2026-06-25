@@ -1868,3 +1868,49 @@ input:checked + .slider:before {
   background-color: var(--alert-amber-bg);
   color: var(--amber-safety);
 }
+
+/* --- Floating Quick Switch Button --- */
+.floating-role-switch {
+  position: absolute;
+  bottom: 84px; /* Align near toast or bottom nav */
+  right: 20px;
+  background-color: var(--amber-safety);
+  color: var(--navy-primary);
+  border: 1.5px solid var(--navy-primary);
+  padding: 8px 12px;
+  border-radius: var(--radius-lg);
+  font-size: 11px;
+  font-weight: 800;
+  z-index: 2005; /* higher than toast which is 2000 */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.floating-role-switch:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);
+  background-color: var(--white);
+  border-color: var(--amber-safety);
+}
+
+.floating-role-switch:active {
+  transform: scale(0.95);
+}
+
+.floating-role-switch.resident-mode {
+  background-color: var(--navy-primary);
+  color: var(--amber-safety);
+  border-color: var(--amber-safety);
+}
+
+.floating-role-switch.resident-mode:hover {
+  background-color: var(--white);
+  color: var(--navy-primary);
+  border-color: var(--navy-primary);
+}

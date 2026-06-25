@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentWorker = null;
   let activeTab = 'view-dashboard';
   let activeHouseholdId = null;
+  let currentResidentId = null;
 
   // Cache elements
   const loginView = document.getElementById('view-login');
@@ -15,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const billingView = document.getElementById('view-billing');
   const residentView = document.getElementById('view-resident');
   const bottomNav = document.getElementById('app-bottom-nav');
+  const floatingRoleSwitchBtn = document.getElementById('btn-floating-role-switch');
+  const floatingRoleSwitchText = document.getElementById('floating-role-switch-text');
   
   const views = {
     'view-dashboard': dashView,
@@ -48,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Check existing session
   const savedWorker = localStorage.getItem('waterhall_session');
+  const savedResident = localStorage.getItem('waterhall_resident_session');
   if (savedWorker) {
     try {
       currentWorker = JSON.parse(savedWorker);
@@ -55,6 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       localStorage.removeItem('waterhall_session');
     }
+  } else if (savedResident) {
+    showResidentPortal(savedResident);
   }
 
   // --- Authentication Handlers ---
@@ -99,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Reset navigation
       bottomNav.style.display = 'none';
+      if (floatingRoleSwitchBtn) floatingRoleSwitchBtn.style.display = 'none';
       
       // Hide all views, show login
       Object.values(views).forEach(v => v.classList.remove('active'));
@@ -160,6 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     residentLogoutBtn.addEventListener('click', () => {
       localStorage.removeItem('waterhall_resident_session');
       bottomNav.style.display = 'none';
+      if (floatingRoleSwitchBtn) floatingRoleSwitchBtn.style.display = 'none';
       
       Object.values(views).forEach(v => v.classList.remove('active'));
       loginView.classList.add('active');
@@ -169,12 +177,52 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Floating Quick Switcher Listener
+  if (floatingRoleSwitchBtn) {
+    floatingRoleSwitchBtn.addEventListener('click', () => {
+      // Close detail modal safely to prevent visual bugs
+      if (typeof closeHouseholdModal === 'function') {
+        closeHouseholdModal();
+      }
+
+      // Close billing autocomplete results if open
+      const resultsDropdown = document.getElementById('bill-meter-results');
+      if (resultsDropdown) resultsDropdown.style.display = 'none';
+
+      if (activeTab === 'view-resident') {
+        // We are in Resident Mode, switch to Tech Mode
+        localStorage.removeItem('waterhall_resident_session');
+        const worker = window.dbClient.validateWorker('EMP-304', 'Purok 2');
+        if (worker) {
+          currentWorker = worker;
+          localStorage.setItem('waterhall_session', JSON.stringify(worker));
+          showApp(worker);
+          showToast("Bypassed to Tech Terminal (Juan Luna)");
+        }
+      } else {
+        // We are in Tech Mode or Login, switch to Resident Mode
+        localStorage.removeItem('waterhall_session');
+        currentWorker = null;
+        bottomNav.style.display = 'none';
+        showResidentPortal('HH-101');
+        showToast("Bypassed to Resident Portal (Maria C. Santos)");
+      }
+    });
+  }
+
   function showApp(worker) {
     // Hide login
     loginView.classList.remove('active');
     
     // Show nav
     bottomNav.style.display = 'flex';
+    
+    // Show and configure floating role switch button
+    if (floatingRoleSwitchBtn) {
+      floatingRoleSwitchBtn.style.display = 'flex';
+      floatingRoleSwitchBtn.classList.remove('resident-mode');
+      if (floatingRoleSwitchText) floatingRoleSwitchText.textContent = 'Customer Mode';
+    }
     
     // Set Dashboard as active
     switchTab('view-dashboard');
@@ -1171,7 +1219,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Barangay Resident Portal Controller ---
-  let currentResidentId = null;
+  // (currentResidentId state variable is declared at the top of the file)
 
   function showResidentPortal(houseId) {
     currentResidentId = houseId;
@@ -1180,6 +1228,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hide other views and bottom nav
     Object.values(views).forEach(v => v.classList.remove('active'));
     bottomNav.style.display = 'none';
+
+    // Show and configure floating role switch button
+    if (floatingRoleSwitchBtn) {
+      floatingRoleSwitchBtn.style.display = 'flex';
+      floatingRoleSwitchBtn.classList.add('resident-mode');
+      if (floatingRoleSwitchText) floatingRoleSwitchText.textContent = 'Tech Mode';
+    }
 
     // Show Resident Portal view
     residentView.classList.add('active');
@@ -1395,11 +1450,4 @@ document.addEventListener('DOMContentLoaded', () => {
       renderDashboard();
     });
   }
-
-  // Restore session on load
-  const savedResident = localStorage.getItem('waterhall_resident_session');
-  if (savedResident) {
-    showResidentPortal(savedResident);
-  }
-
 });
