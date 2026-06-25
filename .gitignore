@@ -1,0 +1,7 @@
+.dart_tool/
+.packages
+.build/
+build/
+web/app.js.map
+web/app.js.deps
+*.log
