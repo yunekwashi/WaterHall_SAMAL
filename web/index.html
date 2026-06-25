@@ -473,7 +473,7 @@
                 </div>
                 <!-- Autocomplete Dropdown List -->
                 <div id="bill-meter-results" class="search-results-dropdown">
-                  <!-- Dynamically filtered options in app.js -->
+                  <!-- Dynamically filtered options in app.dart -->
                 </div>
               </div>
             </div>
@@ -615,7 +615,7 @@
             <div class="chart-card">
               <span class="chart-title">Water Consumption Trend (m³)</span>
               <div class="chart-canvas-wrapper" id="resident-chart-container">
-                <!-- Custom responsive SVG Line chart generated in app.js -->
+                <!-- Custom responsive SVG Line chart generated in app.dart -->
               </div>
             </div>
 
@@ -771,7 +771,7 @@
                 <label for="log-resolved">Mark Issue as Resolved / Flow Normal</label>
               </div>
 
-              <button type="button" class="submit-log-btn" id="btn-submit-log">Submit & Update Firestore</button>
+              <button type="button" class="submit-log-btn" id="btn-submit-log">Submit & Update Database</button>
             </div>
 
             <!-- Historical logs for this household -->
@@ -795,7 +795,7 @@
 
   </div> <!-- End Simulated Mobile Container -->
 
-  <script src="db.js"></script>
+  <!-- We load our single compiled App bundle which contains db and app logic -->
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,0 +1,14 @@
+name: water_hall
+description: WaterHall Worker Monitor application prototype converted to Dart.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  # No external runtime dependencies needed as we use dart:io and dart:html
+  # This keeps compilation extremely fast and robust.
+  
+dev_dependencies:
+  lints: ^2.1.0
