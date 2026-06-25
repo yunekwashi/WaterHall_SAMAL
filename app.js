@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const assetsView = document.getElementById('view-assets');
   const profileView = document.getElementById('view-profile');
   const billingView = document.getElementById('view-billing');
+  const residentView = document.getElementById('view-resident');
   const bottomNav = document.getElementById('app-bottom-nav');
   
   const views = {
@@ -20,7 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
     'view-directory': dirView,
     'view-assets': assetsView,
     'view-profile': profileView,
-    'view-billing': billingView
+    'view-billing': billingView,
+    'view-resident': residentView
   };
 
   // --- Initial Setup & Live Clock ---
@@ -106,7 +108,64 @@ document.addEventListener('DOMContentLoaded', () => {
       // Reset inputs
       empIdInput.value = 'EMP-304';
       
-      showToast("Signed out of session");
+      showToast("Signed out of Tech session");
+    });
+  }
+
+  // Resident Login (Demo)
+  const loginResidentBtn = document.getElementById('btn-login-resident');
+  if (loginResidentBtn) {
+    loginResidentBtn.addEventListener('click', () => {
+      // Simulate logging in as the default resident: Maria C. Santos (HH-101)
+      showResidentPortal('HH-101');
+      showToast("Logged in as Resident (Maria C. Santos)");
+    });
+  }
+
+  // Switch to Resident View from Tech Dashboard
+  const switchResidentBtn = document.getElementById('btn-switch-resident');
+  if (switchResidentBtn) {
+    switchResidentBtn.addEventListener('click', () => {
+      // Log out worker, enter resident view
+      localStorage.removeItem('waterhall_session');
+      currentWorker = null;
+      bottomNav.style.display = 'none';
+      
+      showResidentPortal('HH-101');
+      showToast("Bypassed to Resident Portal (Maria C. Santos)");
+    });
+  }
+
+  // Switch to Tech View from Resident Dashboard
+  const switchWorkerBtn = document.getElementById('btn-switch-worker');
+  if (switchWorkerBtn) {
+    switchWorkerBtn.addEventListener('click', () => {
+      // Log out resident, enter tech view
+      localStorage.removeItem('waterhall_resident_session');
+      
+      // Auto-authenticate as worker Juan Luna (EMP-304) for smooth demo
+      const worker = window.dbClient.validateWorker('EMP-304', 'Purok 2');
+      if (worker) {
+        currentWorker = worker;
+        localStorage.setItem('waterhall_session', JSON.stringify(worker));
+        showApp(worker);
+        showToast("Bypassed to Tech Terminal (Juan Luna)");
+      }
+    });
+  }
+
+  // Resident Logout
+  const residentLogoutBtn = document.getElementById('btn-resident-logout');
+  if (residentLogoutBtn) {
+    residentLogoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('waterhall_resident_session');
+      bottomNav.style.display = 'none';
+      
+      Object.values(views).forEach(v => v.classList.remove('active'));
+      loginView.classList.add('active');
+      activeTab = 'view-login';
+      
+      showToast("Signed out of Resident Portal");
     });
   }
 
@@ -1109,6 +1168,238 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.classList.remove('show');
       }, duration);
     }
+  }
+
+  // --- Barangay Resident Portal Controller ---
+  let currentResidentId = null;
+
+  function showResidentPortal(houseId) {
+    currentResidentId = houseId;
+    localStorage.setItem('waterhall_resident_session', houseId);
+
+    // Hide other views and bottom nav
+    Object.values(views).forEach(v => v.classList.remove('active'));
+    bottomNav.style.display = 'none';
+
+    // Show Resident Portal view
+    residentView.classList.add('active');
+    activeTab = 'view-resident';
+
+    // Render resident statements
+    renderResidentDashboard();
+  }
+
+  function renderResidentDashboard() {
+    if (!currentResidentId) return;
+
+    const household = window.dbClient.getHousehold(currentResidentId);
+    if (!household) return;
+
+    // 1. Render Profile Header
+    document.getElementById('resident-profile-name').textContent = household.owner_name;
+    document.getElementById('resident-profile-meta').textContent = `Meter ID: ${household.house_id} | ${household.account_number} | ${household.purok}`;
+
+    // 2. Render Leak Flag Warning
+    const leakFlagEl = document.getElementById('resident-leak-flag');
+    if (household.current_leak_status === 'leak') {
+      leakFlagEl.innerHTML = `
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor;"><path d="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V8h2v4z"/></svg>
+        <span>Leak Alert Warning: High constant flow rate registered. Please inspect on-site faucets.</span>
+      `;
+      leakFlagEl.className = "reservoir-status-banner low";
+      leakFlagEl.style.backgroundColor = "var(--alert-red-bg)";
+      leakFlagEl.style.borderColor = "rgba(239, 68, 68, 0.3)";
+      leakFlagEl.style.color = "var(--alert-red)";
+    } else {
+      leakFlagEl.innerHTML = `
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor;"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+        <span>Normal Flow Clearance: IoT sensors verify secure line pressure. No leak detected.</span>
+      `;
+      leakFlagEl.className = "reservoir-status-banner";
+      leakFlagEl.style.backgroundColor = "var(--alert-green-bg)";
+      leakFlagEl.style.borderColor = "rgba(16, 185, 129, 0.2)";
+      leakFlagEl.style.color = "var(--alert-green)";
+    }
+
+    // 3. Statement Calculations (Current Month)
+    const bills = window.dbClient.getBillingHistoryForHousehold(currentResidentId);
+    const juneBill = bills.find(b => b.billing_month === 'June 2026');
+
+    let prevReading = 0;
+    let currReading = 0;
+    let consumption = 0;
+    let excessCharge = 0;
+    let totalDue = 0;
+    let statusText = 'Pending Payment';
+    let statusClass = 'warning';
+
+    if (juneBill) {
+      prevReading = juneBill.previous_reading;
+      currReading = juneBill.current_reading;
+      consumption = juneBill.consumption;
+      excessCharge = consumption > 10 ? (consumption - 10) * 15.00 : 0.00;
+      totalDue = juneBill.total_due;
+      statusText = juneBill.status;
+      statusClass = juneBill.status === 'Paid' ? 'normal' : 'warning';
+    } else {
+      // Estimate based on telemetry
+      const hist = household.monthly_history;
+      prevReading = hist[hist.length - 2] || (household.current_m3_usage - 2.5);
+      currReading = household.current_m3_usage;
+      consumption = Math.max(0, currReading - prevReading);
+      excessCharge = consumption > 10 ? (consumption - 10) * 15.00 : 0.00;
+      totalDue = 120.00 + excessCharge + 50.00;
+      statusText = 'Unbilled (Draft)';
+      statusClass = 'warning';
+    }
+
+    document.getElementById('resident-prev-reading').textContent = prevReading.toFixed(1);
+    document.getElementById('resident-curr-reading').textContent = currReading.toFixed(1);
+    document.getElementById('resident-calc-consumption').textContent = consumption.toFixed(1);
+    document.getElementById('resident-calc-excess').textContent = excessCharge.toFixed(2);
+    document.getElementById('resident-calc-total').textContent = totalDue.toFixed(2);
+
+    const billStatusEl = document.getElementById('resident-bill-status');
+    billStatusEl.textContent = statusText.toUpperCase();
+    billStatusEl.className = `quality-badge ${statusClass}`;
+
+    // 4. Render Consumption Chart
+    renderResidentSVGChart(household.monthly_history);
+
+    // 5. Render Historical Invoices List
+    renderResidentLedgerList(bills);
+  }
+
+  function renderResidentSVGChart(history) {
+    const container = document.getElementById('resident-chart-container');
+    container.innerHTML = '';
+    
+    if (!history || history.length === 0) return;
+
+    const width = 340;
+    const height = 100;
+    const padding = 20;
+    const chartW = width - (padding * 2);
+    const chartH = height - (padding * 2);
+
+    const maxVal = Math.max(...history, 10) * 1.1;
+    const minVal = 0;
+    const months = ['Mar', 'Apr', 'May', 'Jun'];
+
+    const points = history.map((val, idx) => {
+      const x = padding + (idx / (history.length - 1)) * chartW;
+      const y = padding + chartH - ((val - minVal) / (maxVal - minVal)) * chartH;
+      return { x, y, val, label: months[idx] || `M${idx+1}` };
+    });
+
+    const linePath = points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    const areaPath = `M ${points[0].x.toFixed(1)},${(height - padding).toFixed(1)} ` +
+                     points.map(p => `L ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') +
+                     ` L ${points[points.length - 1].x.toFixed(1)},${(height - padding).toFixed(1)} Z`;
+
+    let svgHtml = `
+      <svg width="100%" height="100%" viewBox="0 0 ${width} ${height}" style="overflow:visible">
+        <defs>
+          <linearGradient id="res-chart-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="#3B82F6" stop-opacity="0.0"/>
+          </linearGradient>
+        </defs>
+        <line x1="${padding}" y1="${padding}" x2="${width - padding}" y2="${padding}" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="3 3"/>
+        <line x1="${padding}" y1="${padding + (chartH/2)}" x2="${width - padding}" y2="${padding + (chartH/2)}" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="3 3"/>
+        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#CBD5E1" stroke-width="1.5"/>
+        
+        <path d="${areaPath}" fill="url(#res-chart-grad)" />
+        <polyline points="${linePath}" fill="none" stroke="#3B82F6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    `;
+
+    points.forEach((p) => {
+      svgHtml += `
+        <text x="${p.x}" y="${height - 4}" text-anchor="middle" fill="var(--text-muted)" font-size="9" font-weight="600">${p.label}</text>
+        <line x1="${p.x}" y1="${p.y}" x2="${p.x}" y2="${height - padding}" stroke="rgba(59,130,246,0.2)" stroke-width="1" stroke-dasharray="2 2" />
+        <circle cx="${p.x}" cy="${p.y}" r="4" fill="var(--white)" stroke="#3B82F6" stroke-width="2" />
+        <text x="${p.x}" y="${p.y - 8}" text-anchor="middle" fill="var(--navy-primary)" font-size="9" font-weight="700">${p.val}m³</text>
+      `;
+    });
+
+    svgHtml += `</svg>`;
+    container.innerHTML = svgHtml;
+  }
+
+  function renderResidentLedgerList(history) {
+    const listEl = document.getElementById('resident-history-list');
+    if (!listEl) return;
+
+    listEl.innerHTML = '';
+
+    if (history.length === 0) {
+      listEl.innerHTML = `<div style="font-size:11px;color:var(--text-muted);padding:4px">No billing history available.</div>`;
+      return;
+    }
+
+    history.forEach(bill => {
+      const item = document.createElement('div');
+      item.className = `bill-record-card ${bill.status}`;
+      
+      const billDate = new Date(bill.date);
+      const formatted = billDate.toLocaleDateString() + ' ' + billDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+      item.innerHTML = `
+        <div class="bill-record-header">
+          <span>Cycle: ${bill.billing_month}</span>
+          <span style="color:${bill.status === 'Paid' ? 'var(--alert-green)' : 'var(--amber-safety)'}">${bill.status.toUpperCase()}</span>
+        </div>
+        <div class="bill-record-details">
+          <span>Usage: ${bill.previous_reading.toFixed(1)} → ${bill.current_reading.toFixed(1)} m³ (${bill.consumption.toFixed(1)} m³)</span>
+          <strong>₱${bill.total_due.toFixed(2)}</strong>
+        </div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">
+          Bill Ref ID: ${bill.bill_id} | Issued: ${formatted}
+        </div>
+      `;
+      listEl.appendChild(item);
+    });
+  }
+
+  // Submit resident issue report
+  const residentSubmitLogBtn = document.getElementById('btn-resident-submit-log');
+  if (residentSubmitLogBtn) {
+    residentSubmitLogBtn.addEventListener('click', () => {
+      if (!currentResidentId) return;
+
+      const descInput = document.getElementById('resident-log-desc');
+      const descText = descInput.value.trim();
+
+      if (!descText) {
+        showToast("Please describe the issue (e.g. low pressure, minor leak).");
+        return;
+      }
+
+      const household = window.dbClient.getHousehold(currentResidentId);
+
+      const log = {
+        house_id: currentResidentId,
+        worker_id: 'unassigned',
+        purok: household.purok,
+        description: `${descText} (RESIDENT REPORTED)`,
+        status_resolved: false
+      };
+
+      // Add to shared maintenance logs
+      window.dbClient.addMaintenanceLog(log);
+
+      descInput.value = '';
+      showToast("Alert ticket dispatched to field technicians!");
+      
+      // Update worker dashboard in background
+      renderDashboard();
+    });
+  }
+
+  // Restore session on load
+  const savedResident = localStorage.getItem('waterhall_resident_session');
+  if (savedResident) {
+    showResidentPortal(savedResident);
   }
 
 });

@@ -90,6 +90,12 @@
                 <path d="M10 17v-4H3v-2h7V7l5 5-5 5zm9 2H5v-2h14V5H5V3h14c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2z" />
               </svg>
             </button>
+            <button type="button" class="login-btn" id="btn-login-resident" style="background-color: transparent; border: 2px solid var(--amber-bright); color: var(--amber-bright); margin-top: 10px; box-shadow: none;">
+              <span>Open Resident Portal (Demo)</span>
+              <svg style="width:20px;height:20px;fill:currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+              </svg>
+            </button>
           </div>
 
           <div class="login-footer">
@@ -101,9 +107,12 @@
 
         <!-- 2. WORKER DASHBOARD SCREEN -->
         <div id="view-dashboard" class="app-view">
-          <div class="view-header">
-            <h2 id="dash-worker-title">WaterHall Field Monitor</h2>
-            <p>Brgy. Tagpopongan, Island Garden City of Samal</p>
+          <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div>
+              <h2 id="dash-worker-title">WaterHall Field Monitor</h2>
+              <p>Brgy. Tagpopongan, Island Garden City of Samal</p>
+            </div>
+            <button type="button" id="btn-switch-resident" class="filter-select" style="padding: 6px 10px; font-size: 11px; background-color: var(--amber-safety); border: none; font-weight: 800; border-radius: var(--radius-sm); color: var(--bg-dark); cursor: pointer; flex-shrink: 0;">Resident Mode</button>
           </div>
 
           <div class="dashboard-scroll">
@@ -535,6 +544,108 @@
                 <!-- Dynamically loaded timeline of past bills for this household -->
               </div>
             </div>
+
+          </div>
+        </div>
+
+        <!-- 7. RESIDENT PORTAL SCREEN -->
+        <div id="view-resident" class="app-view">
+          <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div>
+              <h2 id="resident-profile-name">Resident Portal</h2>
+              <p id="resident-profile-meta">Account: TAG-2026-0041 | Purok 1</p>
+            </div>
+            <button type="button" id="btn-switch-worker" class="filter-select" style="padding: 6px 10px; font-size: 11px; background-color: var(--amber-safety); border: none; font-weight: 800; border-radius: var(--radius-sm); color: var(--bg-dark); cursor: pointer; flex-shrink: 0;">Tech Mode</button>
+          </div>
+
+          <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
+            
+            <!-- Leak Alert Flag for Resident -->
+            <div id="resident-leak-flag" class="reservoir-status-banner" style="font-weight:700; text-align:left; display:flex; align-items:center; gap:8px;">
+              <!-- Loaded dynamically (Green check or Red warning) -->
+            </div>
+
+            <!-- Current Water Statement -->
+            <div class="reservoir-card" style="border:1.5px solid var(--navy-border); background-color:var(--white);">
+              <span class="reservoir-title" style="font-size:12px; font-weight:800; text-transform:uppercase; text-align:center; display:block; border-bottom:1.5px solid var(--off-white); padding-bottom:8px; margin-bottom:8px; color:var(--navy-primary)">
+                Current Billing Statement
+              </span>
+              
+              <div style="display:flex; flex-direction:column; gap:10px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Billing Cycle:</span>
+                  <strong style="color:var(--navy-primary)">June 2026</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Payment Status:</span>
+                  <span id="resident-bill-status" class="quality-badge warning" style="font-size:11px; font-weight:700;">Pending Payment</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--gray-medium); padding-top:8px;">
+                  <span style="color:var(--text-muted)">Prev Reading:</span>
+                  <strong style="color:var(--navy-primary)"><span id="resident-prev-reading">0.0</span> m³</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Current Reading:</span>
+                  <strong style="color:var(--navy-primary)"><span id="resident-curr-reading">0.0</span> m³</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Consumption Volume:</span>
+                  <strong style="color:var(--navy-primary)"><span id="resident-calc-consumption">0.0</span> m³</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--gray-medium); padding-top:8px;">
+                  <span style="color:var(--text-muted)">Base Rate (First 10 m³):</span>
+                  <strong style="color:var(--navy-primary)">₱120.00</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Excess Usage (x ₱15.00):</span>
+                  <strong style="color:var(--navy-primary)">₱<span id="resident-calc-excess">0.00</span></strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Environmental Fee:</span>
+                  <strong style="color:var(--navy-primary)">₱50.00</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-top:1.5px solid var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px;">
+                  <strong style="color:var(--navy-primary)">Total Amount Due:</strong>
+                  <strong style="color:var(--amber-safety); font-size:18px;">₱<span id="resident-calc-total">0.00</span></strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Consumption History Chart -->
+            <div class="chart-card">
+              <span class="chart-title">Water Consumption Trend (m³)</span>
+              <div class="chart-canvas-wrapper" id="resident-chart-container">
+                <!-- Custom responsive SVG Line chart generated in app.js -->
+              </div>
+            </div>
+
+            <!-- Report Issue Ticket Form -->
+            <div class="log-form-card">
+              <span class="log-form-title">
+                <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:var(--amber-safety)">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
+                </svg>
+                Report Asset Issue to Technicians
+              </span>
+              
+              <div class="log-form-field">
+                <label for="resident-log-desc">Describe Leak or Pressure Issue</label>
+                <textarea id="resident-log-desc" class="log-textarea" placeholder="e.g. Faucet flow is weak, or wet soil near meter coupler..."></textarea>
+              </div>
+
+              <button type="button" class="submit-log-btn" id="btn-resident-submit-log">Send Alert Notification</button>
+            </div>
+
+            <!-- Historical Invoices Timeline -->
+            <div class="modal-logs-card">
+              <span class="modal-logs-title">Past Water Ledger History</span>
+              <div class="log-scroller" id="resident-history-list" style="max-height:140px; overflow-y:auto;">
+                <!-- timeline of past bills -->
+              </div>
+            </div>
+
+            <!-- Sign Out -->
+            <button type="button" class="logout-btn" id="btn-resident-logout" style="margin-top:10px">Sign Out of Portal</button>
 
           </div>
         </div>
