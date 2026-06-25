@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WaterHall: Worker Monitor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Simulated Mobile Phone Chassis -->
+  <div class="device-container">
+    
+    <!-- Phone Camera Notch -->
+    <div class="device-camera"></div>
+    
+    <!-- System Status Bar -->
+    <div class="system-status-bar">
+      <div class="status-left" id="phone-time">11:38 AM</div>
+      <div class="status-right">
+        <!-- Cellular Signal Icon -->
+        <svg class="status-icon" viewBox="0 0 24 24">
+          <path d="M2 22h20V2z" />
+        </svg>
+        <!-- Wifi Icon -->
+        <svg class="status-icon" viewBox="0 0 24 24">
+          <path d="M12 21l-12-12c4.42-4.42 11.58-4.42 16 0z" />
+        </svg>
+        <!-- Battery Icon -->
+        <svg class="status-icon" viewBox="0 0 24 24">
+          <path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm2-3h-2v1H5V2H3v3h14V2z" />
+        </svg>
+      </div>
+    </div>
+
+    <!-- App Screen Viewport -->
+    <div class="app-screen">
+      
+      <!-- Views Container -->
+      <div class="view-container">
+
+        <!-- 1. LOGIN SCREEN -->
+        <div id="view-login" class="app-view active">
+          <div class="login-header">
+            <div class="login-logo">
+              <!-- Water Drop & Settings Icon -->
+              <svg viewBox="0 0 24 24">
+                <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0zM12 22a6 6 0 0 0 6-6c0-2.21-3.46-6-6-6s-6 3.79-6 6a6 6 0 0 0 6 6zm-1-8h2v2h-2zm0-4h2v2h-2z" />
+              </svg>
+            </div>
+            <h1>WaterHall</h1>
+            <p>Worker & Field Terminal</p>
+          </div>
+
+          <div class="login-form">
+            <div class="login-error" id="login-error-msg">
+              Invalid Employee ID. Please use <strong>EMP-304</strong>.
+            </div>
+
+            <div class="form-group">
+              <label for="employee-id">Employee ID</label>
+              <div class="input-wrapper">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                </svg>
+                <input type="text" id="employee-id" class="form-input" placeholder="e.g. EMP-304" value="EMP-304" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="zone-assignment">Zone Assignment</label>
+              <div class="input-wrapper">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                </svg>
+                <select id="zone-assignment" class="form-input" required>
+                  <option value="Purok 1">Purok 1 (Centrum)</option>
+                  <option value="Purok 2" selected>Purok 2 (Poblacion)</option>
+                  <option value="Purok 3">Purok 3 (Coastal)</option>
+                  <option value="Purok 4">Purok 4 (Upland)</option>
+                  <option value="Purok 5">Purok 5 (Hillside)</option>
+                  <option value="Purok 6">Purok 6 (Highway)</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="button" class="login-btn" id="btn-login">
+              <span>Sign In to Terminal</span>
+              <svg style="width:20px;height:20px;fill:currentColor" viewBox="0 0 24 24">
+                <path d="M10 17v-4H3v-2h7V7l5 5-5 5zm9 2H5v-2h14V5H5V3h14c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2z" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="login-footer">
+            <strong>Barangay Tagpopongan, IGACOS</strong><br>
+            IoT Water Management System v2.6.4
+          </div>
+        </div>
+
+
+        <!-- 2. WORKER DASHBOARD SCREEN -->
+        <div id="view-dashboard" class="app-view">
+          <div class="view-header">
+            <h2 id="dash-worker-title">WaterHall Field Monitor</h2>
+            <p>Brgy. Tagpopongan, Island Garden City of Samal</p>
+          </div>
+
+          <div class="dashboard-scroll">
+            
+            <!-- High-Priority Alert Widget -->
+            <div class="alert-widget" id="dashboard-alert-widget">
+              <div class="alert-widget-header">
+                <span class="alert-widget-title">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V8h2v4z" />
+                  </svg>
+                  Critical Alerts
+                </span>
+                <span class="alert-badge" id="dash-alert-count">0</span>
+              </div>
+              <div class="alert-list" id="dash-alert-list">
+                <!-- Injected dynamically: leaks and quality alarms -->
+              </div>
+            </div>
+
+            <!-- Assigned Purok details -->
+            <div class="dashboard-section">
+              <div class="section-title">Assigned Patrol Zones</div>
+              
+              <!-- Mock SVG Map of Tagpopongan puroks -->
+              <div class="map-widget">
+                <!-- Simulated map grid -->
+                <svg width="100%" height="100%" viewBox="0 0 380 160" style="background:#0F172A;">
+                  <!-- Contours & Roads -->
+                  <path d="M10 50 Q 120 70 200 40 T 370 90" fill="none" stroke="#334155" stroke-width="8" opacity="0.3"/>
+                  <path d="M150 10 Q 180 90 120 150" fill="none" stroke="#334155" stroke-width="5" opacity="0.3"/>
+                  <path d="M50 150 C 120 120 280 160 350 110" fill="none" stroke="#334155" stroke-width="4" opacity="0.2"/>
+                  
+                  <!-- Tagpopongan Bay Contour line -->
+                  <path d="M0 130 Q 100 110 220 140 T 380 120 L 380 160 L 0 160 Z" fill="#1E293B" opacity="0.4"/>
+                  
+                  <!-- Water Main Pipeline (Blue highlight) -->
+                  <path d="M30 40 L 160 55 L 220 80 L 320 110" fill="none" stroke="#3B82F6" stroke-width="3" stroke-dasharray="4 4" />
+                  
+                  <!-- Reservoir Pin -->
+                  <g class="map-marker" style="transform:translate(30px, 40px)">
+                    <circle cx="0" cy="0" r="10" fill="#3B82F6" opacity="0.4" />
+                    <circle cx="0" cy="0" r="6" fill="#3B82F6" />
+                    <text x="8" y="4" fill="#94A3B8" font-size="9" font-weight="700">Res. Tank</text>
+                  </g>
+                  
+                  <!-- Purok Markers with dynamic leak pins -->
+                  <!-- P1 Marker -->
+                  <g class="map-marker-pin" id="pin-p1" cx="80" cy="65" style="transform:translate(80px, 65px)">
+                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
+                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P1</text>
+                  </g>
+                  <!-- P2 Marker -->
+                  <g class="map-marker-pin" id="pin-p2" cx="160" cy="55" style="transform:translate(160px, 55px)">
+                    <circle cx="0" cy="0" r="10" class="pin-bg" fill="#EF4444" stroke="#FFF" stroke-width="1.5" />
+                    <text x="-5" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P2</text>
+                  </g>
+                  <!-- P3 Marker -->
+                  <g class="map-marker-pin" id="pin-p3" cx="130" cy="115" style="transform:translate(130px, 115px)">
+                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
+                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P3</text>
+                  </g>
+                  <!-- P4 Marker -->
+                  <g class="map-marker-pin" id="pin-p4" cx="240" cy="50" style="transform:translate(240px, 50px)">
+                    <circle cx="0" cy="0" r="10" class="pin-bg" fill="#EF4444" stroke="#FFF" stroke-width="1.5" />
+                    <text x="-5" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P4</text>
+                  </g>
+                  <!-- P5 Marker -->
+                  <g class="map-marker-pin" id="pin-p5" cx="290" cy="85" style="transform:translate(290px, 85px)">
+                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
+                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P5</text>
+                  </g>
+                  <!-- P6 Marker -->
+                  <g class="map-marker-pin" id="pin-p6" cx="330" cy="120" style="transform:translate(330px, 120px)">
+                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
+                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P6</text>
+                  </g>
+                </svg>
+
+                <div class="map-legend">
+                  <div class="legend-item">
+                    <span class="legend-color" style="background-color: var(--alert-green)"></span>
+                    <span>Normal Zone</span>
+                  </div>
+                  <div class="legend-item">
+                    <span class="legend-color" style="background-color: var(--alert-red)"></span>
+                    <span>Leak Detected</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Zone Selection Cards -->
+              <div class="zone-grid" id="dashboard-zone-grid">
+                <!-- Cards injected dynamically based on database -->
+              </div>
+            </div>
+
+            <!-- Maintenance glance log -->
+            <div class="dashboard-section">
+              <div class="maintenance-glance">
+                <div class="log-glance-header">
+                  <span class="log-glance-title">Recent Activity Logs</span>
+                  <span class="log-count" id="dash-log-count">0 items</span>
+                </div>
+                <div class="log-scroller" id="dash-log-list">
+                  <!-- Log cards injected dynamically -->
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+
+        <!-- 3. HOUSE DIRECTORY & PIPE MONITORING -->
+        <div id="view-directory" class="app-view">
+          <div class="view-header">
+            <h2>Meter Directory</h2>
+            <p>Search and inspect household flow rates and meters</p>
+          </div>
+
+          <!-- Filters and Search -->
+          <div class="directory-controls">
+            <div class="search-input-wrapper">
+              <svg viewBox="0 0 24 24">
+                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+              </svg>
+              <input type="text" id="dir-search" class="search-input" placeholder="Search by Owner or Account #...">
+            </div>
+            
+            <div class="filter-row">
+              <select id="filter-purok" class="filter-select">
+                <option value="all">All Puroks</option>
+                <option value="Purok 1">Purok 1</option>
+                <option value="Purok 2">Purok 2</option>
+                <option value="Purok 3">Purok 3</option>
+                <option value="Purok 4">Purok 4</option>
+                <option value="Purok 5">Purok 5</option>
+                <option value="Purok 6">Purok 6</option>
+              </select>
+
+              <select id="filter-status" class="filter-select">
+                <option value="all">All Statuses</option>
+                <option value="leak">Leak Detected</option>
+                <option value="normal">Normal Flow</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Household directory list -->
+          <div class="directory-list" id="dir-household-list">
+            <!-- Dynamic household cards injected here -->
+          </div>
+
+          <!-- Empty State -->
+          <div class="empty-state" id="dir-empty-state">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
+            </svg>
+            <p>No household matches the search/filter parameters.</p>
+          </div>
+        </div>
+
+
+        <!-- 4. ASSET STATUS MONITORING -->
+        <div id="view-assets" class="app-view">
+          <div class="view-header">
+            <h2>Water Asset Telemetry</h2>
+            <p>Central Reservoir & Quality Feed (IoT Live)</p>
+          </div>
+
+          <div class="assets-scroll">
+            
+            <!-- Reservoir tank visual card -->
+            <div class="reservoir-card">
+              <div class="reservoir-header">
+                <span class="reservoir-title">Central Reservoir Level</span>
+                <span class="reservoir-percentage" id="asset-tank-percent">0%</span>
+              </div>
+              
+              <!-- Interactive Visual Tank -->
+              <div class="tank-visual-container">
+                <div class="tank-water" id="asset-tank-fill"></div>
+                <div class="tank-labels">
+                  <span class="tank-level-line">100% - Capacity Max</span>
+                  <span class="tank-level-line">75% - Normal Range</span>
+                  <span class="tank-level-line">50% - Threshold Alert</span>
+                  <span class="tank-level-line">25% - Pressure Warning</span>
+                </div>
+              </div>
+
+              <div class="reservoir-status-banner" id="asset-tank-banner">
+                Reservoir Status: Normal Operating Pressure
+              </div>
+            </div>
+
+            <!-- Quality Feed Parameters -->
+            <div class="quality-feed-grid">
+              
+              <!-- pH Level Parameter -->
+              <div class="quality-card">
+                <div class="quality-card-header">
+                  <span class="quality-label">pH Acidity Index</span>
+                  <span class="quality-badge normal" id="asset-ph-badge">Normal</span>
+                </div>
+                <div class="quality-value-row">
+                  <span class="quality-value" id="asset-ph-val">7.2</span>
+                  <span class="quality-unit">pH</span>
+                </div>
+                
+                <div class="quality-scale-container">
+                  <div class="quality-scale-fill ph-fill"></div>
+                  <!-- Dynamic pointer showing pH location -->
+                  <div class="ph-pointer" id="asset-ph-pointer" style="left: 50%;"></div>
+                </div>
+                <p class="quality-desc" id="asset-ph-desc">pH value is stable within public health standards (6.5 - 8.5).</p>
+              </div>
+
+              <!-- Turbidity Parameter -->
+              <div class="quality-card">
+                <div class="quality-card-header">
+                  <span class="quality-label">Turbidity (Clarity)</span>
+                  <span class="quality-badge normal" id="asset-turbidity-badge">Normal</span>
+                </div>
+                <div class="quality-value-row">
+                  <span class="quality-value" id="asset-turbidity-val">1.8</span>
+                  <span class="quality-unit">NTU</span>
+                </div>
+                
+                <div class="quality-scale-container">
+                  <div class="quality-scale-fill turbidity-fill" id="asset-turbidity-fill" style="width: 36%;"></div>
+                </div>
+                <p class="quality-desc" id="asset-turbidity-desc">Clarity is excellent. Below standard limit of 5.0 NTU.</p>
+              </div>
+
+            </div>
+
+            <!-- Live Sensor Simulator Hardware Panel (Fidelity boost) -->
+            <div class="hardware-simulator">
+              <h3 class="hardware-title">IoT Telemetry Hardware Simulator</h3>
+              <div class="sim-slider-group">
+                
+                <div class="sim-slider-row">
+                  <div class="sim-label-row">
+                    <span>Simulated Reservoir Tank Level:</span>
+                    <strong id="sim-tank-val">68%</strong>
+                  </div>
+                  <input type="range" id="slider-tank" class="sim-input" min="10" max="100" value="68">
+                </div>
+
+                <div class="sim-slider-row">
+                  <div class="sim-label-row">
+                    <span>Simulated Water pH Level:</span>
+                    <strong id="sim-ph-val">5.8</strong>
+                  </div>
+                  <input type="range" id="slider-ph" class="sim-input" min="4" max="10" step="0.1" value="5.8">
+                </div>
+
+                <div class="sim-slider-row">
+                  <div class="sim-label-row">
+                    <span>Simulated Turbidity:</span>
+                    <strong id="sim-turbidity-val">6.2 NTU</strong>
+                  </div>
+                  <input type="range" id="slider-turbidity" class="sim-input" min="0.5" max="12" step="0.1" value="6.2">
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+
+        <!-- 5. WORKER PROFILE & STATS -->
+        <div id="view-profile" class="app-view">
+          <div class="view-header">
+            <h2>Worker Profile</h2>
+            <p>Technician Credentials & Zone Logs</p>
+          </div>
+
+          <div class="profile-scroll">
+            
+            <!-- Worker Card -->
+            <div class="profile-card" id="worker-profile-card">
+              <div class="profile-avatar" id="worker-avatar">JL</div>
+              <div class="profile-info">
+                <h3 class="profile-name" id="worker-name">Juan Luna</h3>
+                <span class="profile-role" id="worker-role">Field Technician</span>
+                <span class="profile-zone" id="worker-zone-lbl">Zone: Purok 2</span>
+              </div>
+            </div>
+
+            <!-- Stats Boxes -->
+            <div class="profile-stats-grid">
+              <div class="stat-box">
+                <div class="stat-num" id="profile-stat-total">10</div>
+                <div class="stat-lbl">Assigned Meters</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-num" id="profile-stat-logs">2</div>
+                <div class="stat-lbl">Resolved Tasks</div>
+              </div>
+            </div>
+
+            <!-- Profile Menu Options -->
+            <div class="profile-menu">
+              
+              <div class="menu-item" id="menu-view-logs">
+                <div class="menu-item-left">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
+                  </svg>
+                  <span>My Active Workorders</span>
+                </div>
+                <svg class="arrow" viewBox="0 0 24 24">
+                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                </svg>
+              </div>
+
+              <div class="menu-item" id="menu-emergency-call">
+                <div class="menu-item-left">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.045 15.045 0 0 1-6.59-6.59l2.2-2.2a.96.96 0 0 0 .25-1.02c-.36-1.11-.56-2.3-.56-3.53 0-.55-.45-1-1-1H4.03c-.55 0-1 .45-1 1C3.03 16.89 10.9 20.97 20.01 20.97c.55 0 1-.45 1-1v-3.59c0-.55-.45-1-1-1z" />
+                  </svg>
+                  <span>Tagpopongan Office Help</span>
+                </div>
+                <svg class="arrow" viewBox="0 0 24 24">
+                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                </svg>
+              </div>
+
+            </div>
+
+            <!-- Logout -->
+            <button type="button" class="logout-btn" id="btn-logout">Sign Out of Device</button>
+
+          </div>
+        </div>
+
+        <!-- 6. BILLING CALCULATOR SCREEN -->
+        <div id="view-billing" class="app-view">
+          <div class="view-header">
+            <h2>Water Bill Calculator</h2>
+            <p>Compute billing rates & prevent duplicate invoicing</p>
+          </div>
+
+          <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
+            
+            <!-- Meter Selector Panel (Searchable Autocomplete) -->
+            <div class="reservoir-card" style="position:relative; overflow:visible; z-index:100;">
+              <span class="reservoir-title" style="font-size:12px; text-transform:uppercase; color:var(--text-muted)">Search & Select Meter</span>
+              <div class="form-group" style="margin-top:4px; position:relative;">
+                <div class="search-input-wrapper" style="position:relative; display:flex; align-items:center;">
+                  <svg viewBox="0 0 24 24" style="position:absolute; left:12px; width:18px; height:18px; fill:var(--navy-primary); pointer-events:none;">
+                    <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+                  </svg>
+                  <input type="text" id="bill-meter-search" style="width:100%; padding:10px 10px 10px 38px; font-size:14px; background-color:var(--off-white); border:1.5px solid var(--navy-border); color:var(--navy-primary); border-radius:var(--radius-md); font-weight:600; outline:none;" placeholder="Type Owner or Account #..." autocomplete="off">
+                </div>
+                <!-- Autocomplete Dropdown List -->
+                <div id="bill-meter-results" class="search-results-dropdown">
+                  <!-- Dynamically filtered options in app.js -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Double-Billing Protection Alert Badge -->
+            <div id="billing-alert-banner" class="reservoir-status-banner" style="font-weight:700; text-align:left; display:flex; align-items:center; gap:8px;">
+              <!-- Dynamic alert text/status (safe/warning) -->
+            </div>
+
+            <!-- Readings & Consumption Inputs -->
+            <div class="metrics-row">
+              <div class="metric-card">
+                <span class="metric-card-lbl">Prev Reading (m³)</span>
+                <div class="metric-card-val" id="bill-prev-reading" style="font-size:18px;">0.0</div>
+              </div>
+              <div class="metric-card">
+                <span class="metric-card-lbl">Current Input (m³)</span>
+                <input type="number" step="0.1" id="bill-curr-input" style="padding:4px 8px; font-size:16px; font-weight:700; width:100%; border:1.5px solid var(--navy-border); border-radius:var(--radius-sm); margin-top:4px; color:var(--navy-primary); background-color:var(--off-white);" value="0.0">
+              </div>
+            </div>
+
+            <!-- Live Bill Computation Receipt -->
+            <div class="reservoir-card" style="border-style:dashed; background-color:var(--white);">
+              <span class="reservoir-title" style="font-size:11px; text-transform:uppercase; text-align:center; display:block; border-bottom:1px dashed var(--navy-border); padding-bottom:8px; margin-bottom:8px; color:var(--navy-primary)">
+                Barangay Tagpopongan Water Invoice Draft
+              </span>
+              
+              <div style="display:flex; flex-direction:column; gap:8px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Billing Cycle:</span>
+                  <strong style="color:var(--navy-primary)">June 2026</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Total Consumption:</span>
+                  <strong style="color:var(--navy-primary)"><span id="bill-calc-consumption">0.0</span> m³</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Base Charge (First 10 m³):</span>
+                  <strong style="color:var(--navy-primary)">₱120.00</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Excess Charge (Excess x ₱15.00):</span>
+                  <strong style="color:var(--navy-primary)">₱<span id="bill-calc-excess">0.00</span></strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                  <span style="color:var(--text-muted)">Environmental/Maintenance:</span>
+                  <strong style="color:var(--navy-primary)">₱50.00</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px;">
+                  <strong style="color:var(--navy-primary)">Total Bill Amount:</strong>
+                  <strong style="color:var(--amber-safety); font-size:18px;">₱<span id="bill-calc-total">170.00</span></strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Submit Billing Registration Button -->
+            <button type="button" class="login-btn" id="btn-save-bill" style="margin-top:2px; width:100%;">
+              <svg style="width:20px;height:20px;fill:currentColor;vertical-align:middle;margin-right:6px;" viewBox="0 0 24 24">
+                <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+              </svg>
+              <span>Register & Save Bill</span>
+            </button>
+
+            <!-- Billing History Log for selected Household -->
+            <div class="modal-logs-card" style="margin-top:6px">
+              <span class="modal-logs-title" id="billing-history-title" style="font-size:11px;">Billing Ledger History</span>
+              <div class="log-scroller" id="billing-history-list" style="max-height:140px; overflow-y:auto;">
+                <!-- Dynamically loaded timeline of past bills for this household -->
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div> <!-- End Views Container -->
+
+      <!-- BOTTOM NAVIGATION BAR (Hidden on Login screen) -->
+      <nav class="bottom-nav" id="app-bottom-nav" style="display: none;">
+        <a href="#" class="nav-tab active" data-target="view-dashboard">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 13h6c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v8c0 .55.45 1 1 1zm0 8h6c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1zm10 0h6c.55 0 1-.45 1-1v-8c0-.55-.45-1-1-1h-6c-.55 0-1 .45-1 1v8c0 .55.45 1 1 1zM14 4v4c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1h-6c-.55 0-1 .45-1 1z" />
+          </svg>
+          <span>Dashboard</span>
+        </a>
+        <a href="#" class="nav-tab" data-target="view-directory">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM10 9h8v2h-8zm0 3h8v2h-8zm0-6h8v2h-8z" />
+          </svg>
+          <span>Directory</span>
+        </a>
+        <a href="#" class="nav-tab" data-target="view-assets">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2c-5.33 4.55-8 8.1-8 10.8C4 17.64 8.03 21 12 21s8-3.36 8-8.2c0-2.7-2.67-6.25-8-10.8zm0 16.5c-2.76 0-5-2.02-5-4.5 0-1.63 1.5-3.86 5-6.84 3.5 2.98 5 5.2 5 6.84 0 2.48-2.24 4.5-5 4.5zM12 6c-.28 0-.5.22-.5.5v3c0 .28.22.5.5.5s.5-.22.5-.5v-3c0-.28-.22-.5-.5-.5z" />
+          </svg>
+          <span>Assets</span>
+        </a>
+        <a href="#" class="nav-tab" data-target="view-billing">
+          <svg viewBox="0 0 24 24">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 4h2v2h-2V7zm0 4h2v2h-2v-2zm-4-4h2v2H7V7zm0 4h2v2H7v-2zm0 4h2v2H7v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm0-4h2v2h-2v-2zm0-4h2v2h-2V7z"/>
+          </svg>
+          <span>Billing</span>
+        </a>
+        <a href="#" class="nav-tab" data-target="view-profile">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v3h16v-3c0-2.66-5.33-4-8-4z" />
+          </svg>
+          <span>Profile</span>
+        </a>
+      </nav>
+
+      <!-- Dynamic Status Notification Toast -->
+      <div class="toast-msg" id="app-toast">
+        <svg viewBox="0 0 24 24">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+        </svg>
+        <span id="toast-text">Success Message Placeholder</span>
+      </div>
+
+    </div> <!-- End App Screen -->
+
+    <!-- Phone Home Indicator swipe simulated bar -->
+    <div class="home-indicator-bar">
+      <div class="home-indicator"></div>
+    </div>
+
+  </div> <!-- End Simulated Mobile Container -->
+
+
+  <!-- HOUSE DETAILS MODAL DRAWER OVERLAY -->
+  <div class="modal-overlay" id="house-detail-modal">
+    <div class="modal-content">
+      
+      <div class="modal-header">
+        <div class="modal-header-left">
+          <h3 id="modal-owner-name">Household Owner</h3>
+          <p id="modal-acct-num">TAG-2026-0000</p>
+        </div>
+        <button class="modal-close-btn" id="btn-close-modal">
+          <svg viewBox="0 0 24 24">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        
+        <!-- Live Pipe Leak Toggle -->
+        <div class="toggle-panel">
+          <div class="toggle-label-group">
+            <span class="toggle-main-label" id="modal-leak-title">Meter Pipe Flow Status</span>
+            <span class="toggle-desc" id="modal-leak-desc">Green: Normal Flow | Red: Leak Risk</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="modal-leak-toggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <!-- Meter Details Row -->
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-card-lbl">Current Usage</span>
+            <div class="metric-card-val"><span id="modal-current-m3">0.0</span> m³</div>
+          </div>
+          <div class="metric-card">
+            <span class="metric-card-lbl">Flow Speed</span>
+            <div class="metric-card-val"><span id="modal-flow-rate">0.00</span> L/s</div>
+          </div>
+        </div>
+
+        <!-- Water Consumption Monthly History Chart -->
+        <div class="chart-card">
+          <span class="chart-title">Water Consumption Trend (m³)</span>
+          <div class="chart-canvas-wrapper" id="chart-container">
+            <!-- Custom responsive SVG Line chart will be generated here -->
+          </div>
+        </div>
+
+        <!-- Log Maintenance Task form -->
+        <div class="log-form-card">
+          <span class="log-form-title">
+            <svg viewBox="0 0 24 24">
+              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+            </svg>
+            Submit Maintenance Report
+          </span>
+          
+          <div class="log-form-field">
+            <label for="log-desc">Repairs / Actions Taken</label>
+            <textarea id="log-desc" class="log-textarea" placeholder="e.g. Tightened compression valve, replaced rubber gasket..."></textarea>
+          </div>
+
+          <div class="log-checkbox-row">
+            <input type="checkbox" id="log-resolved" class="log-checkbox" checked>
+            <label for="log-resolved">Mark Issue as Resolved / Flow Normal</label>
+          </div>
+
+          <button type="button" class="submit-log-btn" id="btn-submit-log">Submit & Update Firestore</button>
+        </div>
+
+        <!-- Historical logs for this household -->
+        <div class="modal-logs-card">
+          <span class="modal-logs-title">Inspection Log History</span>
+          <div class="log-scroller" id="modal-historical-logs">
+            <!-- Household logs injected here -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
