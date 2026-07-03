@@ -7,6 +7,10 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Ambient background glow elements -->
+  <div class="ambient-glow bg-glow-1"></div>
+  <div class="ambient-glow bg-glow-2"></div>
+  <div class="ambient-glow bg-glow-3"></div>
 
   <!-- Simulated Mobile Phone Chassis -->
   <div class="device-container">
@@ -140,55 +144,74 @@
               <!-- Mock SVG Map of Tagpopongan puroks -->
               <div class="map-widget">
                 <!-- Simulated map grid -->
-                <svg width="100%" height="100%" viewBox="0 0 380 160" style="background:#0F172A;">
+                <svg width="100%" height="100%" viewBox="0 0 380 160" class="tactical-map">
+                  <defs>
+                    <pattern id="map-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(51, 65, 85, 0.15)" stroke-width="1" />
+                    </pattern>
+                    <radialGradient id="sonar-glow" cx="50%" cy="50%" r="50%">
+                      <stop offset="0%" stop-color="var(--amber-safety)" stop-opacity="0.4"/>
+                      <stop offset="100%" stop-color="var(--amber-safety)" stop-opacity="0"/>
+                    </radialGradient>
+                  </defs>
+                  
+                  <!-- Radar Tech Grid Backing -->
+                  <rect width="100%" height="100%" fill="url(#map-grid)" />
+                  
                   <!-- Contours & Roads -->
-                  <path d="M10 50 Q 120 70 200 40 T 370 90" fill="none" stroke="#334155" stroke-width="8" opacity="0.3"/>
-                  <path d="M150 10 Q 180 90 120 150" fill="none" stroke="#334155" stroke-width="5" opacity="0.3"/>
-                  <path d="M50 150 C 120 120 280 160 350 110" fill="none" stroke="#334155" stroke-width="4" opacity="0.2"/>
+                  <path d="M10 50 Q 120 70 200 40 T 370 90" fill="none" stroke="var(--navy-border)" stroke-width="8" opacity="0.2"/>
+                  <path d="M150 10 Q 180 90 120 150" fill="none" stroke="var(--navy-border)" stroke-width="5" opacity="0.2"/>
+                  <path d="M50 150 C 120 120 280 160 350 110" fill="none" stroke="var(--navy-border)" stroke-width="4" opacity="0.1"/>
                   
                   <!-- Tagpopongan Bay Contour line -->
-                  <path d="M0 130 Q 100 110 220 140 T 380 120 L 380 160 L 0 160 Z" fill="#1E293B" opacity="0.4"/>
+                  <path d="M0 130 Q 100 110 220 140 T 380 120 L 380 160 L 0 160 Z" fill="rgba(15, 23, 42, 0.3)" />
                   
                   <!-- Water Main Pipeline (Blue highlight) -->
-                  <path d="M30 40 L 160 55 L 220 80 L 320 110" fill="none" stroke="#3B82F6" stroke-width="3" stroke-dasharray="4 4" />
+                  <path d="M30 40 L 160 55 L 220 80 L 320 110" fill="none" stroke="#2563EB" stroke-width="3" stroke-dasharray="4 4" class="map-pipeline" />
                   
                   <!-- Reservoir Pin -->
-                  <g class="map-marker" style="transform:translate(30px, 40px)">
-                    <circle cx="0" cy="0" r="10" fill="#3B82F6" opacity="0.4" />
-                    <circle cx="0" cy="0" r="6" fill="#3B82F6" />
-                    <text x="8" y="4" fill="#94A3B8" font-size="9" font-weight="700">Res. Tank</text>
+                  <g class="map-marker reservoir-pin" style="transform:translate(30px, 40px)">
+                    <circle cx="0" cy="0" r="10" fill="#3B82F6" opacity="0.3" class="reservoir-pulse" />
+                    <circle cx="0" cy="0" r="6" fill="#2563EB" stroke="#FFF" stroke-width="1" />
+                    <text x="8" y="4" fill="var(--text-on-dark-muted)" font-size="8" font-weight="800">Res. Tank</text>
                   </g>
                   
                   <!-- Purok Markers with dynamic leak pins -->
                   <!-- P1 Marker -->
                   <g class="map-marker-pin" id="pin-p1" cx="80" cy="65" style="transform:translate(80px, 65px)">
+                    <circle cx="0" cy="0" r="16" class="pin-pulse" />
                     <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
-                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P1</text>
+                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P1</text>
                   </g>
                   <!-- P2 Marker -->
                   <g class="map-marker-pin" id="pin-p2" cx="160" cy="55" style="transform:translate(160px, 55px)">
-                    <circle cx="0" cy="0" r="10" class="pin-bg" fill="#EF4444" stroke="#FFF" stroke-width="1.5" />
-                    <text x="-5" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P2</text>
+                    <circle cx="0" cy="0" r="18" class="pin-pulse" />
+                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#EF4444" stroke="#FFF" stroke-width="1.5" />
+                    <text x="-5" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P2</text>
                   </g>
                   <!-- P3 Marker -->
                   <g class="map-marker-pin" id="pin-p3" cx="130" cy="115" style="transform:translate(130px, 115px)">
+                    <circle cx="0" cy="0" r="16" class="pin-pulse" />
                     <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
-                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P3</text>
+                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P3</text>
                   </g>
                   <!-- P4 Marker -->
                   <g class="map-marker-pin" id="pin-p4" cx="240" cy="50" style="transform:translate(240px, 50px)">
-                    <circle cx="0" cy="0" r="10" class="pin-bg" fill="#EF4444" stroke="#FFF" stroke-width="1.5" />
-                    <text x="-5" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P4</text>
+                    <circle cx="0" cy="0" r="18" class="pin-pulse" />
+                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#EF4444" stroke="#FFF" stroke-width="1.5" />
+                    <text x="-5" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P4</text>
                   </g>
                   <!-- P5 Marker -->
                   <g class="map-marker-pin" id="pin-p5" cx="290" cy="85" style="transform:translate(290px, 85px)">
+                    <circle cx="0" cy="0" r="16" class="pin-pulse" />
                     <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
-                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P5</text>
+                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P5</text>
                   </g>
                   <!-- P6 Marker -->
                   <g class="map-marker-pin" id="pin-p6" cx="330" cy="120" style="transform:translate(330px, 120px)">
+                    <circle cx="0" cy="0" r="16" class="pin-pulse" />
                     <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
-                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="700">P6</text>
+                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P6</text>
                   </g>
                 </svg>
 
@@ -295,7 +318,17 @@
               
               <!-- Interactive Visual Tank -->
               <div class="tank-visual-container">
-                <div class="tank-water" id="asset-tank-fill"></div>
+                <div class="tank-water" id="asset-tank-fill">
+                  <div class="liquid-wave wave-front"></div>
+                  <div class="liquid-wave wave-back"></div>
+                  <div class="liquid-bubbles">
+                    <div class="bubble bubble-1"></div>
+                    <div class="bubble bubble-2"></div>
+                    <div class="bubble bubble-3"></div>
+                    <div class="bubble bubble-4"></div>
+                    <div class="bubble bubble-5"></div>
+                  </div>
+                </div>
                 <div class="tank-labels">
                   <span class="tank-level-line">100% - Capacity Max</span>
                   <span class="tank-level-line">75% - Normal Range</span>
