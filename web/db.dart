@@ -1,6 +1,7 @@
 import 'dart:html';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:async';
 
 const dbKeys = {
   'households': 'waterhall_households',
@@ -59,9 +60,9 @@ final List<Map<String, dynamic>> seedBillingRecords = [
 ];
 
 final List<Map<String, dynamic>> seedWorkers = [
-  { 'worker_id': 'EMP-301', 'name': 'Jose Rizal', 'role': 'Lead Field Tech', 'zone': 'Purok 1' },
-  { 'worker_id': 'EMP-304', 'name': 'Juan Luna', 'role': 'Field Technician', 'zone': 'Purok 2' },
-  { 'worker_id': 'EMP-308', 'name': 'Andres Bonifacio', 'role': 'Zone Inspector', 'zone': 'Purok 5' }
+  { 'worker_id': 'EMP-301', 'name': 'Michael Balaga', 'role': 'Lead Field Tech', 'zone': 'Purok 1' },
+  { 'worker_id': 'EMP-304', 'name': 'Ryiel Banggat', 'role': 'Field Technician', 'zone': 'Purok 2' },
+  { 'worker_id': 'EMP-308', 'name': 'John Dave Chicote', 'role': 'Zone Inspector', 'zone': 'Purok 5' }
 ];
 
 final List<Map<String, dynamic>> seedHouseholds = [
@@ -210,7 +211,77 @@ final List<Map<String, dynamic>> seedMaintenanceLogs = [
 ];
 
 class Database {
-  void init() {
+  List<Map<String, dynamic>> _households = [];
+  Map<String, dynamic> _centralAssets = {};
+  List<Map<String, dynamic>> _maintenanceLogs = [];
+  List<Map<String, dynamic>> _workers = [];
+  List<Map<String, dynamic>> _billingRecords = [];
+  bool _isInitialized = false;
+
+  Future<void> refreshData() async {
+    try {
+      final response = await HttpRequest.getString('/api/all-data');
+      final data = json.decode(response) as Map<String, dynamic>;
+      
+      _households = List<Map<String, dynamic>>.from(data['households']);
+      _centralAssets = Map<String, dynamic>.from(data['centralAssets']);
+      _maintenanceLogs = List<Map<String, dynamic>>.from(data['maintenanceLogs']);
+      _workers = List<Map<String, dynamic>>.from(data['workers']);
+      _billingRecords = List<Map<String, dynamic>>.from(data['billingRecords']);
+      
+      // Update local storage cache to stay in sync with cloud
+      window.localStorage[dbKeys['households']!] = json.encode(_households);
+      window.localStorage[dbKeys['centralAssets']!] = json.encode(_centralAssets);
+      window.localStorage[dbKeys['maintenanceLogs']!] = json.encode(_maintenanceLogs);
+      window.localStorage[dbKeys['workers']!] = json.encode(_workers);
+      window.localStorage[dbKeys['billingRecords']!] = json.encode(_billingRecords);
+      
+      print("Database refreshed successfully from server.");
+      syncUnsyncedData();
+    } catch (e) {
+      print("Error refreshing data from server: $e");
+    }
+  }
+
+  Future<void> init() async {
+    if (_isInitialized) return;
+    
+    // Register network online listener to auto-sync when connection is restored
+    window.onOnline.listen((_) {
+      print("Network connection restored. Processing offline actions...");
+      syncUnsyncedData();
+    });
+
+    try {
+      final response = await HttpRequest.getString('/api/all-data');
+      final data = json.decode(response) as Map<String, dynamic>;
+      
+      _households = List<Map<String, dynamic>>.from(data['households']);
+      _centralAssets = Map<String, dynamic>.from(data['centralAssets']);
+      _maintenanceLogs = List<Map<String, dynamic>>.from(data['maintenanceLogs']);
+      _workers = List<Map<String, dynamic>>.from(data['workers']);
+      _billingRecords = List<Map<String, dynamic>>.from(data['billingRecords']);
+      
+      // Update local storage cache to stay in sync with cloud
+      window.localStorage[dbKeys['households']!] = json.encode(_households);
+      window.localStorage[dbKeys['centralAssets']!] = json.encode(_centralAssets);
+      window.localStorage[dbKeys['maintenanceLogs']!] = json.encode(_maintenanceLogs);
+      window.localStorage[dbKeys['workers']!] = json.encode(_workers);
+      window.localStorage[dbKeys['billingRecords']!] = json.encode(_billingRecords);
+
+      _isInitialized = true;
+      print("Database successfully synchronized with SQLite backend.");
+      
+      // Sync any offline operations that are waiting in the queue
+      syncUnsyncedData();
+    } catch (e) {
+      print("Error fetching database from server, using local fallback: $e");
+      _initFallback();
+      _isInitialized = true;
+    }
+  }
+
+  void _initFallback() {
     if (window.localStorage[dbKeys['households']!] == null) {
       window.localStorage[dbKeys['households']!] = json.encode(seedHouseholds);
     }
@@ -226,12 +297,84 @@ class Database {
     if (window.localStorage[dbKeys['billingRecords']!] == null) {
       window.localStorage[dbKeys['billingRecords']!] = json.encode(seedBillingRecords);
     }
+
+    _households = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['households']!]!));
+    _centralAssets = Map<String, dynamic>.from(json.decode(window.localStorage[dbKeys['centralAssets']!]!));
+    _maintenanceLogs = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['maintenanceLogs']!]!));
+    _workers = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['workers']!]!));
+    _billingRecords = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['billingRecords']!]!));
+  }
+
+  // --- Offline Action Queue Logic ---
+  
+  List<Map<String, dynamic>> _getUnsyncedActions() {
+    final raw = window.localStorage['waterhall_unsynced_actions'];
+    if (raw == null) return [];
+    try {
+      final decoded = json.decode(raw) as List;
+      return decoded.map((item) => Map<String, dynamic>.from(item)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _saveUnsyncedActions(List<Map<String, dynamic>> actions) {
+    window.localStorage['waterhall_unsynced_actions'] = json.encode(actions);
+  }
+
+  void _syncWithServer(String path, Map<String, dynamic> data) {
+    final actions = _getUnsyncedActions();
+    actions.add({'path': path, 'data': data});
+    _saveUnsyncedActions(actions);
+    
+    // Attempt to upload immediately in the background
+    syncUnsyncedData();
+  }
+
+  bool _isSyncing = false;
+  Future<void> syncUnsyncedData() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    
+    final actions = _getUnsyncedActions();
+    if (actions.isEmpty) {
+      _isSyncing = false;
+      return;
+    }
+    
+    print("Found ${actions.length} unsynced offline operations. Starting auto-upload...");
+    final remainingActions = List<Map<String, dynamic>>.from(actions);
+    
+    for (final action in actions) {
+      final String path = action['path'] as String;
+      final Map<String, dynamic> data = Map<String, dynamic>.from(action['data']);
+      
+      try {
+        final xhr = await HttpRequest.request(
+          path,
+          method: 'POST',
+          sendData: json.encode(data),
+          requestHeaders: {'Content-Type': 'application/json'}
+        );
+        if (xhr.status == 200) {
+          remainingActions.remove(action);
+          print("Successfully uploaded offline record for $path");
+        } else {
+          print("Sync failed for $path with status: ${xhr.status}. Postponing sync.");
+          break; // Stop loop, keep in queue
+        }
+      } catch (e) {
+        print("Network error sync for $path: $e. Node remains offline.");
+        break; // Stop loop, keep in queue (e.g. still offline)
+      }
+    }
+    
+    _saveUnsyncedActions(remainingActions);
+    _isSyncing = false;
   }
 
   List<Map<String, dynamic>> getHouseholds() {
-    init();
-    final data = window.localStorage[dbKeys['households']!];
-    return List<Map<String, dynamic>>.from(json.decode(data!));
+    return _households;
   }
 
   Map<String, dynamic>? getHousehold(String id) {
@@ -256,6 +399,7 @@ class Database {
         households[index]['flow_rate'] = 0.01 + rand.nextDouble() * 0.09;
         households[index]['leak_detected_at'] = null;
       }
+      _syncWithServer('/api/households/update', households[index]);
       window.localStorage[dbKeys['households']!] = json.encode(households);
       return households[index];
     }
@@ -263,9 +407,7 @@ class Database {
   }
 
   Map<String, dynamic> getCentralAssets() {
-    init();
-    final data = window.localStorage[dbKeys['centralAssets']!];
-    return Map<String, dynamic>.from(json.decode(data!));
+    return _centralAssets;
   }
 
   Map<String, dynamic> updateCentralAssets(Map<String, dynamic> updates) {
@@ -294,14 +436,13 @@ class Database {
       assets['turbidity_desc'] = 'Turbidity levels normal.';
     }
 
+    _syncWithServer('/api/central-assets/update', assets);
     window.localStorage[dbKeys['centralAssets']!] = json.encode(assets);
     return assets;
   }
 
   List<Map<String, dynamic>> getMaintenanceLogs() {
-    init();
-    final data = window.localStorage[dbKeys['maintenanceLogs']!];
-    return List<Map<String, dynamic>>.from(json.decode(data!));
+    return _maintenanceLogs;
   }
 
   Map<String, dynamic> addMaintenanceLog(Map<String, dynamic> log) {
@@ -313,16 +454,14 @@ class Database {
       ...log
     };
     logs.insert(0, newLog);
+    _syncWithServer('/api/maintenance-logs/add', newLog);
     window.localStorage[dbKeys['maintenanceLogs']!] = json.encode(logs);
     return newLog;
   }
 
   Map<String, dynamic>? validateWorker(String workerId, String zone) {
-    init();
-    final data = window.localStorage[dbKeys['workers']!];
-    final List<Map<String, dynamic>> workers = List<Map<String, dynamic>>.from(json.decode(data!));
     try {
-      final worker = workers.firstWhere((w) => w['worker_id'].toString().toLowerCase() == workerId.toLowerCase());
+      final worker = _workers.firstWhere((w) => w['worker_id'].toString().toLowerCase() == workerId.toLowerCase());
       return {
         ...worker,
         'selected_zone': zone
@@ -333,10 +472,7 @@ class Database {
   }
 
   List<Map<String, dynamic>> getBillingRecords() {
-    init();
-    final data = window.localStorage[dbKeys['billingRecords']!];
-    if (data == null) return [];
-    return List<Map<String, dynamic>>.from(json.decode(data));
+    return _billingRecords;
   }
 
   List<Map<String, dynamic>> getBillingHistoryForHousehold(String houseId) {
@@ -361,6 +497,7 @@ class Database {
       ...record
     };
     records.insert(0, newRecord);
+    _syncWithServer('/api/billing-records/add', newRecord);
     window.localStorage[dbKeys['billingRecords']!] = json.encode(records);
     return newRecord;
   }

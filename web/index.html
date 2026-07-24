@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WaterHall: Worker Monitor</title>
+  <title>WATERHALL</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#070B13">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -46,18 +48,15 @@
         <!-- 1. LOGIN SCREEN -->
         <div id="view-login" class="app-view active">
           <div class="login-header">
-            <div class="login-logo">
-              <!-- Water Drop & Settings Icon -->
-              <svg viewBox="0 0 24 24">
-                <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0zM12 22a6 6 0 0 0 6-6c0-2.21-3.46-6-6-6s-6 3.79-6 6a6 6 0 0 0 6 6zm-1-8h2v2h-2zm0-4h2v2h-2z" />
-              </svg>
+            <div class="login-logo" style="background: none; box-shadow: none;">
+              <img src="logo.png" alt="WATERHALL Logo" style="width: 90px; height: 90px; object-fit: contain;">
             </div>
-            <h1>WaterHall</h1>
+            <h1>WATERHALL</h1>
             <p>Worker & Field Terminal</p>
           </div>
 
           <div class="login-form">
-            <div class="login-error" id="login-error-msg">
+            <div class="login-error" id="login-error-msg" style="display: none;">
               Invalid credentials. Use <strong>EMP-304</strong> or <strong>TAG-2026-0041</strong>.
             </div>
 
@@ -67,11 +66,11 @@
                 <svg viewBox="0 0 24 24">
                   <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                 </svg>
-                <input type="text" id="employee-id" class="form-input" placeholder="e.g. EMP-304 or TAG-2026-0041" value="EMP-304" required>
+                <input type="text" id="employee-id" class="form-input" placeholder="e.g. EMP-304 or TAG-2026-0041" required>
               </div>
             </div>
 
-            <div class="form-group">
+            <div class="form-group" id="zone-assignment-container">
               <label for="zone-assignment">Zone Assignment</label>
               <div class="input-wrapper">
                 <svg viewBox="0 0 24 24">
@@ -94,12 +93,6 @@
                 <path d="M10 17v-4H3v-2h7V7l5 5-5 5zm9 2H5v-2h14V5H5V3h14c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2z" />
               </svg>
             </button>
-            <button type="button" class="login-btn" id="btn-login-resident" style="background-color: transparent; border: 2px solid var(--amber-bright); color: var(--amber-bright); margin-top: 10px; box-shadow: none;">
-              <span>Open Resident Portal (Demo)</span>
-              <svg style="width:20px;height:20px;fill:currentColor" viewBox="0 0 24 24">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-              </svg>
-            </button>
           </div>
 
           <div class="login-footer">
@@ -113,10 +106,10 @@
         <div id="view-dashboard" class="app-view">
           <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
             <div>
-              <h2 id="dash-worker-title">WaterHall Field Monitor</h2>
+              <h2 id="dash-worker-title">WATERHALL Field Monitor</h2>
               <p>Brgy. Tagpopongan, Island Garden City of Samal</p>
             </div>
-            <button type="button" id="btn-switch-resident" class="filter-select" style="padding: 6px 10px; font-size: 11px; background-color: var(--amber-safety); border: none; font-weight: 800; border-radius: var(--radius-sm); color: var(--bg-dark); cursor: pointer; flex-shrink: 0;">Resident Mode</button>
+            <img src="logo.png" alt="WATERHALL Logo" style="width: 42px; height: 42px; object-fit: contain;">
           </div>
 
           <div class="dashboard-scroll">
@@ -430,11 +423,11 @@
             
             <!-- Worker Card -->
             <div class="profile-card" id="worker-profile-card">
-              <div class="profile-avatar" id="worker-avatar">JL</div>
+              <div class="profile-avatar" id="worker-avatar">--</div>
               <div class="profile-info">
-                <h3 class="profile-name" id="worker-name">Juan Luna</h3>
-                <span class="profile-role" id="worker-role">Field Technician</span>
-                <span class="profile-zone" id="worker-zone-lbl">Zone: Purok 2</span>
+                <h3 class="profile-name" id="worker-name">---</h3>
+                <span class="profile-role" id="worker-role">---</span>
+                <span class="profile-zone" id="worker-zone-lbl">---</span>
               </div>
             </div>
 
@@ -586,9 +579,9 @@
           <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
             <div>
               <h2 id="resident-profile-name">Resident Portal</h2>
-              <p id="resident-profile-meta">Account: TAG-2026-0041 | Purok 1</p>
+              <p id="resident-profile-meta">Account: ---</p>
             </div>
-            <button type="button" id="btn-switch-worker" class="filter-select" style="padding: 6px 10px; font-size: 11px; background-color: var(--amber-safety); border: none; font-weight: 800; border-radius: var(--radius-sm); color: var(--bg-dark); cursor: pointer; flex-shrink: 0;">Tech Mode</button>
+            <img src="logo.png" alt="WATERHALL Logo" style="width: 42px; height: 42px; object-fit: contain;">
           </div>
 
           <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
@@ -596,6 +589,35 @@
             <!-- Leak Alert Flag for Resident -->
             <div id="resident-leak-flag" class="reservoir-status-banner" style="font-weight:700; text-align:left; display:flex; align-items:center; gap:8px;">
               <!-- Loaded dynamically (Green check or Red warning) -->
+            </div>
+
+            <!-- Barangay Central Reservoir Telemetry Card (Resident view) -->
+            <div class="reservoir-card" style="border: 1.5px solid var(--navy-border); background-color: var(--white);">
+              <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
+                Central Reservoir Telemetry (IoT Live)
+              </span>
+              
+              <div class="metrics-row" style="margin-top: 10px;">
+                <div class="metric-card" style="flex: 1;">
+                  <span class="metric-card-lbl">Water Level</span>
+                  <div class="metric-card-val"><span id="resident-tank-val">--%</span></div>
+                </div>
+                <div class="metric-card" style="flex: 1;">
+                  <span class="metric-card-lbl">pH Acidity</span>
+                  <div class="metric-card-val"><span id="resident-ph-val">--</span> pH</div>
+                </div>
+              </div>
+              
+              <div class="metrics-row" style="margin-top: 8px;">
+                <div class="metric-card" style="flex: 1;">
+                  <span class="metric-card-lbl">Turbidity</span>
+                  <div class="metric-card-val"><span id="resident-turb-val">--</span> NTU</div>
+                </div>
+                <div class="metric-card" style="flex: 1;">
+                  <span class="metric-card-lbl">Water Safety</span>
+                  <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="resident-safety-status">SAFE</div>
+                </div>
+              </div>
             </div>
 
             <!-- Current Water Statement -->
@@ -727,13 +749,6 @@
         <span id="toast-text">Success Message Placeholder</span>
       </div>
 
-      <!-- Floating Quick Role Switcher Button -->
-      <button type="button" id="btn-floating-role-switch" class="floating-role-switch" style="display: none;">
-        <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: currentColor;">
-          <path d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-1.01 0-1.97-.25-2.8-.7l-1.46 1.46C8.97 19.54 10.43 20 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46C15.03 4.46 13.57 4 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z"/>
-        </svg>
-        <span id="floating-role-switch-text">Switch to Resident</span>
-      </button>
 
       <!-- HOUSE DETAILS MODAL DRAWER OVERLAY -->
       <div class="modal-overlay" id="house-detail-modal">
@@ -830,5 +845,14 @@
 
   <!-- We load our single compiled App bundle which contains db and app logic -->
   <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js')
+          .then(reg => console.log('Service Worker registered successfully.'))
+          .catch(err => console.log('Service Worker registration failed:', err));
+      });
+    }
+  </script>
 </body>
 </html>
