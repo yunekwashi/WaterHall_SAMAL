@@ -1,0 +1,17 @@
+{
+  "name": "WATERHALL",
+  "short_name": "WATERHALL",
+  "description": "IoT Water Management Worker and Resident Terminal",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070B13",
+  "theme_color": "#070B13",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

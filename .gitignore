@@ -5,3 +5,12 @@ build/
 web/app.js.map
 web/app.js.deps
 *.log
+dart-sdk/
+*.apk
+waterhall_flutter/build/
+waterhall_flutter/.dart_tool/
+android-app/app/build/
+android-app/.gradle/
+android-app/local.properties
+__pycache__/
+*.pyc

@@ -30,7 +30,7 @@ class AppController {
 
   late Map<String, Element> views;
 
-  void init() {
+  Future<void> init() async {
     // Cache elements
     loginView = document.getElementById('view-login')!;
     dashView = document.getElementById('view-dashboard')!;
@@ -52,6 +52,42 @@ class AppController {
       'view-resident': residentView
     };
 
+    // Check URL parameters for role specialization
+    final uri = Uri.parse(window.location.href);
+    final role = uri.queryParameters['role'];
+
+    if (role == 'resident') {
+      final zoneContainer = document.getElementById('zone-assignment-container');
+      if (zoneContainer != null) {
+        zoneContainer.style.display = 'none';
+      }
+      final empIdInput = document.getElementById('employee-id') as InputElement?;
+      if (empIdInput != null) {
+        empIdInput.placeholder = "e.g. TAG-2026-0041";
+      }
+      final labelEl = document.querySelector('label[for="employee-id"]');
+      if (labelEl != null) {
+        labelEl.text = "Resident Account Number";
+      }
+      final loginErrorMsg = document.getElementById('login-error-msg');
+      if (loginErrorMsg != null) {
+        loginErrorMsg.innerHtml = "Invalid Resident credentials. Use <strong>TAG-2026-0041</strong>.";
+      }
+    } else if (role == 'worker') {
+      final empIdInput = document.getElementById('employee-id') as InputElement?;
+      if (empIdInput != null) {
+        empIdInput.placeholder = "e.g. EMP-304";
+      }
+      final labelEl = document.querySelector('label[for="employee-id"]');
+      if (labelEl != null) {
+        labelEl.text = "Employee Credentials / ID";
+      }
+      final loginErrorMsg = document.getElementById('login-error-msg');
+      if (loginErrorMsg != null) {
+        loginErrorMsg.innerHtml = "Invalid Worker credentials. Use <strong>EMP-304</strong>.";
+      }
+    }
+
     // Live Clock Setup
     void updateClock() {
       final timeEl = document.getElementById('phone-time');
@@ -69,7 +105,26 @@ class AppController {
     Timer.periodic(Duration(seconds: 10), (timer) => updateClock());
 
     // Initialize DB seed
-    db.init();
+    await db.init();
+
+    // Background Auto-Refresh Telemetry Loop (Every 5 seconds)
+    // Automatically fetches server data (levels, quality, leaks) and updates resident/worker screen
+    Timer.periodic(Duration(seconds: 5), (timer) async {
+      if (currentWorker != null || currentResidentId != null) {
+        await db.refreshData();
+        if (currentResidentId != null) {
+          renderResidentDashboard();
+        } else {
+          if (activeTab == 'view-dashboard') {
+            renderDashboard();
+          } else if (activeTab == 'view-directory') {
+            renderDirectory();
+          } else if (activeTab == 'view-assets') {
+            renderAssets();
+          }
+        }
+      }
+    });
 
     // Check existing session
     final savedWorker = window.localStorage['waterhall_session'];
@@ -105,32 +160,64 @@ class AppController {
         return;
       }
 
-      // 1. Try validating as worker
-      final worker = db.validateWorker(empId, selectedZone);
-      if (worker != null) {
-        currentWorker = worker;
-        window.localStorage['waterhall_session'] = json.encode(worker);
-        window.localStorage.remove('waterhall_resident_session'); // Clear resident session
-        if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-        showApp(worker);
-        showToast('Logged in as Tech: ${worker['name']}');
-        return;
-      }
+      // Get role from URL query param
+      final uri = Uri.parse(window.location.href);
+      final role = uri.queryParameters['role'];
 
-      // 2. Try validating as resident
-      final households = db.getHouseholds();
-      try {
-        final resident = households.firstWhere((h) =>
-            h['house_id'].toString().toLowerCase() == empId.toLowerCase() ||
-            h['account_number'].toString().toLowerCase() == empId.toLowerCase());
-        
-        window.localStorage.remove('waterhall_session'); // Clear worker session
-        currentWorker = null;
-        showResidentPortal(resident['house_id']);
-        if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-        showToast('Logged in as Resident: ${resident['owner_name']}');
-        return;
-      } catch (_) {}
+      if (role == 'resident') {
+        // 2. Try validating as resident
+        final households = db.getHouseholds();
+        try {
+          final resident = households.firstWhere((h) =>
+              h['house_id'].toString().toLowerCase() == empId.toLowerCase() ||
+              h['account_number'].toString().toLowerCase() == empId.toLowerCase());
+          
+          window.localStorage.remove('waterhall_session'); // Clear worker session
+          currentWorker = null;
+          showResidentPortal(resident['house_id']);
+          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+          showToast('Logged in as Resident: ${resident['owner_name']}');
+          return;
+        } catch (_) {}
+      } else if (role == 'worker') {
+        // 1. Try validating as worker
+        final worker = db.validateWorker(empId, selectedZone);
+        if (worker != null) {
+          currentWorker = worker;
+          window.localStorage['waterhall_session'] = json.encode(worker);
+          window.localStorage.remove('waterhall_resident_session'); // Clear resident session
+          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+          showApp(worker);
+          showToast('Logged in as Tech: ${worker['name']}');
+          return;
+        }
+      } else {
+        // Unified default behavior (both allowed)
+        final worker = db.validateWorker(empId, selectedZone);
+        if (worker != null) {
+          currentWorker = worker;
+          window.localStorage['waterhall_session'] = json.encode(worker);
+          window.localStorage.remove('waterhall_resident_session'); // Clear resident session
+          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+          showApp(worker);
+          showToast('Logged in as Tech: ${worker['name']}');
+          return;
+        }
+
+        final households = db.getHouseholds();
+        try {
+          final resident = households.firstWhere((h) =>
+              h['house_id'].toString().toLowerCase() == empId.toLowerCase() ||
+              h['account_number'].toString().toLowerCase() == empId.toLowerCase());
+          
+          window.localStorage.remove('waterhall_session'); // Clear worker session
+          currentWorker = null;
+          showResidentPortal(resident['house_id']);
+          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+          showToast('Logged in as Resident: ${resident['owner_name']}');
+          return;
+        } catch (_) {}
+      }
 
       // 3. Fallback: invalid credentials
       showLoginError('Credentials "$empId" not recognized. Check details.', loginErrorMsg);
@@ -151,42 +238,9 @@ class AppController {
       activeTab = 'view-login';
 
       // Reset inputs
-      if (empIdInput != null) empIdInput.value = 'EMP-304';
+      if (empIdInput != null) empIdInput.value = '';
 
       showToast("Signed out of Tech session");
-    });
-
-    // Resident Login (Demo)
-    final loginResidentBtn = document.getElementById('btn-login-resident') as ButtonElement?;
-    loginResidentBtn?.onClick.listen((e) {
-      showResidentPortal('HH-101');
-      showToast("Logged in as Resident (Maria C. Santos)");
-    });
-
-    // Switch to Resident View from Tech Dashboard
-    final switchResidentBtn = document.getElementById('btn-switch-resident') as ButtonElement?;
-    switchResidentBtn?.onClick.listen((e) {
-      window.localStorage.remove('waterhall_session');
-      currentWorker = null;
-      bottomNav.style.display = 'none';
-
-      showResidentPortal('HH-101');
-      showToast("Bypassed to Resident Portal (Maria C. Santos)");
-    });
-
-    // Switch to Tech View from Resident Dashboard
-    final switchWorkerBtn = document.getElementById('btn-switch-worker') as ButtonElement?;
-    switchWorkerBtn?.onClick.listen((e) {
-      window.localStorage.remove('waterhall_resident_session');
-
-      // Auto-authenticate as worker Juan Luna (EMP-304) for smooth demo
-      final worker = db.validateWorker('EMP-304', 'Purok 2');
-      if (worker != null) {
-        currentWorker = worker;
-        window.localStorage['waterhall_session'] = json.encode(worker);
-        showApp(worker);
-        showToast("Bypassed to Tech Terminal (Juan Luna)");
-      }
     });
 
     // Resident Logout
@@ -196,37 +250,17 @@ class AppController {
       bottomNav.style.display = 'none';
       if (floatingRoleSwitchBtn != null) floatingRoleSwitchBtn!.style.display = 'none';
 
+      // Hide all views, show login
       views.values.forEach((v) => v.classes.remove('active'));
       loginView.classes.add('active');
       activeTab = 'view-login';
 
+      // Reset inputs
+      if (empIdInput != null) empIdInput.value = '';
+
       showToast("Signed out of Resident Portal");
     });
 
-    // Floating Quick Switcher Listener
-    floatingRoleSwitchBtn?.onClick.listen((e) {
-      closeHouseholdModal();
-
-      final resultsDropdown = document.getElementById('bill-meter-results');
-      if (resultsDropdown != null) resultsDropdown.style.display = 'none';
-
-      if (activeTab == 'view-resident') {
-        window.localStorage.remove('waterhall_resident_session');
-        final worker = db.validateWorker('EMP-304', 'Purok 2');
-        if (worker != null) {
-          currentWorker = worker;
-          window.localStorage['waterhall_session'] = json.encode(worker);
-          showApp(worker);
-          showToast("Bypassed to Tech Terminal (Juan Luna)");
-        }
-      } else {
-        window.localStorage.remove('waterhall_session');
-        currentWorker = null;
-        bottomNav.style.display = 'none';
-        showResidentPortal('HH-101');
-        showToast("Bypassed to Resident Portal (Maria C. Santos)");
-      }
-    });
 
     // Tab Navigation Handlers
     final navTabs = document.querySelectorAll('.nav-tab');
@@ -1382,6 +1416,26 @@ class AppController {
 
     final household = db.getHousehold(currentResidentId!);
     if (household == null) return;
+
+    final assets = db.getCentralAssets();
+    final resTankVal = document.getElementById('resident-tank-val');
+    final resPHVal = document.getElementById('resident-ph-val');
+    final resTurbVal = document.getElementById('resident-turb-val');
+    final resSafetyStatus = document.getElementById('resident-safety-status');
+
+    if (resTankVal != null) resTankVal.text = '${assets['main_tank_level']}%';
+    if (resPHVal != null) resPHVal.text = (assets['ph_level'] as num).toStringAsFixed(1);
+    if (resTurbVal != null) resTurbVal.text = (assets['turbidity'] as num).toStringAsFixed(1);
+
+    if (resSafetyStatus != null) {
+      if (assets['ph_status'] == 'warning' || assets['turbidity_status'] == 'warning') {
+        resSafetyStatus.text = 'ALERT';
+        resSafetyStatus.style.color = 'var(--alert-red)';
+      } else {
+        resSafetyStatus.text = 'SAFE';
+        resSafetyStatus.style.color = 'var(--alert-green)';
+      }
+    }
 
     final resProfileName = document.getElementById('resident-profile-name');
     final resProfileMeta = document.getElementById('resident-profile-meta');
