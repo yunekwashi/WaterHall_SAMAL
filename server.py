@@ -334,6 +334,16 @@ def init_db():
         )
     ''')
     
+    # 9. Announcements
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS announcements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message TEXT NOT NULL,
+            author TEXT NOT NULL,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     # Seed data if empty
     c.execute("SELECT COUNT(*) FROM households")
     if c.fetchone()[0] == 0:
@@ -456,6 +466,8 @@ class WaterHallServer(SimpleHTTPRequestHandler):
             self.add_maintenance_log()
         elif self.path == '/api/billing-records/add':
             self.add_billing_record()
+        elif self.path == '/api/announcements/add':
+            self.add_announcement()
         else:
             self.send_response(404)
             self.end_headers()
@@ -652,6 +664,10 @@ class WaterHallServer(SimpleHTTPRequestHandler):
                     'status': 'Pending' if row['payment_status'] == 'Unpaid' else 'Paid'
                 })
             
+            # 6. Announcements
+            c.execute("SELECT message, author, timestamp FROM announcements ORDER BY id DESC")
+            announcements = [dict(row) for row in c.fetchall()]
+            
             conn.close()
             
             response_data = {
@@ -659,7 +675,8 @@ class WaterHallServer(SimpleHTTPRequestHandler):
                 'centralAssets': central_assets,
                 'maintenanceLogs': maintenance_logs,
                 'workers': workers,
-                'billingRecords': billing_records
+                'billingRecords': billing_records,
+                'announcements': announcements
             }
             
             self.send_response(200)
@@ -710,7 +727,34 @@ class WaterHallServer(SimpleHTTPRequestHandler):
             
             self.send_success_response()
         except Exception as e:
-            self.send_error_response(e)
+            self.send_error_response(str(e))
+
+    def add_announcement(self):
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            if length == 0:
+                self.send_error_response("Empty request")
+                return
+                
+            body = self.rfile.read(length).decode('utf-8')
+            data = json.loads(body)
+            
+            message = data.get('message')
+            author = data.get('author')
+            
+            if not message or not author:
+                self.send_error_response("Missing message or author")
+                return
+            
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            c.execute("INSERT INTO announcements (message, author) VALUES (?, ?)", (message, author))
+            conn.commit()
+            conn.close()
+            
+            self.send_success_response()
+        except Exception as e:
+            self.send_error_response(str(e))
 
     def update_central_assets(self):
         try:

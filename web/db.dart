@@ -8,7 +8,8 @@ const dbKeys = {
   'centralAssets': 'waterhall_central_assets',
   'maintenanceLogs': 'waterhall_maintenance_logs',
   'workers': 'waterhall_workers',
-  'billingRecords': 'waterhall_billing_records'
+  'billingRecords': 'waterhall_billing_records',
+  'announcements': 'waterhall_announcements'
 };
 
 final List<Map<String, dynamic>> seedBillingRecords = [
@@ -216,6 +217,7 @@ class Database {
   List<Map<String, dynamic>> _maintenanceLogs = [];
   List<Map<String, dynamic>> _workers = [];
   List<Map<String, dynamic>> _billingRecords = [];
+  List<Map<String, dynamic>> _announcements = [];
   bool _isInitialized = false;
 
   Future<void> refreshData() async {
@@ -228,6 +230,10 @@ class Database {
       _maintenanceLogs = List<Map<String, dynamic>>.from(data['maintenanceLogs']);
       _workers = List<Map<String, dynamic>>.from(data['workers']);
       _billingRecords = List<Map<String, dynamic>>.from(data['billingRecords']);
+      if (data.containsKey('announcements')) {
+        _announcements = List<Map<String, dynamic>>.from(data['announcements']);
+        window.localStorage[dbKeys['announcements']!] = json.encode(_announcements);
+      }
       
       // Update local storage cache to stay in sync with cloud
       window.localStorage[dbKeys['households']!] = json.encode(_households);
@@ -261,6 +267,10 @@ class Database {
       _maintenanceLogs = List<Map<String, dynamic>>.from(data['maintenanceLogs']);
       _workers = List<Map<String, dynamic>>.from(data['workers']);
       _billingRecords = List<Map<String, dynamic>>.from(data['billingRecords']);
+      if (data.containsKey('announcements')) {
+        _announcements = List<Map<String, dynamic>>.from(data['announcements']);
+        window.localStorage[dbKeys['announcements']!] = json.encode(_announcements);
+      }
       
       // Update local storage cache to stay in sync with cloud
       window.localStorage[dbKeys['households']!] = json.encode(_households);
@@ -297,12 +307,18 @@ class Database {
     if (window.localStorage[dbKeys['billingRecords']!] == null) {
       window.localStorage[dbKeys['billingRecords']!] = json.encode(seedBillingRecords);
     }
+    if (window.localStorage[dbKeys['announcements']!] == null) {
+      window.localStorage[dbKeys['announcements']!] = json.encode([]);
+    }
 
     _households = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['households']!]!));
     _centralAssets = Map<String, dynamic>.from(json.decode(window.localStorage[dbKeys['centralAssets']!]!));
     _maintenanceLogs = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['maintenanceLogs']!]!));
     _workers = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['workers']!]!));
     _billingRecords = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['billingRecords']!]!));
+    if (window.localStorage.containsKey(dbKeys['announcements'])) {
+      _announcements = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['announcements']!]!));
+    }
   }
 
   // --- Offline Action Queue Logic ---
@@ -500,6 +516,26 @@ class Database {
     _syncWithServer('/api/billing-records/add', newRecord);
     window.localStorage[dbKeys['billingRecords']!] = json.encode(records);
     return newRecord;
+  }
+  
+  // --- Announcements ---
+  
+  Map<String, dynamic>? getLatestAnnouncement() {
+    if (_announcements.isEmpty) return null;
+    // Assuming the newest is first or last, we can sort or just take first
+    return _announcements.first;
+  }
+  
+  void addAnnouncement(String message, String author) {
+    final record = {
+      'message': message,
+      'author': author,
+      'timestamp': DateTime.now().toUtc().toIso8601String()
+    };
+    _announcements.insert(0, record);
+    window.localStorage[dbKeys['announcements']!] = json.encode(_announcements);
+    
+    _syncWithServer('/api/announcements/add', record);
   }
 }
 

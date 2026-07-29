@@ -310,10 +310,12 @@ body {
   background-color: var(--bg-dark);
   color: var(--text-on-dark);
   padding: 40px 24px;
-  display: flex;
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
+}
+#view-login.active {
+  display: flex;
 }
 .login-header {
   text-align: center;
@@ -1851,8 +1853,36 @@ input:checked + .slider:before {
   }
 }
 
+.announcement-banner {
+  background-color: var(--alert-amber-bg);
+  border: 1px solid #F59E0B;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 16px 16px 0 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.announcement-banner svg {
+  width: 24px;
+  height: 24px;
+  fill: #D97706;
+  flex-shrink: 0;
+}
+.announcement-title {
+  color: #D97706;
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.announcement-message {
+  color: var(--navy-primary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 /* Responsive Viewports for Mobile Chassis */
-@media (max-width: 480px) {
+@media (max-width: 1024px), (max-height: 900px) {
   body {
     background-color: var(--bg-dark);
   }
@@ -1871,13 +1901,12 @@ input:checked + .slider:before {
     display: none;
   }
   .system-status-bar {
-    padding: 10px 16px 0 16px;
-    height: 44px;
+    display: none;
   }
   .app-screen {
     border-radius: 0;
   }
   .home-indicator-bar {
-    height: 20px;
+    display: none;
   }
 }

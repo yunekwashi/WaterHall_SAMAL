@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,6 +38,20 @@ class _MainScreenState extends State<MainScreen> {
   String _role = "worker"; // "worker" or "resident"
   bool _isLoading = true;
   bool _initialized = false;
+  bool _serverError = false;
+  Timer? _errorTimer;
+
+  void _startErrorTimer() {
+    _errorTimer?.cancel();
+    _errorTimer = Timer(const Duration(seconds: 30), () {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _serverError = true;
+        });
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -56,21 +72,33 @@ class _MainScreenState extends State<MainScreen> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (String url) {
+            _errorTimer?.cancel();
             setState(() {
               _isLoading = true;
+              _serverError = false;
             });
           },
           onPageFinished: (String url) {
-            setState(() {
-              _isLoading = false;
-            });
+            if (_errorTimer == null || !_errorTimer!.isActive) {
+              setState(() {
+                _isLoading = false;
+              });
+            }
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint("Web Resource Error: ${error.description}");
+            // isForMainFrame is only available in some platform implementations or webview_flutter 4.x
+            // So we just trigger the timer on any error while loading the main page.
+            if (_isLoading) {
+              _startErrorTimer();
+            }
           },
         ),
-      )
-      ..loadRequest(Uri.parse(_getAppUrl()));
+      );
+
+    await _controller.clearCache();
+    await _controller.clearLocalStorage();
+    _controller.loadRequest(Uri.parse(_getAppUrl()));
 
     setState(() {
       _initialized = true;
@@ -155,10 +183,14 @@ class _MainScreenState extends State<MainScreen> {
                         _ipAddress = cleanIp;
                         _role = tempRole;
                         _isLoading = true;
+                        _serverError = false;
                       });
 
+                      _errorTimer?.cancel();
+                      await _controller.clearCache();
+                      await _controller.clearLocalStorage();
                       _controller.loadRequest(Uri.parse(_getAppUrl()));
-                      if (mounted) Navigator.pop(context);
+                      if (context.mounted) Navigator.pop(context);
                     }
                   },
                   child: const Text("Save & Connect"),
@@ -181,20 +213,67 @@ class _MainScreenState extends State<MainScreen> {
           await _controller.goBack();
         } else {
           // Close the app if we cannot go back
-          Navigator.of(context).pop();
+          if (context.mounted) {
+            Navigator.of(context).pop();
+          }
         }
       },
       child: Scaffold(
         body: SafeArea(
           child: Stack(
             children: [
-              if (_initialized)
+              if (_initialized && !_serverError)
                 WebViewWidget(controller: _controller)
+              else if (_serverError)
+                Container(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.cloud_off, size: 100, color: Colors.blueGrey),
+                          const SizedBox(height: 24),
+                          const Text(
+                            "Server Offline",
+                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                          ),
+                          const SizedBox(height: 24),
+                          const Text(
+                            "Sorry, the server is shut down. Meanwhile, monitor the app if you want to get an update for your bill.\n\nThank you for your understanding.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.white70, fontSize: 16, height: 1.5),
+                          ),
+                          const SizedBox(height: 40),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _isLoading = true;
+                                _serverError = false;
+                              });
+                              _errorTimer?.cancel();
+                              _controller.loadRequest(Uri.parse(_getAppUrl()));
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text("Retry Connection"),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
               else
                 const Center(child: CircularProgressIndicator()),
               
               if (_isLoading)
-                const Center(child: CircularProgressIndicator()),
+                Container(
+                  color: Colors.black54, // Blocks touches and dims the background
+                  child: const Center(child: CircularProgressIndicator()),
+                ),
 
               // Floating Settings Gear button in top-right
               Positioned(

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'waterhall-cache-v1';
+const CACHE_NAME = 'waterhall-cache-v2.6.5';
 const ASSETS = [
   '/index.html',
   '/styles.css',
@@ -7,9 +7,10 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // cache.addAll(ASSETS); // Cache assets for offline use
+      return cache.addAll(ASSETS);
     })
   );
 });
@@ -24,19 +25,24 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  // Let the browser handle standard API requests directly through the network
   if (event.request.url.includes('/api/')) {
     return;
   }
   
+  // Network-First strategy: always fetch latest from server, fallback to cache if offline
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request);
+    fetch(event.request).then((networkResponse) => {
+      return caches.open(CACHE_NAME).then((cache) => {
+        cache.put(event.request, networkResponse.clone());
+        return networkResponse;
+      });
+    }).catch(() => {
+      return caches.match(event.request);
     })
   );
 });
