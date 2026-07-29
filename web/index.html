@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WATERHALL</title>
-  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=2.6.7">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#070B13">
 </head>
@@ -93,11 +94,17 @@
                 <path d="M10 17v-4H3v-2h7V7l5 5-5 5zm9 2H5v-2h14V5H5V3h14c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2z" />
               </svg>
             </button>
+            <button type="button" class="login-btn" id="btn-quick-login" style="margin-top: 10px; display: none; background-color: var(--neon-cyan); color: var(--navy-primary);">
+              <span>Quick Login (Demo Resident)</span>
+            </button>
+            <button type="button" class="login-btn" id="btn-quick-login-worker" style="margin-top: 10px; display: none; background-color: var(--amber-bright); color: var(--navy-primary);">
+              <span>Quick Login (Demo Worker)</span>
+            </button>
           </div>
 
           <div class="login-footer">
             <strong>Barangay Tagpopongan, IGACOS</strong><br>
-            IoT Water Management System v2.6.4
+            IoT Water Management System v2.6.5
           </div>
         </div>
 
@@ -442,6 +449,20 @@
                 <div class="stat-lbl">Resolved Tasks</div>
               </div>
             </div>
+            
+            <!-- Broadcast Announcement Form -->
+            <div class="log-form-card" style="margin-top: 16px;">
+              <span class="log-form-title">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                </svg>
+                Broadcast Announcement
+              </span>
+              <div class="log-form-field">
+                <textarea id="worker-announcement-input" class="log-textarea" placeholder="Type a message to broadcast to all residents (e.g., Maintenance schedule)..."></textarea>
+              </div>
+              <button type="button" class="submit-log-btn" id="btn-broadcast-announcement" style="background-color: var(--navy-primary);">Broadcast Message</button>
+            </div>
 
             <!-- Profile Menu Options -->
             <div class="profile-menu">
@@ -574,29 +595,30 @@
           </div>
         </div>
 
-        <!-- 7. RESIDENT PORTAL SCREEN -->
-        <div id="view-resident" class="app-view">
+        <!-- 7. RESIDENT PORTAL SCREEN (HOME MODULE) -->
+        <div id="view-resident-home" class="app-view">
           <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
             <div>
-              <h2 id="resident-profile-name">Resident Portal</h2>
-              <p id="resident-profile-meta">Account: ---</p>
+              <h2 id="resident-profile-name-home">Resident Portal</h2>
+              <p id="resident-profile-meta-home">Account: ---</p>
             </div>
             <img src="logo.png" alt="WATERHALL Logo" style="width: 42px; height: 42px; object-fit: contain;">
+          </div>
+          
+          <div id="resident-announcement-banner" class="announcement-banner" style="display: none;">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <div style="flex:1;">
+              <div class="announcement-title">Barangay Announcement</div>
+              <div class="announcement-message" id="resident-announcement-message"></div>
+            </div>
           </div>
 
           <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
             
-            <!-- Leak Alert Flag for Resident -->
-            <div id="resident-leak-flag" class="reservoir-status-banner" style="font-weight:700; text-align:left; display:flex; align-items:center; gap:8px;">
-              <!-- Loaded dynamically (Green check or Red warning) -->
-            </div>
-
-            <!-- Barangay Central Reservoir Telemetry Card (Resident view) -->
             <div class="reservoir-card" style="border: 1.5px solid var(--navy-border); background-color: var(--white);">
               <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
                 Central Reservoir Telemetry (IoT Live)
               </span>
-              
               <div class="metrics-row" style="margin-top: 10px;">
                 <div class="metric-card" style="flex: 1;">
                   <span class="metric-card-lbl">Water Level</span>
@@ -607,7 +629,6 @@
                   <div class="metric-card-val"><span id="resident-ph-val">--</span> pH</div>
                 </div>
               </div>
-              
               <div class="metrics-row" style="margin-top: 8px;">
                 <div class="metric-card" style="flex: 1;">
                   <span class="metric-card-lbl">Turbidity</span>
@@ -620,12 +641,10 @@
               </div>
             </div>
 
-            <!-- Current Water Statement -->
             <div class="reservoir-card" style="border:1.5px solid var(--navy-border); background-color:var(--white);">
               <span class="reservoir-title" style="font-size:12px; font-weight:800; text-transform:uppercase; text-align:center; display:block; border-bottom:1.5px solid var(--off-white); padding-bottom:8px; margin-bottom:8px; color:var(--navy-primary)">
                 Current Billing Statement
               </span>
-              
               <div style="display:flex; flex-direction:column; gap:10px; font-size:13px;">
                 <div style="display:flex; justify-content:space-between">
                   <span style="color:var(--text-muted)">Billing Cycle:</span>
@@ -666,7 +685,21 @@
               </div>
             </div>
 
-            <!-- Consumption History Chart -->
+          </div>
+        </div>
+
+        <!-- 8. RESIDENT PORTAL SCREEN (LEDGER MODULE) -->
+        <div id="view-resident-ledger" class="app-view">
+          <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div>
+              <h2 id="resident-profile-name-ledger">My Ledger</h2>
+              <p>Billing History & Trend</p>
+            </div>
+            <img src="logo.png" alt="WATERHALL Logo" style="width: 42px; height: 42px; object-fit: contain;">
+          </div>
+          
+          <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
+            
             <div class="chart-card">
               <span class="chart-title">Water Consumption Trend (m³)</span>
               <div class="chart-canvas-wrapper" id="resident-chart-container">
@@ -674,7 +707,32 @@
               </div>
             </div>
 
-            <!-- Report Issue Ticket Form -->
+            <div class="modal-logs-card">
+              <span class="modal-logs-title">Past Water Ledger History</span>
+              <div class="log-scroller" id="resident-history-list" style="max-height:300px; overflow-y:auto;">
+                <!-- timeline of past bills -->
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- 9. RESIDENT PORTAL SCREEN (SUPPORT MODULE) -->
+        <div id="view-resident-support" class="app-view">
+          <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div>
+              <h2 id="resident-profile-name-support">Support</h2>
+              <p>Report Issues & Alerts</p>
+            </div>
+            <img src="logo.png" alt="WATERHALL Logo" style="width: 42px; height: 42px; object-fit: contain;">
+          </div>
+          
+          <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
+            
+            <div id="resident-leak-flag" class="reservoir-status-banner" style="font-weight:700; text-align:left; display:flex; align-items:center; gap:8px;">
+              <!-- Loaded dynamically (Green check or Red warning) -->
+            </div>
+
             <div class="log-form-card">
               <span class="log-form-title">
                 <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:var(--amber-safety)">
@@ -682,32 +740,21 @@
                 </svg>
                 Report Asset Issue to Technicians
               </span>
-              
               <div class="log-form-field">
                 <label for="resident-log-desc">Describe Leak or Pressure Issue</label>
                 <textarea id="resident-log-desc" class="log-textarea" placeholder="e.g. Faucet flow is weak, or wet soil near meter coupler..."></textarea>
               </div>
-
               <button type="button" class="submit-log-btn" id="btn-resident-submit-log">Send Alert Notification</button>
             </div>
 
-            <!-- Historical Invoices Timeline -->
-            <div class="modal-logs-card">
-              <span class="modal-logs-title">Past Water Ledger History</span>
-              <div class="log-scroller" id="resident-history-list" style="max-height:140px; overflow-y:auto;">
-                <!-- timeline of past bills -->
-              </div>
-            </div>
-
-            <!-- Sign Out -->
-            <button type="button" class="logout-btn" id="btn-resident-logout" style="margin-top:10px">Sign Out of Portal</button>
+            <button type="button" class="logout-btn" id="btn-resident-logout" style="margin-top:20px">Sign Out of Portal</button>
 
           </div>
         </div>
 
       </div> <!-- End Views Container -->
 
-      <!-- BOTTOM NAVIGATION BAR (Hidden on Login screen) -->
+      <!-- BOTTOM NAVIGATION BAR (Worker) (Hidden on Login screen) -->
       <nav class="bottom-nav" id="app-bottom-nav" style="display: none;">
         <a href="#" class="nav-tab active" data-target="view-dashboard">
           <svg viewBox="0 0 24 24">
@@ -833,26 +880,31 @@
           </div>
         </div>
       </div>
+      <!-- BOTTOM NAVIGATION BAR (Resident) -->
+      <nav class="bottom-nav" id="resident-bottom-nav" style="display: none;">
+        <a href="#" class="nav-tab active" data-target="view-resident-home">
+          <svg viewBox="0 0 24 24">
+            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+          </svg>
+          <span>Home</span>
+        </a>
+        <a href="#" class="nav-tab" data-target="view-resident-ledger">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z" />
+          </svg>
+          <span>Ledger</span>
+        </a>
+        <a href="#" class="nav-tab" data-target="view-resident-support">
+          <svg viewBox="0 0 24 24">
+            <path d="M11 15h2v2h-2zm0-8h2v6h-2zm1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" />
+          </svg>
+          <span>Support</span>
+        </a>
+      </nav>
 
-    </div> <!-- End App Screen -->
-
-    <!-- Phone Home Indicator swipe simulated bar -->
-    <div class="home-indicator-bar">
-      <div class="home-indicator"></div>
-    </div>
-
-  </div> <!-- End Simulated Mobile Container -->
-
-  <!-- We load our single compiled App bundle which contains db and app logic -->
-  <script src="app.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('service-worker.js')
-          .then(reg => console.log('Service Worker registered successfully.'))
-          .catch(err => console.log('Service Worker registration failed:', err));
       });
     }
   </script>
+  <script src="app.js?v=2.6.7"></script>
 </body>
 </html>

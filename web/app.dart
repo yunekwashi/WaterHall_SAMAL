@@ -23,8 +23,11 @@ class AppController {
   late Element assetsView;
   late Element profileView;
   late Element billingView;
-  late Element residentView;
+  late Element residentViewHome;
+  late Element residentViewLedger;
+  late Element residentViewSupport;
   late Element bottomNav;
+  late Element residentBottomNav;
   late Element? floatingRoleSwitchBtn;
   late Element? floatingRoleSwitchText;
 
@@ -38,8 +41,11 @@ class AppController {
     assetsView = document.getElementById('view-assets')!;
     profileView = document.getElementById('view-profile')!;
     billingView = document.getElementById('view-billing')!;
-    residentView = document.getElementById('view-resident')!;
+    residentViewHome = document.getElementById('view-resident-home')!;
+    residentViewLedger = document.getElementById('view-resident-ledger')!;
+    residentViewSupport = document.getElementById('view-resident-support')!;
     bottomNav = document.getElementById('app-bottom-nav')!;
+    residentBottomNav = document.getElementById('resident-bottom-nav')!;
     floatingRoleSwitchBtn = document.getElementById('btn-floating-role-switch');
     floatingRoleSwitchText = document.getElementById('floating-role-switch-text');
 
@@ -49,7 +55,9 @@ class AppController {
       'view-assets': assetsView,
       'view-profile': profileView,
       'view-billing': billingView,
-      'view-resident': residentView
+      'view-resident-home': residentViewHome,
+      'view-resident-ledger': residentViewLedger,
+      'view-resident-support': residentViewSupport
     };
 
     // Check URL parameters for role specialization
@@ -69,9 +77,21 @@ class AppController {
       if (labelEl != null) {
         labelEl.text = "Resident Account Number";
       }
+      final titleEl = document.querySelector('.login-header p');
+      if (titleEl != null) {
+        titleEl.text = "Resident Portal Login";
+      }
+      final btnTextEl = document.querySelector('#btn-login span');
+      if (btnTextEl != null) {
+        btnTextEl.text = "Sign In to Portal";
+      }
       final loginErrorMsg = document.getElementById('login-error-msg');
       if (loginErrorMsg != null) {
         loginErrorMsg.innerHtml = "Invalid Resident credentials. Use <strong>TAG-2026-0041</strong>.";
+      }
+      final quickLoginBtn = document.getElementById('btn-quick-login');
+      if (quickLoginBtn != null) {
+        quickLoginBtn.style.display = 'flex';
       }
     } else if (role == 'worker') {
       final empIdInput = document.getElementById('employee-id') as InputElement?;
@@ -82,9 +102,21 @@ class AppController {
       if (labelEl != null) {
         labelEl.text = "Employee Credentials / ID";
       }
+      final titleEl = document.querySelector('.login-header p');
+      if (titleEl != null) {
+        titleEl.text = "Worker & Field Terminal";
+      }
+      final btnTextEl = document.querySelector('#btn-login span');
+      if (btnTextEl != null) {
+        btnTextEl.text = "Sign In to Terminal";
+      }
       final loginErrorMsg = document.getElementById('login-error-msg');
       if (loginErrorMsg != null) {
         loginErrorMsg.innerHtml = "Invalid Worker credentials. Use <strong>EMP-304</strong>.";
+      }
+      final quickLoginBtnWorker = document.getElementById('btn-quick-login-worker');
+      if (quickLoginBtnWorker != null) {
+        quickLoginBtnWorker.style.display = 'flex';
       }
     }
 
@@ -135,9 +167,12 @@ class AppController {
         showApp(currentWorker!);
       } catch (e) {
         window.localStorage.remove('waterhall_session');
+        enforceLoginGate();
       }
     } else if (savedResident != null) {
       showResidentPortal(savedResident);
+    } else {
+      enforceLoginGate();
     }
 
     // Bind Event Listeners
@@ -147,9 +182,37 @@ class AppController {
   void bindEvents() {
     // Authentication Handlers
     final loginBtn = document.getElementById('btn-login') as ButtonElement?;
+    final quickLoginBtn = document.getElementById('btn-quick-login') as ButtonElement?;
+    final quickLoginBtnWorker = document.getElementById('btn-quick-login-worker') as ButtonElement?;
     final empIdInput = document.getElementById('employee-id') as InputElement?;
     final zoneSelect = document.getElementById('zone-assignment') as SelectElement?;
     final loginErrorMsg = document.getElementById('login-error-msg');
+
+    quickLoginBtn?.onClick.listen((e) {
+      final households = db.getHouseholds();
+      try {
+        final resident = households.firstWhere((h) =>
+            h['account_number'].toString().toLowerCase() == 'tag-2026-0041');
+        
+        window.localStorage.remove('waterhall_session');
+        currentWorker = null;
+        showResidentPortal(resident['house_id']);
+        if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+        showToast('Quick Login: ${resident['owner_name']}');
+      } catch (_) {}
+    });
+
+    quickLoginBtnWorker?.onClick.listen((e) {
+      final worker = db.validateWorker('EMP-304', 'Purok 2');
+      if (worker != null) {
+        currentWorker = worker;
+        window.localStorage['waterhall_session'] = json.encode(worker);
+        window.localStorage.remove('waterhall_resident_session'); // Clear resident session
+        if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+        showApp(worker);
+        showToast('Quick Login: Tech ${worker['name']}');
+      }
+    });
 
     loginBtn?.onClick.listen((e) {
       final empId = empIdInput?.value?.trim() ?? '';
@@ -227,19 +290,8 @@ class AppController {
     logoutBtn?.onClick.listen((e) {
       window.localStorage.remove('waterhall_session');
       currentWorker = null;
-
-      // Reset navigation
-      bottomNav.style.display = 'none';
-      if (floatingRoleSwitchBtn != null) floatingRoleSwitchBtn!.style.display = 'none';
-
-      // Hide all views, show login
-      views.values.forEach((v) => v.classes.remove('active'));
-      loginView.classes.add('active');
-      activeTab = 'view-login';
-
-      // Reset inputs
+      enforceLoginGate();
       if (empIdInput != null) empIdInput.value = '';
-
       showToast("Signed out of Tech session");
     });
 
@@ -247,17 +299,9 @@ class AppController {
     final residentLogoutBtn = document.getElementById('btn-resident-logout') as ButtonElement?;
     residentLogoutBtn?.onClick.listen((e) {
       window.localStorage.remove('waterhall_resident_session');
-      bottomNav.style.display = 'none';
-      if (floatingRoleSwitchBtn != null) floatingRoleSwitchBtn!.style.display = 'none';
-
-      // Hide all views, show login
-      views.values.forEach((v) => v.classes.remove('active'));
-      loginView.classes.add('active');
-      activeTab = 'view-login';
-
-      // Reset inputs
+      currentResidentId = null;
+      enforceLoginGate();
       if (empIdInput != null) empIdInput.value = '';
-
       showToast("Signed out of Resident Portal");
     });
 
@@ -338,7 +382,8 @@ class AppController {
         'worker_id': currentWorker!['worker_id'],
         'purok': currentWorker!['selected_zone'],
         'description': descText,
-        'status_resolved': resolvedChecked
+        'status_resolved': resolvedChecked,
+        'date': DateTime.now().toUtc().toIso8601String()
       };
 
       db.addMaintenanceLog(newLog);
@@ -346,6 +391,7 @@ class AppController {
       // If marked resolved, update household status
       if (resolvedChecked) {
         db.updateHouseholdLeak(activeHouseholdId!, 'normal');
+        final modalLeakToggle = document.getElementById('modal-leak-toggle') as CheckboxInputElement?;
         if (modalLeakToggle != null) modalLeakToggle.checked = false;
         updateLeakToggleLabel('normal');
       }
@@ -441,6 +487,23 @@ class AppController {
 
       renderDashboard();
     });
+
+    // Broadcast Announcement (Worker Profile)
+    final btnBroadcast = document.getElementById('btn-broadcast-announcement');
+    btnBroadcast?.onClick.listen((e) {
+      if (currentWorker == null) return;
+      final inputEl = document.getElementById('worker-announcement-input') as TextAreaElement?;
+      final msg = inputEl?.value?.trim() ?? '';
+      
+      if (msg.isEmpty) {
+        showToast('Message cannot be empty');
+        return;
+      }
+      
+      db.addAnnouncement(msg, currentWorker!['name']);
+      if (inputEl != null) inputEl.value = '';
+      showToast('Announcement broadcasted!');
+    });
   }
 
   void showLoginError(String msg, Element? errorEl) {
@@ -450,18 +513,32 @@ class AppController {
     }
   }
 
+  void enforceLoginGate() {
+    views.values.forEach((v) => v.classes.remove('active'));
+    loginView.classes.add('active');
+    activeTab = 'view-login';
+    bottomNav.style.display = 'none';
+    residentBottomNav.style.display = 'none'; // ADDED: hide resident nav on logout
+    if (floatingRoleSwitchBtn != null) {
+      floatingRoleSwitchBtn!.style.display = 'none';
+    }
+  }
+
   void showApp(Map<String, dynamic> worker) {
     // Hide login
     loginView.classes.remove('active');
+    views.values.forEach((v) => v.classes.remove('active'));
+    
+    currentResidentId = null;
+    window.localStorage.remove('waterhall_resident_session');
 
     // Show nav
-    bottomNav.style.display = 'flex';
+    bottomNav.setAttribute('style', 'display: flex !important');
+    residentBottomNav.setAttribute('style', 'display: none !important');
 
     // Show quick switch
     if (floatingRoleSwitchBtn != null) {
-      floatingRoleSwitchBtn!.style.display = 'flex';
-      floatingRoleSwitchBtn!.classes.remove('resident-mode');
-      if (floatingRoleSwitchText != null) floatingRoleSwitchText!.text = 'Customer Mode';
+      floatingRoleSwitchBtn!.style.display = 'none'; // ALWAYS HIDDEN
     }
 
     switchTab('view-dashboard');
@@ -474,6 +551,10 @@ class AppController {
   }
 
   void switchTab(String targetViewId) {
+    if (currentWorker == null && currentResidentId == null && targetViewId != 'view-login') {
+      enforceLoginGate();
+      return;
+    }
     activeTab = targetViewId;
 
     final navTabs = document.querySelectorAll('.nav-tab');
@@ -504,6 +585,8 @@ class AppController {
       renderProfile();
     } else if (targetViewId == 'view-billing') {
       renderBillingView(null);
+    } else if (targetViewId == 'view-resident-home' || targetViewId == 'view-resident-ledger' || targetViewId == 'view-resident-support') {
+      renderResidentDashboard();
     }
   }
 
@@ -1362,7 +1445,7 @@ class AppController {
             <strong>₱${(bill['total_due'] as num).toStringAsFixed(2)}</strong>
           </div>
           <div style="font-size:9px;color:var(--text-muted);margin-top:2px;display:flex;justify-content:space-between">
-            <span>Bill ID: ${bill['bill_id']}</span>
+            <span>$formattedDate (${bill['bill_id']})</span>
             <span>Tech: ${bill['billed_by']}</span>
           </div>
         ''';
@@ -1395,20 +1478,21 @@ class AppController {
   void showResidentPortal(String houseId) {
     currentResidentId = houseId;
     window.localStorage['waterhall_resident_session'] = houseId;
+    currentWorker = null; // EXPLICITLY ENSURE worker is null
+    window.localStorage.remove('waterhall_session'); // EXPLICITLY ENSURE worker session is clear
 
+    loginView.classes.remove('active');
     views.values.forEach((v) => v.classes.remove('active'));
-    bottomNav.style.display = 'none';
+    
+    // EXPLICITLY hide worker nav and show resident nav
+    bottomNav.setAttribute('style', 'display: none !important');
+    residentBottomNav.setAttribute('style', 'display: flex !important');
 
     if (floatingRoleSwitchBtn != null) {
-      floatingRoleSwitchBtn!.style.display = 'flex';
-      floatingRoleSwitchBtn!.classes.add('resident-mode');
-      if (floatingRoleSwitchText != null) floatingRoleSwitchText!.text = 'Tech Mode';
+      floatingRoleSwitchBtn!.style.display = 'none'; // NEVER show this to residents
     }
 
-    residentView.classes.add('active');
-    activeTab = 'view-resident';
-
-    renderResidentDashboard();
+    switchTab('view-resident-home');
   }
 
   void renderResidentDashboard() {
@@ -1416,6 +1500,18 @@ class AppController {
 
     final household = db.getHousehold(currentResidentId!);
     if (household == null) return;
+
+    final latestAnnouncement = db.getLatestAnnouncement();
+    final bannerEl = document.getElementById('resident-announcement-banner');
+    final messageEl = document.getElementById('resident-announcement-message');
+    if (bannerEl != null && messageEl != null) {
+      if (latestAnnouncement != null) {
+        messageEl.text = latestAnnouncement['message'];
+        bannerEl.style.display = 'flex';
+      } else {
+        bannerEl.style.display = 'none';
+      }
+    }
 
     final assets = db.getCentralAssets();
     final resTankVal = document.getElementById('resident-tank-val');
@@ -1437,8 +1533,8 @@ class AppController {
       }
     }
 
-    final resProfileName = document.getElementById('resident-profile-name');
-    final resProfileMeta = document.getElementById('resident-profile-meta');
+    final resProfileName = document.getElementById('resident-profile-name-home');
+    final resProfileMeta = document.getElementById('resident-profile-meta-home');
 
     if (resProfileName != null) resProfileName.text = household['owner_name'];
     if (resProfileMeta != null) {

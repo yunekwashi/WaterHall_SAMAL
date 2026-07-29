@@ -1,0 +1,6 @@
+analyzer:
+  exclude:
+    - dart-sdk/**
+    - waterhall_flutter/build/**
+    - waterhall_flutter/.dart_tool/**
+    - android-app/**
