@@ -34,7 +34,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late final WebViewController _controller;
-  String _ipAddress = "192.168.254.140";
+  String _ipAddress = "172.31.1.213";
   String _role = "worker"; // "worker" or "resident"
   bool _isLoading = true;
   bool _initialized = false;
@@ -62,7 +62,7 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _loadSettingsAndInitWebView() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _ipAddress = prefs.getString("server_ip") ?? "192.168.254.140";
+      _ipAddress = prefs.getString("server_ip") ?? "172.31.1.213";
       _role = prefs.getString("app_role") ?? "worker";
     });
 
@@ -106,7 +106,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   String _getAppUrl() {
-    return "http://$_ipAddress:8000/index.html?role=$_role";
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    return "http://$_ipAddress:8000/index.html?role=$_role&t=$timestamp";
   }
 
   void _showSettingsDialog() {

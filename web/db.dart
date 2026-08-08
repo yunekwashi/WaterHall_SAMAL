@@ -69,6 +69,8 @@ final List<Map<String, dynamic>> seedWorkers = [
 final List<Map<String, dynamic>> seedHouseholds = [
   {
     'house_id': 'HH-101',
+    'lot': 'Lot 1',
+    'password': null,
     'owner_name': 'Maria C. Santos',
     'purok': 'Purok 1',
     'account_number': 'TAG-2026-0041',
@@ -80,6 +82,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-102',
+    'lot': 'Lot 2',
+    'password': null,
     'owner_name': 'Ramon P. Del Rosario',
     'purok': 'Purok 1',
     'account_number': 'TAG-2026-0105',
@@ -91,6 +95,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-103',
+    'lot': 'Lot 3',
+    'password': null,
     'owner_name': 'Elena F. Garcia',
     'purok': 'Purok 2',
     'account_number': 'TAG-2026-0312',
@@ -102,6 +108,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-104',
+    'lot': 'Lot 4',
+    'password': null,
     'owner_name': 'Delfin S. Alcantara',
     'purok': 'Purok 2',
     'account_number': 'TAG-2026-0421',
@@ -113,6 +121,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-105',
+    'lot': 'Lot 5',
+    'password': null,
     'owner_name': 'Clara M. Aquino',
     'purok': 'Purok 3',
     'account_number': 'TAG-2026-0810',
@@ -124,6 +134,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-106',
+    'lot': 'Lot 6',
+    'password': null,
     'owner_name': 'Manuel L. Roxas',
     'purok': 'Purok 3',
     'account_number': 'TAG-2026-0925',
@@ -135,6 +147,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-107',
+    'lot': 'Lot 7',
+    'password': null,
     'owner_name': 'Felipe A. Agoncillo',
     'purok': 'Purok 4',
     'account_number': 'TAG-2026-1102',
@@ -146,6 +160,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-108',
+    'lot': 'Lot 8',
+    'password': null,
     'owner_name': 'Gregoria de Jesus',
     'purok': 'Purok 4',
     'account_number': 'TAG-2026-1349',
@@ -157,6 +173,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-109',
+    'lot': 'Lot 9',
+    'password': null,
     'owner_name': 'Antonio N. Luna',
     'purok': 'Purok 5',
     'account_number': 'TAG-2026-1509',
@@ -168,6 +186,8 @@ final List<Map<String, dynamic>> seedHouseholds = [
   },
   {
     'house_id': 'HH-110',
+    'lot': 'Lot 10',
+    'password': null,
     'owner_name': 'Leonor Rivera',
     'purok': 'Purok 6',
     'account_number': 'TAG-2026-1772',
@@ -220,7 +240,7 @@ class Database {
   List<Map<String, dynamic>> _announcements = [];
   bool _isInitialized = false;
 
-  Future<void> refreshData() async {
+  Future<bool> refreshData() async {
     try {
       final response = await HttpRequest.getString('/api/all-data');
       final data = json.decode(response) as Map<String, dynamic>;
@@ -244,8 +264,10 @@ class Database {
       
       print("Database refreshed successfully from server.");
       syncUnsyncedData();
+      return true;
     } catch (e) {
       print("Error refreshing data from server: $e");
+      return false;
     }
   }
 
@@ -475,9 +497,37 @@ class Database {
     return newLog;
   }
 
-  Map<String, dynamic>? validateWorker(String workerId, String zone) {
+  Map<String, dynamic>? validateResident(String purokLot, String password) {
+    final households = getHouseholds();
     try {
-      final worker = _workers.firstWhere((w) => w['worker_id'].toString().toLowerCase() == workerId.toLowerCase());
+      final resident = households.firstWhere((h) {
+        String combined = "${h['purok']} ${h['lot'] ?? ''}".toLowerCase().trim();
+        return combined == purokLot.toLowerCase().trim() || h['account_number'].toString().toLowerCase() == purokLot.toLowerCase().trim();
+      });
+
+      if (resident['password'] == null || resident['password'] == '') {
+        resident['password'] = password;
+        _syncWithServer('/api/households/update', resident);
+        window.localStorage[dbKeys['households']!] = json.encode(households);
+        return resident;
+      } else if (resident['password'] == password) {
+        return resident;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<Map<String, dynamic>> getWorkers() {
+    return _workers;
+  }
+
+  Map<String, dynamic>? validateWorker(String workerName, String password, String zone) {
+    try {
+      final worker = _workers.firstWhere((w) => 
+          w['name'].toString().toLowerCase() == workerName.toLowerCase().trim() && 
+          w['worker_id'].toString().toLowerCase() == password.toLowerCase().trim());
       return {
         ...worker,
         'selected_zone': zone
@@ -536,6 +586,55 @@ class Database {
     window.localStorage[dbKeys['announcements']!] = json.encode(_announcements);
     
     _syncWithServer('/api/announcements/add', record);
+  }
+
+  // --- Registration ---
+
+  Map<String, dynamic> registerResident(String ownerName, String purok, String lot, String password) {
+    final households = getHouseholds();
+    final rand = math.Random();
+    
+    // Check if purok/lot combo already exists
+    if (households.any((h) => h['purok'] == purok && h['lot'] == lot)) {
+      throw Exception("Lot $lot in $purok is already registered.");
+    }
+    
+    final newResident = {
+      'house_id': 'HH-${1000 + rand.nextInt(9000)}',
+      'account_number': 'TAG-2026-${(1000 + rand.nextInt(9000)).toString()}',
+      'owner_name': ownerName,
+      'purok': purok,
+      'lot': lot,
+      'password': password,
+      'monthly_consumption_m3': 0.0,
+      'status': 'Normal',
+      'total_due': 0.0
+    };
+    
+    households.add(newResident);
+    _syncWithServer('/api/households/add', newResident);
+    window.localStorage[dbKeys['households']!] = json.encode(households);
+    
+    return newResident;
+  }
+
+  Map<String, dynamic> registerWorker(String name, String role, String zone, String password) {
+    final rand = math.Random();
+    final newWorker = {
+      'worker_id': 'EMP-${300 + rand.nextInt(900)}', // Password also serves as worker_id theoretically, but user said "password same as at the worker it can register it self". Wait, the prompt says "password same as at the worker". Usually the worker password IS their worker_id! Let's just use the password as their worker_id!
+      'name': name,
+      'role': role,
+      'zone': zone
+    };
+    
+    // In our logic, the worker password IS their worker_id. So let's ensure worker_id = password.
+    newWorker['worker_id'] = password.isNotEmpty ? password : 'EMP-${300 + rand.nextInt(900)}';
+
+    _workers.add(newWorker);
+    _syncWithServer('/api/workers/add', newWorker);
+    window.localStorage[dbKeys['workers']!] = json.encode(_workers);
+    
+    return newWorker;
   }
 }
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WATERHALL</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2.6.7">
+  <link rel="stylesheet" href="styles.css?v=2.6.8">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#070B13">
 </head>
@@ -17,6 +17,11 @@
 
   <!-- Simulated Mobile Phone Chassis -->
   <div class="device-container">
+    
+    <!-- Pull to Refresh Indicator -->
+    <div id="pull-refresh-indicator" class="pull-refresh-indicator">
+      <div class="spinner"></div>
+    </div>
     
     <!-- Phone Camera Notch -->
     <div class="device-camera"></div>
@@ -62,12 +67,22 @@
             </div>
 
             <div class="form-group">
-              <label for="employee-id">Credentials (ID or Account #)</label>
+              <label for="employee-id">Username</label>
               <div class="input-wrapper">
                 <svg viewBox="0 0 24 24">
                   <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                 </svg>
-                <input type="text" id="employee-id" class="form-input" placeholder="e.g. EMP-304 or TAG-2026-0041" required>
+                <input type="text" id="employee-id" class="form-input" placeholder="e.g. Purok 1 Lot 1" required>
+              </div>
+            </div>
+
+            <div class="form-group" id="password-container">
+              <label for="login-password">Password</label>
+              <div class="input-wrapper">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                </svg>
+                <input type="password" id="login-password" class="form-input" placeholder="Enter Password" required>
               </div>
             </div>
 
@@ -283,6 +298,11 @@
                 <option value="normal">Normal Flow</option>
               </select>
             </div>
+            
+            <button type="button" class="submit-log-btn" id="btn-open-register-modal" style="margin-top: 10px; width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px; background-color: var(--neon-blue);">
+              <svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+              Register New User
+            </button>
           </div>
 
           <!-- Household directory list -->
@@ -345,25 +365,6 @@
             <!-- Quality Feed Parameters -->
             <div class="quality-feed-grid">
               
-              <!-- pH Level Parameter -->
-              <div class="quality-card">
-                <div class="quality-card-header">
-                  <span class="quality-label">pH Acidity Index</span>
-                  <span class="quality-badge normal" id="asset-ph-badge">Normal</span>
-                </div>
-                <div class="quality-value-row">
-                  <span class="quality-value" id="asset-ph-val">7.2</span>
-                  <span class="quality-unit">pH</span>
-                </div>
-                
-                <div class="quality-scale-container">
-                  <div class="quality-scale-fill ph-fill"></div>
-                  <!-- Dynamic pointer showing pH location -->
-                  <div class="ph-pointer" id="asset-ph-pointer" style="left: 50%;"></div>
-                </div>
-                <p class="quality-desc" id="asset-ph-desc">pH value is stable within public health standards (6.5 - 8.5).</p>
-              </div>
-
               <!-- Turbidity Parameter -->
               <div class="quality-card">
                 <div class="quality-card-header">
@@ -394,14 +395,6 @@
                     <strong id="sim-tank-val">68%</strong>
                   </div>
                   <input type="range" id="slider-tank" class="sim-input" min="10" max="100" value="68">
-                </div>
-
-                <div class="sim-slider-row">
-                  <div class="sim-label-row">
-                    <span>Simulated Water pH Level:</span>
-                    <strong id="sim-ph-val">5.8</strong>
-                  </div>
-                  <input type="range" id="slider-ph" class="sim-input" min="4" max="10" step="0.1" value="5.8">
                 </div>
 
                 <div class="sim-slider-row">
@@ -619,14 +612,10 @@
               <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
                 Central Reservoir Telemetry (IoT Live)
               </span>
-              <div class="metrics-row" style="margin-top: 10px;">
+              <div class="metrics-row" style="grid-template-columns: 1fr;">
                 <div class="metric-card" style="flex: 1;">
                   <span class="metric-card-lbl">Water Level</span>
                   <div class="metric-card-val"><span id="resident-tank-val">--%</span></div>
-                </div>
-                <div class="metric-card" style="flex: 1;">
-                  <span class="metric-card-lbl">pH Acidity</span>
-                  <div class="metric-card-val"><span id="resident-ph-val">--</span> pH</div>
                 </div>
               </div>
               <div class="metrics-row" style="margin-top: 8px;">
@@ -797,6 +786,91 @@
       </div>
 
 
+      <!-- REGISTER USER MODAL -->
+      <div class="modal-overlay" id="register-user-modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div class="modal-header-left">
+              <h3>Register New User</h3>
+              <p>Create Resident or Worker account</p>
+            </div>
+            <button class="modal-close-btn" id="btn-close-register-modal">
+              <svg viewBox="0 0 24 24">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body" style="padding: 16px;">
+            <div class="form-group">
+              <label for="reg-role">Account Type</label>
+              <select id="reg-role" class="form-input">
+                <option value="resident">Resident (Household)</option>
+                <option value="worker">Worker (Field Tech)</option>
+              </select>
+            </div>
+
+            <!-- Resident Fields -->
+            <div id="reg-resident-fields">
+              <div class="form-group">
+                <label for="reg-res-name">Owner Full Name</label>
+                <input type="text" id="reg-res-name" class="form-input" placeholder="e.g. Maria C. Santos">
+              </div>
+              <div class="form-group">
+                <label for="reg-res-purok">Purok</label>
+                <select id="reg-res-purok" class="form-input">
+                  <option value="Purok 1">Purok 1</option>
+                  <option value="Purok 2">Purok 2</option>
+                  <option value="Purok 3">Purok 3</option>
+                  <option value="Purok 4">Purok 4</option>
+                  <option value="Purok 5">Purok 5</option>
+                  <option value="Purok 6">Purok 6</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="reg-res-lot">Lot / House Number</label>
+                <input type="text" id="reg-res-lot" class="form-input" placeholder="e.g. Lot 12">
+              </div>
+            </div>
+
+            <!-- Worker Fields -->
+            <div id="reg-worker-fields" style="display: none;">
+              <div class="form-group">
+                <label for="reg-work-name">Worker Full Name</label>
+                <input type="text" id="reg-work-name" class="form-input" placeholder="e.g. Juan Luna">
+              </div>
+              <div class="form-group">
+                <label for="reg-work-role">Role</label>
+                <select id="reg-work-role" class="form-input">
+                  <option value="Field Technician">Field Technician</option>
+                  <option value="Lead Field Tech">Lead Field Tech</option>
+                  <option value="Zone Inspector">Zone Inspector</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="reg-work-zone">Assigned Zone</label>
+                <select id="reg-work-zone" class="form-input">
+                  <option value="Purok 1">Purok 1</option>
+                  <option value="Purok 2">Purok 2</option>
+                  <option value="Purok 3">Purok 3</option>
+                  <option value="Purok 4">Purok 4</option>
+                  <option value="Purok 5">Purok 5</option>
+                  <option value="Purok 6">Purok 6</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="reg-password">Set Password</label>
+              <input type="password" id="reg-password" class="form-input" placeholder="Enter secure password">
+            </div>
+
+            <button type="button" class="submit-log-btn" id="btn-submit-register" style="margin-top: 10px;">
+              Register Account
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- HOUSE DETAILS MODAL DRAWER OVERLAY -->
       <div class="modal-overlay" id="house-detail-modal">
         <div class="modal-content">
@@ -902,9 +976,19 @@
         </a>
       </nav>
 
-      });
-    }
+      <!-- SERVER OFFLINE MODAL -->
+      <div class="modal-overlay" id="server-offline-modal" style="display: none;">
+        <div class="offline-card">
+          <svg viewBox="0 0 24 24" class="offline-icon">
+            <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46C10.21 6.23 11.08 6 12 6c3.03 0 5.5 2.47 5.5 5.5v.5H19c1.65 0 3 1.35 3 3 0 1.2-.73 2.22-1.75 2.71l1.44 1.44c1.4-1.07 2.31-2.76 2.31-4.65 0-3.31-2.69-6-6-6zM3.27 1.73L2 3l2.84 2.84C3.12 7.04 1.5 8.94 1.5 11c0 3.31 2.69 6 6 6h11.73l2 2 1.27-1.27L3.27 1.73zM7.5 15C5.57 15 4 13.43 4 11.5c0-1.7 1.21-3.13 2.82-3.46l7.63 7.63c-.3.2-.64.33-1.01.33h-6z"/>
+          </svg>
+          <div class="offline-title">Server Connection Lost</div>
+          <div class="offline-desc">Cannot reach the WATERHALL sync server. Please check your internet connection or try again later.</div>
+          <button class="offline-btn" id="btn-offline-retry">Try Again</button>
+        </div>
+      </div>
+
   </script>
-  <script src="app.js?v=2.6.7"></script>
+  <script src="app.js?v=2.6.8"></script>
 </body>
 </html>

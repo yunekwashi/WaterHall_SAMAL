@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WATERHALL IoT Shopping List</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; padding: 20px; color: #333; }
+        h1 { color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; }
+        h2 { color: #2563eb; margin-top: 30px; }
+        ul { margin-bottom: 20px; }
+        li { margin-bottom: 10px; }
+        strong { color: #111; }
+        .tip { background-color: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 15px; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <h1>WATERHALL IoT Hardware Shopping List</h1>
+    <p>Based on the telemetry your app is tracking, you need to build two main IoT nodes: one for the <strong>Central Reservoir</strong> (tracking Water Level and Turbidity) and multiple nodes (or a centralized node) for the <strong>Household Meters</strong> (tracking Water Flow/Leaks).</p>
+    <p>Here is the complete list of hardware components you need to purchase:</p>
+
+    <h2>1. Microcontrollers & Connectivity</h2>
+    <p>You need the "brains" of the operation to read the sensors and send the data over Wi-Fi to your Python server (<code>192.168.254.140</code>).</p>
+    <ul>
+        <li><strong>ESP32 Development Board</strong> (Recommended) or <strong>ESP8266 (NodeMCU)</strong>
+            <ul>
+                <li><em>Quantity:</em> 2 or more (1 for the Reservoir, 1+ for the Household Meters depending on your physical setup)</li>
+                <li><em>Purpose:</em> Reads analog/digital signals from sensors and posts JSON data to your server over Wi-Fi.</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h2>2. Central Reservoir Sensors</h2>
+    <p>This equipment will simulate and measure the main water tank's status.</p>
+    <ul>
+        <li><strong>Ultrasonic Distance Sensor (HC-SR04)</strong> or <strong>Waterproof Ultrasonic Sensor (JSN-SR04T)</strong>
+            <ul>
+                <li><em>Quantity:</em> 1</li>
+                <li><em>Purpose:</em> Measures the distance to the water surface to calculate the <strong>Water Level</strong> percentage. The waterproof JSN-SR04T is highly recommended for real water tanks to prevent corrosion.</li>
+            </ul>
+        </li>
+        <li><strong>Turbidity Sensor Module (Analog)</strong> (e.g., TS-300B)
+            <ul>
+                <li><em>Quantity:</em> 1</li>
+                <li><em>Purpose:</em> Measures the cloudiness/clarity of the water to provide the <strong>Turbidity (NTU)</strong> reading. It usually comes with a probe and a small signal conditioning board.</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h2>3. Household Water Meter Sensors (Leak Detection)</h2>
+    <p>This equipment will measure the flow of water to individual houses to detect leaks (constant flow rates).</p>
+    <ul>
+        <li><strong>YF-S201 (1/2") or YF-B7 (1/2" Brass) Water Flow Sensor</strong>
+            <ul>
+                <li><em>Quantity:</em> 1 for every household you want to physically simulate (e.g., 2 to 4 for a good physical prototype).</li>
+                <li><em>Purpose:</em> Uses a Hall effect sensor to measure the <strong>Flow Rate (L/s)</strong>. If the flow remains constant when it shouldn't, your backend flags it as a leak.</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h2>4. Electronics Prototyping Essentials</h2>
+    <p>The supporting components required to wire everything together safely.</p>
+    <ul>
+        <li><strong>Jumper Wires</strong> (Male-to-Male, Male-to-Female, Female-to-Female)
+            <ul><li><em>Quantity:</em> 1 multi-pack</li></ul>
+        </li>
+        <li><strong>Breadboards</strong> (Medium or Large)
+            <ul><li><em>Quantity:</em> 2 or 3 (for prototyping before soldering)</li></ul>
+        </li>
+        <li><strong>Resistors (10kΩ, 4.7kΩ)</strong>
+            <ul><li><em>Quantity:</em> 1 small kit (useful for pull-up resistors on the flow sensors if needed).</li></ul>
+        </li>
+        <li><strong>Power Supply (5V Micro USB or Type-C Cable + Wall Adapter)</strong>
+            <ul><li><em>Quantity:</em> 1 per ESP32 board to power them constantly.</li></ul>
+        </li>
+    </ul>
+
+    <h2>5. Plumbing & Physical Simulation Materials (Optional but Recommended for Defense)</h2>
+    <p>To prove your capstone works during your final defense, you'll need a physical rig.</p>
+    <ul>
+        <li><strong>Small Plastic Containers/Tanks</strong> (to act as the Central Reservoir)</li>
+        <li><strong>PVC Pipes (1/2 inch) and Valves</strong> (to route water through the flow sensors)</li>
+        <li><strong>Small Submersible Water Pump (5V - 12V)</strong> (to push water through your system to simulate flow)</li>
+    </ul>
+
+    <div class="tip">
+        <strong>Connecting to the App:</strong><br>
+        Once you have the parts, you will write a simple C++ script using the Arduino IDE for the ESP32. The script will read the sensors and send an HTTP <code>POST</code> request to <code>http://192.168.254.140:8000/api/all-data</code> (your Python server) with a JSON payload, exactly mimicking what the simulator sliders do right now!
+    </div>
+</body>
+</html>

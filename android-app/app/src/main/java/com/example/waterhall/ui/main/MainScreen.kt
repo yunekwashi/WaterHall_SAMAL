@@ -53,8 +53,8 @@ fun MainScreen(
   val context = LocalContext.current
   val sharedPref = remember { context.getSharedPreferences("waterhall_prefs", Context.MODE_PRIVATE) }
   
-  // Read saved IP, default to "192.168.254.140"
-  var ipAddress by remember { mutableStateOf(sharedPref.getString("server_ip", "192.168.254.140") ?: "192.168.254.140") }
+  // Read saved IP, default to "172.31.1.213"
+  var ipAddress by remember { mutableStateOf(sharedPref.getString("server_ip", "172.31.1.213") ?: "172.31.1.213") }
   
   var showDialog by remember { mutableStateOf(false) }
   val webViewRef = remember { mutableStateOf<WebView?>(null) }

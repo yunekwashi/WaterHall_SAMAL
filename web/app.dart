@@ -180,11 +180,14 @@ class AppController {
   }
 
   void bindEvents() {
+    _initRegistrationHandlers();
+
     // Authentication Handlers
     final loginBtn = document.getElementById('btn-login') as ButtonElement?;
     final quickLoginBtn = document.getElementById('btn-quick-login') as ButtonElement?;
     final quickLoginBtnWorker = document.getElementById('btn-quick-login-worker') as ButtonElement?;
     final empIdInput = document.getElementById('employee-id') as InputElement?;
+    final passwordInput = document.getElementById('login-password') as InputElement?;
     final zoneSelect = document.getElementById('zone-assignment') as SelectElement?;
     final loginErrorMsg = document.getElementById('login-error-msg');
 
@@ -198,28 +201,33 @@ class AppController {
         currentWorker = null;
         showResidentPortal(resident['house_id']);
         if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-        showToast('Quick Login: ${resident['owner_name']}');
+        showToast('Quick Login: ' + resident['owner_name']);
       } catch (_) {}
     });
 
     quickLoginBtnWorker?.onClick.listen((e) {
-      final worker = db.validateWorker('EMP-304', 'Purok 2');
-      if (worker != null) {
-        currentWorker = worker;
-        window.localStorage['waterhall_session'] = json.encode(worker);
-        window.localStorage.remove('waterhall_resident_session'); // Clear resident session
-        if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-        showApp(worker);
-        showToast('Quick Login: Tech ${worker['name']}');
+      final workers = db.getWorkers();
+      if (workers.isNotEmpty) {
+        final firstWorker = workers.first;
+        final worker = db.validateWorker(firstWorker['name'], firstWorker['worker_id'], firstWorker['zone'] ?? 'Purok 1');
+        if (worker != null) {
+          currentWorker = worker;
+          window.localStorage['waterhall_session'] = json.encode(worker);
+          window.localStorage.remove('waterhall_resident_session'); // Clear resident session
+          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+          showApp(worker);
+          showToast('Quick Login: Tech ' + worker['name']);
+        }
       }
     });
 
     loginBtn?.onClick.listen((e) {
       final empId = empIdInput?.value?.trim() ?? '';
+      final password = passwordInput?.value?.trim() ?? '';
       final selectedZone = zoneSelect?.value ?? '';
 
-      if (empId.isEmpty) {
-        showLoginError("Credentials are required.", loginErrorMsg);
+      if (empId.isEmpty || password.isEmpty) {
+        showLoginError("Both Username and Password are required.", loginErrorMsg);
         return;
       }
 
@@ -229,61 +237,53 @@ class AppController {
 
       if (role == 'resident') {
         // 2. Try validating as resident
-        final households = db.getHouseholds();
-        try {
-          final resident = households.firstWhere((h) =>
-              h['house_id'].toString().toLowerCase() == empId.toLowerCase() ||
-              h['account_number'].toString().toLowerCase() == empId.toLowerCase());
-          
+        final resident = db.validateResident(empId, password);
+        if (resident != null) {
           window.localStorage.remove('waterhall_session'); // Clear worker session
           currentWorker = null;
           showResidentPortal(resident['house_id']);
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-          showToast('Logged in as Resident: ${resident['owner_name']}');
+          showToast('Logged in as Resident: ' + resident['owner_name']);
           return;
-        } catch (_) {}
+        }
       } else if (role == 'worker') {
         // 1. Try validating as worker
-        final worker = db.validateWorker(empId, selectedZone);
+        final worker = db.validateWorker(empId, password, selectedZone);
         if (worker != null) {
           currentWorker = worker;
           window.localStorage['waterhall_session'] = json.encode(worker);
           window.localStorage.remove('waterhall_resident_session'); // Clear resident session
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
           showApp(worker);
-          showToast('Logged in as Tech: ${worker['name']}');
+          showToast('Logged in as Tech: ' + worker['name']);
           return;
         }
       } else {
         // Unified default behavior (both allowed)
-        final worker = db.validateWorker(empId, selectedZone);
+        final worker = db.validateWorker(empId, password, selectedZone);
         if (worker != null) {
           currentWorker = worker;
           window.localStorage['waterhall_session'] = json.encode(worker);
           window.localStorage.remove('waterhall_resident_session'); // Clear resident session
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
           showApp(worker);
-          showToast('Logged in as Tech: ${worker['name']}');
+          showToast('Logged in as Tech: ' + worker['name']);
           return;
         }
 
-        final households = db.getHouseholds();
-        try {
-          final resident = households.firstWhere((h) =>
-              h['house_id'].toString().toLowerCase() == empId.toLowerCase() ||
-              h['account_number'].toString().toLowerCase() == empId.toLowerCase());
-          
+        final resident = db.validateResident(empId, password);
+        if (resident != null) {
           window.localStorage.remove('waterhall_session'); // Clear worker session
           currentWorker = null;
           showResidentPortal(resident['house_id']);
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-          showToast('Logged in as Resident: ${resident['owner_name']}');
+          showToast('Logged in as Resident: ' + resident['owner_name']);
           return;
-        } catch (_) {}
+        }
       }
 
       // 3. Fallback: invalid credentials
-      showLoginError('Credentials "$empId" not recognized. Check details.', loginErrorMsg);
+      showLoginError('Credentials "' + empId + '" not recognized. Check details.', loginErrorMsg);
     });
 
     final logoutBtn = document.getElementById('btn-logout') as ButtonElement?;
@@ -292,6 +292,7 @@ class AppController {
       currentWorker = null;
       enforceLoginGate();
       if (empIdInput != null) empIdInput.value = '';
+      if (passwordInput != null) passwordInput.value = '';
       showToast("Signed out of Tech session");
     });
 
@@ -1656,4 +1657,91 @@ class AppController {
       listEl.append(item);
     });
   }
-}
+
+  void _initRegistrationHandlers() {
+    final btnOpen = document.getElementById('btn-open-register-modal');
+    final modal = document.getElementById('register-user-modal');
+    final btnClose = document.getElementById('btn-close-register-modal');
+    final btnSubmit = document.getElementById('btn-submit-register');
+    
+    final roleSelect = document.getElementById('reg-role') as SelectElement?;
+    final resFields = document.getElementById('reg-resident-fields');
+    final workFields = document.getElementById('reg-worker-fields');
+    
+    // Toggle fields based on role
+    roleSelect?.onChange.listen((e) {
+      if (roleSelect.value == 'resident') {
+        resFields?.style.display = 'block';
+        workFields?.style.display = 'none';
+      } else {
+        resFields?.style.display = 'none';
+        workFields?.style.display = 'block';
+      }
+    });
+
+    // Open/Close
+    btnOpen?.onClick.listen((e) {
+      modal?.classes.add('active');
+    });
+    btnClose?.onClick.listen((e) {
+      modal?.classes.remove('active');
+    });
+
+    // Submit
+    btnSubmit?.onClick.listen((e) {
+      try {
+        final passwordInput = document.getElementById('reg-password') as InputElement?;
+        final password = passwordInput?.value?.trim() ?? '';
+        if (password.isEmpty) {
+          showToast('Password is required!');
+          return;
+        }
+
+        if (roleSelect?.value == 'resident') {
+          final nameInput = document.getElementById('reg-res-name') as InputElement?;
+          final purokSelect = document.getElementById('reg-res-purok') as SelectElement?;
+          final lotInput = document.getElementById('reg-res-lot') as InputElement?;
+          
+          final name = nameInput?.value?.trim() ?? '';
+          final purok = purokSelect?.value ?? 'Purok 1';
+          final lot = lotInput?.value?.trim() ?? '';
+          
+          if (name.isEmpty || lot.isEmpty) {
+            showToast('Name and Lot are required!');
+            return;
+          }
+          
+          final res = db.registerResident(name, purok, lot, password);
+          showToast('Resident Registered: ' + (res['account_number'] ?? ''));
+          
+        } else {
+          final nameInput = document.getElementById('reg-work-name') as InputElement?;
+          final roleInput = document.getElementById('reg-work-role') as SelectElement?;
+          final zoneSelect = document.getElementById('reg-work-zone') as SelectElement?;
+          
+          final name = nameInput?.value?.trim() ?? '';
+          final role = roleInput?.value ?? 'Field Technician';
+          final zone = zoneSelect?.value ?? 'Purok 1';
+          
+          if (name.isEmpty) {
+            showToast('Worker Name is required!');
+            return;
+          }
+          
+          final worker = db.registerWorker(name, role, zone, password);
+          showToast('Worker Registered: ' + (worker['worker_id'] ?? ''));
+        }
+        
+        modal?.classes.remove('active');
+        
+        // Refresh directory if we are on it
+        if (activeTab == 'view-directory') {
+          renderDirectory();
+        }
+        
+      } catch (err) {
+        showToast('Error: \$err');
+      }
+    });
+  }
+}

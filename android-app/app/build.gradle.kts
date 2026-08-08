@@ -8,11 +8,15 @@ android {
     namespace = "com.example.waterhall"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.example.waterhall"
+        applicationId = "com.example.waterhall.resident"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        
+        buildConfigField("String", "ROLE", "\"resident\"")
+        buildConfigField("String", "ROLE_URL", "\"http://172.31.1.213:8000/index.html?role=resident\"")
+        manifestPlaceholders["appLabel"] = "WATERHALL Resident"
     }
 
     buildTypes {
@@ -36,24 +40,6 @@ android {
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
       }
-    }
-
-    flavorDimensions.add("userType")
-    productFlavors {
-        create("worker") {
-            dimension = "userType"
-            applicationIdSuffix = ".worker"
-            buildConfigField("String", "ROLE", "\"worker\"")
-            buildConfigField("String", "ROLE_URL", "\"http://192.168.254.140:8000/index.html?role=worker\"")
-            manifestPlaceholders["appLabel"] = "WATERHALL Worker"
-        }
-        create("resident") {
-            dimension = "userType"
-            applicationIdSuffix = ".resident"
-            buildConfigField("String", "ROLE", "\"resident\"")
-            buildConfigField("String", "ROLE_URL", "\"http://192.168.254.140:8000/index.html?role=resident\"")
-            manifestPlaceholders["appLabel"] = "WATERHALL Resident"
-        }
     }
 }
 
