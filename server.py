@@ -175,9 +175,7 @@ seed_households = [
 
 seed_central_assets = {
     'main_tank_level': 68,
-    'ph_level': 5.8,
-    'ph_status': 'warning',
-    'ph_desc': 'Acidic pH detected. Add neutralizing agent.',
+
     'turbidity': 6.2,
     'turbidity_status': 'warning',
     'turbidity_desc': 'Slightly high turbidity. Filter check recommended.',
@@ -210,17 +208,6 @@ def init_db():
     c = conn.cursor()
     
     c.execute("PRAGMA foreign_keys = OFF;")
-    
-    # Drop tables to start fresh if needed
-    c.execute("DROP TABLE IF EXISTS leak_alerts;")
-    c.execute("DROP TABLE IF EXISTS flow_readings;")
-    c.execute("DROP TABLE IF EXISTS reservoir_quality_readings;")
-    c.execute("DROP TABLE IF EXISTS billing_records;")
-    c.execute("DROP TABLE IF EXISTS water_meters;")
-    c.execute("DROP TABLE IF EXISTS households;")
-    c.execute("DROP TABLE IF EXISTS puroks;")
-    c.execute("DROP TABLE IF EXISTS users;")
-    
     c.execute("PRAGMA foreign_keys = ON;")
     
     # 1. Users
@@ -539,7 +526,7 @@ class WaterHallServer(SimpleHTTPRequestHandler):
                 })
                 
             # 2. Central Assets Mapping
-            extra_state = {'ph_level': 5.8, 'ph_status': 'warning', 'ph_desc': 'Acidic pH detected. Add neutralizing agent.'}
+            extra_state = {}
             if os.path.exists('assets_extra.json'):
                 try:
                     with open('assets_extra.json', 'r') as f:
@@ -552,9 +539,6 @@ class WaterHallServer(SimpleHTTPRequestHandler):
             if row:
                 central_assets = {
                     'main_tank_level': row['water_level_percentage'],
-                    'ph_level': extra_state.get('ph_level', 5.8),
-                    'ph_status': extra_state.get('ph_status', 'warning'),
-                    'ph_desc': extra_state.get('ph_desc', 'Acidic pH detected. Add neutralizing agent.'),
                     'turbidity': row['turbidity_ntu'],
                     'turbidity_status': 'warning' if row['turbidity_ntu'] > 5.0 else 'normal',
                     'turbidity_desc': 'Slightly high turbidity. Filter check recommended.' if row['turbidity_ntu'] > 5.0 else 'Turbidity levels normal.',
@@ -563,9 +547,6 @@ class WaterHallServer(SimpleHTTPRequestHandler):
             else:
                 central_assets = {
                     'main_tank_level': 68,
-                    'ph_level': 5.8,
-                    'ph_status': 'warning',
-                    'ph_desc': 'Acidic pH detected. Add neutralizing agent.',
                     'turbidity': 6.2,
                     'turbidity_status': 'warning',
                     'turbidity_desc': 'Slightly high turbidity. Filter check recommended.',
@@ -762,12 +743,9 @@ class WaterHallServer(SimpleHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             assets = json.loads(post_data.decode('utf-8'))
             
-            # Save ph extra fields to JSON
-            extra_fields = {
-                'ph_level': assets.get('ph_level'),
-                'ph_status': assets.get('ph_status'),
-                'ph_desc': assets.get('ph_desc')
-            }
+            # Save extra fields to JSON (if any)
+            extra_fields = {}
+
             with open('assets_extra.json', 'w') as f:
                 json.dump(extra_fields, f)
                 
