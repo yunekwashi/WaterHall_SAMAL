@@ -1740,7 +1740,7 @@ class AppController {
         }
         
       } catch (err) {
-        showToast('Error: \$err');
+        showToast('Error: $err');
       }
     });
   }

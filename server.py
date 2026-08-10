@@ -540,6 +540,7 @@ class WaterHallServer(SimpleHTTPRequestHandler):
                 central_assets = {
                     'main_tank_level': row['water_level_percentage'],
                     'turbidity': row['turbidity_ntu'],
+                    'ph_level': 7.2,
                     'turbidity_status': 'warning' if row['turbidity_ntu'] > 5.0 else 'normal',
                     'turbidity_desc': 'Slightly high turbidity. Filter check recommended.' if row['turbidity_ntu'] > 5.0 else 'Turbidity levels normal.',
                     'last_updated': row['recorded_at']
@@ -548,6 +549,7 @@ class WaterHallServer(SimpleHTTPRequestHandler):
                 central_assets = {
                     'main_tank_level': 68,
                     'turbidity': 6.2,
+                    'ph_level': 7.2,
                     'turbidity_status': 'warning',
                     'turbidity_desc': 'Slightly high turbidity. Filter check recommended.',
                     'last_updated': '2026-06-25T11:00:00Z'

@@ -8,6 +8,12 @@
   <link rel="stylesheet" href="styles.css?v=2.6.8">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#070B13">
+  <script>
+    window.onerror = function(msg, url, line, col, error) {
+      document.body.innerHTML = '<div style="color:red; background:white; font-size: 20px; z-index:99999; position:absolute; top:10%; left:5%; right:5%; padding:20px; border-radius:10px;">JS ERROR: ' + msg + '<br>Line: ' + line + '</div>';
+      return false;
+    };
+  </script>
 </head>
 <body>
   <!-- Ambient background glow elements -->
