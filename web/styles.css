@@ -2002,3 +2002,6 @@ body, .app-screen, .app-view {
   background: #1d4ed8;
 }
 
+
+.search-input-wrapper svg { width: 24px; height: 24px; fill: var(--text-muted); }
+
