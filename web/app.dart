@@ -326,15 +326,18 @@ class AppController {
     purokFilter?.onChange.listen((e) => renderDirectory());
     statusFilter?.onChange.listen((e) => renderDirectory());
 
-    // Household Detail Modal Close Button
+    // Household Detail    // Close Household Modal is no longer needed since it's a separate tab
     final closeModalBtn = document.getElementById('btn-close-modal');
-    closeModalBtn?.onClick.listen((e) => closeHouseholdModal());
+    closeModalBtn?.onClick.listen((e) {
+      switchTab('view-directory');
+      activeHouseholdId = null;
+    });
 
     // Modal background click to close
     final detailModal = document.getElementById('house-detail-modal');
     detailModal?.onClick.listen((e) {
       if (e.target == detailModal) {
-        closeHouseholdModal();
+        // Removed closeHouseholdModal call as it's not a modal anymore
       }
     });
 
@@ -662,7 +665,7 @@ class AppController {
             </div>
           ''';
           item.onClick.listen((e) {
-            openHouseholdModal(leak['house_id']);
+            openWorkerResidentDetails(leak['house_id']);
           });
           alertListEl.append(item);
         });
@@ -862,7 +865,7 @@ class AppController {
         ''';
 
         card.onClick.listen((e) {
-          openHouseholdModal(h['house_id']);
+          openWorkerResidentDetails(h['house_id']);
         });
 
         dirListEl.append(card);
@@ -870,63 +873,53 @@ class AppController {
     }
   }
 
-  // --- Household Detail Modal Drawer Controller ---
-  void openHouseholdModal(String id) {
+  // --- Worker Resident Details Controller ---
+  void openWorkerResidentDetails(String id) {
     activeHouseholdId = id;
     final h = db.getHousehold(id);
     if (h == null) return;
 
-    // Fill textual fields
-    final modalOwnerName = document.getElementById('modal-owner-name');
-    final modalAcctNum = document.getElementById('modal-acct-num');
-    final modalCurrentM3 = document.getElementById('modal-current-m3');
-    final modalFlowRate = document.getElementById('modal-flow-rate');
+    final nameEl = document.getElementById('worker-res-name');
+    final acctEl = document.getElementById('worker-res-acct');
+    final leakEl = document.getElementById('worker-res-leak-status');
+    final m3El = document.getElementById('worker-res-consumption');
+    final totalEl = document.getElementById('worker-res-total');
 
-    if (modalOwnerName != null) modalOwnerName.text = h['owner_name'];
-    if (modalAcctNum != null) modalAcctNum.text = '${h['house_id']} | ${h['account_number']}';
-    if (modalCurrentM3 != null) modalCurrentM3.text = (h['current_m3_usage'] as num).toStringAsFixed(1);
-    if (modalFlowRate != null) modalFlowRate.text = (h['flow_rate'] as num).toStringAsFixed(2);
-
-    // Set Leak toggle state
-    final modalLeakToggle = document.getElementById('modal-leak-toggle') as CheckboxInputElement?;
-    if (modalLeakToggle != null) {
-      modalLeakToggle.checked = (h['current_leak_status'] == 'leak');
+    if (nameEl != null) nameEl.text = h['owner_name'];
+    if (acctEl != null) acctEl.text = h['account_number'];
+    if (m3El != null) m3El.text = (h['current_m3_usage'] as num).toStringAsFixed(1);
+    
+    // Quick mock calculation for total due
+    final consumption = h['current_m3_usage'] as num;
+    num total = 120.0 + 50.0; // Base + Environmental
+    if (consumption > 10.0) {
+      total += (consumption - 10.0) * 15.0;
     }
-    updateLeakToggleLabel(h['current_leak_status']);
+    if (totalEl != null) totalEl.text = total.toStringAsFixed(2);
 
-    // Render historical consumption chart
-    renderSVGChart(List<num>.from(h['monthly_history']), 'chart-container');
-
-    // Render historical logs
-    renderModalLogs(id);
-
-    // Reset log input fields
-    final logDesc = document.getElementById('log-desc') as TextAreaElement?;
-    final logResolved = document.getElementById('log-resolved') as CheckboxInputElement?;
-
-    if (logDesc != null) logDesc.value = '';
-    if (logResolved != null) {
-      logResolved.checked = (h['current_leak_status'] == 'leak');
+    if (leakEl != null) {
+      if (h['current_leak_status'] == 'leak') {
+        leakEl.innerHtml = '<svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:var(--alert-red)"><path d="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V8h2v4z"/></svg> <span style="color:var(--alert-red);font-weight:700">Leak Alert Detected</span>';
+        leakEl.style.backgroundColor = 'var(--alert-red-bg)';
+        leakEl.style.border = '1px solid var(--alert-red)';
+      } else {
+        leakEl.innerHtml = '<svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:var(--alert-green)"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> <span style="color:var(--alert-green);font-weight:700">Flow Status Normal</span>';
+        leakEl.style.backgroundColor = 'var(--alert-green-bg)';
+        leakEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+      }
     }
 
-    // Show modal container
-    final detailModal = document.getElementById('house-detail-modal');
-    if (detailModal != null) {
-      detailModal.classes.add('active');
-    }
+    // Switch view
+    switchTab('view-worker-resident-details');
+    
+    // Bind back button
+    document.getElementById('btn-back-to-dir')?.onClick.listen((e) {
+      switchTab('view-directory');
+      activeHouseholdId = null;
+    });
   }
 
-  void closeHouseholdModal() {
-    final detailModal = document.getElementById('house-detail-modal');
-    if (detailModal != null) {
-      detailModal.classes.remove('active');
-    }
-    activeHouseholdId = null;
 
-    // Refresh lists
-    renderDashboard();
-    renderDirectory();
-  }
 
   void updateLeakToggleLabel(String status) {
     final leakTitleEl = document.getElementById('modal-leak-title');

@@ -1999,9 +1999,228 @@ body, .app-screen, .app-view {
 }
 
 .offline-btn:hover {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--white);
+  transition: .3s;
+  border-radius: 50%;
+}
+input:checked + .slider {
+  background-color: var(--alert-red);
+}
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+/* --- Interactive Resident Dashboard Components --- */
+#view-resident {
+  background-color: var(--bg-dark);
+}
+#resident-history-list .bill-record-card {
+  background-color: rgba(255,255,255,0.02);
+}
+
+/* --- Base Keyframe Animations --- */
+@keyframes pulse-alert {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: drop-shadow(0 0 2px var(--alert-red));
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.8;
+    filter: drop-shadow(0 0 8px var(--alert-red));
+  }
+}
+@keyframes pulse-bg-red {
+  0% {
+    border-color: rgba(255, 74, 74, 0.2);
+    box-shadow: 0 0 0 0px rgba(255, 74, 74, 0.15);
+  }
+  100% {
+    border-color: rgba(255, 74, 74, 0.6);
+    box-shadow: 0 0 0 6px rgba(255, 74, 74, 0);
+  }
+}
+
+.announcement-banner {
+  background-color: var(--alert-amber-bg);
+  border: 1px solid #F1C40F;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 16px 16px 0 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.announcement-banner svg {
+  width: 24px;
+  height: 24px;
+  fill: #D97706;
+  flex-shrink: 0;
+}
+.announcement-title {
+  color: #F1C40F;
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.announcement-message {
+  color: var(--navy-primary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Responsive Viewports for Mobile Chassis */
+@media (max-width: 1024px), (max-height: 900px) {
+  body {
+    background-color: var(--bg-dark);
+  }
+  .ambient-glow {
+    display: none;
+  }
+  .device-container {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    border: none;
+  }
+  .device-camera {
+    display: none;
+  }
+  .system-status-bar {
+    display: none;
+  }
+  .app-screen {
+    border-radius: 0;
+  }
+  .home-indicator-bar {
+    display: none;
+  }
+}
+
+/* Pull to Refresh and Offline Modal Styles */
+body, .app-screen, .app-view {
+  overscroll-behavior-y: none;
+}
+
+.pull-refresh-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transform: translateY(-100%);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.pull-refresh-indicator .spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: var(--blue-primary);
+  animation: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.pull-refresh-indicator.refreshing .spinner {
+  animation: spin 1s linear infinite;
+  opacity: 1;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.offline-card {
+  background: #111827;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 16px;
+  padding: 24px;
+  width: 85%;
+  max-width: 340px;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(21, 67, 96, 0.5);
+  animation: slideUpFade 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.offline-icon {
+  width: 48px;
+  height: 48px;
+  fill: #EF4444;
+  margin-bottom: 16px;
+}
+
+.offline-title {
+  color: #F9FAFB;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.offline-desc {
+  color: #E2E8F0;
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.offline-btn {
+  background: var(--blue-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.2s;
+}
+
+.offline-btn:hover {
   background: #1d4ed8;
 }
 
 
 .search-input-wrapper svg { width: 24px; height: 24px; fill: var(--text-muted); }
 
+/* Responsive Adjustments for Mobile Devices (Native Android App) */
+@media screen and (max-width: 500px), screen and (max-height: 900px) {
+  .device-container {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    margin: 0;
+  }
+  .device-camera,
+  .system-status-bar,
+  .home-indicator-bar {
+    display: none !important;
+  }
+  .app-screen {
+    border-radius: 0;
+    border: none;
+  }
+  .view-container {
+    height: 100%;
+  }
+}

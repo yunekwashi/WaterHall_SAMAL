@@ -3,7 +3,7 @@ from fpdf import FPDF, HTMLMixin
 import sys
 
 # Read the markdown file
-input_md = r"C:\Users\Windows\.gemini\antigravity-ide\brain\bb98467c-388a-4655-93f5-af6c0b2a4265\iot_hardware_list.md"
+input_md = r"c:\Users\Windows\Documents\capstone\WATER-HALL_DART\iot_hardware_list.md"
 output_pdf = r"c:\Users\Windows\Documents\capstone\WATER-HALL_DART\WATERHALL_IoT_Shopping_List.pdf"
 
 class MyFPDF(FPDF, HTMLMixin):
