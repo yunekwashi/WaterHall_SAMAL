@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WATERHALL</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2.6.8">
+  <link rel="stylesheet" href="styles.css?v=2.6.9">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#070B13">
   <script>
@@ -13,7 +13,31 @@
       document.body.innerHTML = '<div style="color:red; background:white; font-size: 20px; z-index:99999; position:absolute; top:10%; left:5%; right:5%; padding:20px; border-radius:10px;">JS ERROR: ' + msg + '<br>Line: ' + line + '</div>';
       return false;
     };
+
+    if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+      document.documentElement.classList.add('is-native-mobile');
+    }
   </script>
+  <style>
+    html.is-native-mobile .device-container {
+      width: 100vw !important;
+      height: 100vh !important;
+      border-radius: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+    html.is-native-mobile .device-camera,
+    html.is-native-mobile .system-status-bar,
+    html.is-native-mobile .home-indicator-bar {
+      display: none !important;
+    }
+    html.is-native-mobile .app-screen {
+      border-radius: 0 !important;
+      border: none !important;
+    }
+  </style>
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -326,6 +350,43 @@
         </div>
 
 
+        <!-- 3b. WORKER: RESIDENT DETAILS SCREEN -->
+        <div id="view-worker-resident-details" class="app-view">
+          <div class="view-header" style="display:flex; align-items:center; gap:12px;">
+            <button id="btn-back-to-dir" style="background:none; border:none; color:var(--white); cursor:pointer;">
+              <svg viewBox="0 0 24 24" style="width:24px; height:24px; fill:currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            </button>
+            <div>
+              <h2 id="worker-res-name">Resident Name</h2>
+              <p id="worker-res-acct">Account Number</p>
+            </div>
+          </div>
+          
+          <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
+            
+            <div class="reservoir-status-banner" id="worker-res-leak-status" style="display:flex; align-items:center; gap:8px;">
+              <!-- Leak status here -->
+            </div>
+
+            <!-- Current Bill Card -->
+            <div class="chart-card" style="margin-top:0;">
+              <span class="chart-title">Current Billing Period</span>
+              <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px; font-size:13px; color:var(--text-muted)">
+                <div style="display:flex; justify-content:space-between">
+                  <span>Consumption Volume:</span>
+                  <strong style="color:var(--navy-primary)"><span id="worker-res-consumption">0.0</span> m³</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-top:1.5px solid var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px;">
+                  <strong style="color:var(--navy-primary)">Total Amount Due:</strong>
+                  <strong style="color:var(--amber-safety); font-size:18px;">₱<span id="worker-res-total">0.00</span></strong>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Actions -->
+            <button type="button" class="submit-log-btn" style="background:var(--blue-primary); color:white;">Send Payment Reminder</button>
+          </div>
+        </div>
         <!-- 4. ASSET STATUS MONITORING -->
         <div id="view-assets" class="app-view">
           <div class="view-header">
@@ -993,8 +1054,8 @@
           <button class="offline-btn" id="btn-offline-retry">Try Again</button>
         </div>
       </div>
-
-  </script>
-  <script src="app.js?v=2.6.8"></script>
+    </div> <!-- Close app-screen -->
+    </div> <!-- Close device-container -->
+  <script src="app.js?v=2.6.9"></script>
 </body>
 </html>

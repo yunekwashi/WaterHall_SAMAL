@@ -35,7 +35,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   late final WebViewController _controller;
   String _ipAddress = "192.168.254.140";
-  String _role = "worker"; // "worker" or "resident"
+  String _role = "resident"; // Hardcoded to resident
   bool _isLoading = true;
   bool _initialized = false;
   bool _serverError = false;
@@ -63,7 +63,7 @@ class _MainScreenState extends State<MainScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _ipAddress = prefs.getString("server_ip") ?? "192.168.254.140";
-      _role = prefs.getString("app_role") ?? "worker";
+      _role = "resident"; // Always resident
     });
 
     _controller = WebViewController()
@@ -133,38 +133,6 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     keyboardType: TextInputType.datetime,
                   ),
-                  const SizedBox(height: 16),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text("App Interface Mode:", style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(height: 8),
-                  RadioListTile<String>(
-                    title: const Text("Worker Portal"),
-                    value: "worker",
-                    groupValue: tempRole,
-                    contentPadding: EdgeInsets.zero,
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() {
-                          tempRole = val;
-                        });
-                      }
-                    },
-                  ),
-                  RadioListTile<String>(
-                    title: const Text("Resident Portal"),
-                    value: "resident",
-                    groupValue: tempRole,
-                    contentPadding: EdgeInsets.zero,
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() {
-                          tempRole = val;
-                        });
-                      }
-                    },
-                  ),
                 ],
               ),
               actions: [
@@ -178,11 +146,11 @@ class _MainScreenState extends State<MainScreen> {
                     if (cleanIp.isNotEmpty) {
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setString("server_ip", cleanIp);
-                      await prefs.setString("app_role", tempRole);
+                      await prefs.setString("app_role", "resident");
 
                       setState(() {
                         _ipAddress = cleanIp;
-                        _role = tempRole;
+                        _role = "resident";
                         _isLoading = true;
                         _serverError = false;
                       });
