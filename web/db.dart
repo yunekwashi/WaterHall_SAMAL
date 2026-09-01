@@ -12,224 +12,22 @@ const dbKeys = {
   'announcements': 'waterhall_announcements'
 };
 
-final List<Map<String, dynamic>> seedBillingRecords = [
-  {
-    'bill_id': 'BILL-5001',
-    'house_id': 'HH-101',
-    'account_number': 'TAG-2026-0041',
-    'billing_month': 'June 2026',
-    'previous_reading': 15.8,
-    'current_reading': 18.4,
-    'consumption': 2.6,
-    'water_charge': 120.00,
-    'maintenance_fee': 50.00,
-    'total_due': 170.00,
-    'billed_by': 'EMP-304',
-    'date': '2026-06-24T18:45:00Z',
-    'status': 'Pending'
-  },
-  {
-    'bill_id': 'BILL-5002',
-    'house_id': 'HH-101',
-    'account_number': 'TAG-2026-0041',
-    'billing_month': 'May 2026',
-    'previous_reading': 14.1,
-    'current_reading': 15.8,
-    'consumption': 1.7,
-    'water_charge': 120.00,
-    'maintenance_fee': 50.00,
-    'total_due': 170.00,
-    'billed_by': 'EMP-304',
-    'date': '2026-05-24T10:15:00Z',
-    'status': 'Paid'
-  },
-  {
-    'bill_id': 'BILL-5003',
-    'house_id': 'HH-102',
-    'account_number': 'TAG-2026-0105',
-    'billing_month': 'May 2026',
-    'previous_reading': 11.5,
-    'current_reading': 12.1,
-    'consumption': 0.6,
-    'water_charge': 120.00,
-    'maintenance_fee': 50.00,
-    'total_due': 170.00,
-    'billed_by': 'EMP-304',
-    'date': '2026-05-24T10:30:00Z',
-    'status': 'Paid'
-  }
-];
-
-final List<Map<String, dynamic>> seedWorkers = [
-  { 'worker_id': 'EMP-301', 'name': 'Michael Balaga', 'role': 'Lead Field Tech', 'zone': 'Purok 1' },
-  { 'worker_id': 'EMP-304', 'name': 'Ryiel Banggat', 'role': 'Field Technician', 'zone': 'Purok 2' },
-  { 'worker_id': 'EMP-308', 'name': 'John Dave Chicote', 'role': 'Zone Inspector', 'zone': 'Purok 5' }
-];
-
-final List<Map<String, dynamic>> seedHouseholds = [
-  {
-    'house_id': 'HH-101',
-    'lot': 'Lot 1',
-    'password': null,
-    'owner_name': 'Maria C. Santos',
-    'purok': 'Purok 1',
-    'account_number': 'TAG-2026-0041',
-    'current_leak_status': 'leak',
-    'current_m3_usage': 18.4,
-    'flow_rate': 0.85,
-    'monthly_history': [12.4, 14.1, 15.8, 18.4],
-    'leak_detected_at': '2026-06-24T18:30:00Z'
-  },
-  {
-    'house_id': 'HH-102',
-    'lot': 'Lot 2',
-    'password': null,
-    'owner_name': 'Ramon P. Del Rosario',
-    'purok': 'Purok 1',
-    'account_number': 'TAG-2026-0105',
-    'current_leak_status': 'normal',
-    'current_m3_usage': 12.1,
-    'flow_rate': 0.05,
-    'monthly_history': [11.8, 12.0, 11.5, 12.1],
-    'leak_detected_at': null
-  },
-  {
-    'house_id': 'HH-103',
-    'lot': 'Lot 3',
-    'password': null,
-    'owner_name': 'Elena F. Garcia',
-    'purok': 'Purok 2',
-    'account_number': 'TAG-2026-0312',
-    'current_leak_status': 'leak',
-    'current_m3_usage': 24.8,
-    'flow_rate': 0.98,
-    'monthly_history': [15.2, 16.0, 19.5, 24.8],
-    'leak_detected_at': '2026-06-25T02:15:00Z'
-  },
-  {
-    'house_id': 'HH-104',
-    'lot': 'Lot 4',
-    'password': null,
-    'owner_name': 'Delfin S. Alcantara',
-    'purok': 'Purok 2',
-    'account_number': 'TAG-2026-0421',
-    'current_leak_status': 'normal',
-    'current_m3_usage': 9.3,
-    'flow_rate': 0.02,
-    'monthly_history': [8.5, 9.0, 9.1, 9.3],
-    'leak_detected_at': null
-  },
-  {
-    'house_id': 'HH-105',
-    'lot': 'Lot 5',
-    'password': null,
-    'owner_name': 'Clara M. Aquino',
-    'purok': 'Purok 3',
-    'account_number': 'TAG-2026-0810',
-    'current_leak_status': 'normal',
-    'current_m3_usage': 15.6,
-    'flow_rate': 0.08,
-    'monthly_history': [14.0, 15.2, 14.9, 15.6],
-    'leak_detected_at': null
-  },
-  {
-    'house_id': 'HH-106',
-    'lot': 'Lot 6',
-    'password': null,
-    'owner_name': 'Manuel L. Roxas',
-    'purok': 'Purok 3',
-    'account_number': 'TAG-2026-0925',
-    'current_leak_status': 'normal',
-    'current_m3_usage': 21.0,
-    'flow_rate': 0.11,
-    'monthly_history': [19.2, 20.1, 20.8, 21.0],
-    'leak_detected_at': null
-  },
-  {
-    'house_id': 'HH-107',
-    'lot': 'Lot 7',
-    'password': null,
-    'owner_name': 'Felipe A. Agoncillo',
-    'purok': 'Purok 4',
-    'account_number': 'TAG-2026-1102',
-    'current_leak_status': 'leak',
-    'current_m3_usage': 32.5,
-    'flow_rate': 1.45,
-    'monthly_history': [18.4, 21.0, 25.1, 32.5],
-    'leak_detected_at': '2026-06-25T08:45:00Z'
-  },
-  {
-    'house_id': 'HH-108',
-    'lot': 'Lot 8',
-    'password': null,
-    'owner_name': 'Gregoria de Jesus',
-    'purok': 'Purok 4',
-    'account_number': 'TAG-2026-1349',
-    'current_leak_status': 'normal',
-    'current_m3_usage': 14.2,
-    'flow_rate': 0.04,
-    'monthly_history': [13.1, 13.9, 14.0, 14.2],
-    'leak_detected_at': null
-  },
-  {
-    'house_id': 'HH-109',
-    'lot': 'Lot 9',
-    'password': null,
-    'owner_name': 'Antonio N. Luna',
-    'purok': 'Purok 5',
-    'account_number': 'TAG-2026-1509',
-    'current_leak_status': 'normal',
-    'current_m3_usage': 11.0,
-    'flow_rate': 0.06,
-    'monthly_history': [10.5, 10.9, 11.2, 11.0],
-    'leak_detected_at': null
-  },
-  {
-    'house_id': 'HH-110',
-    'lot': 'Lot 10',
-    'password': null,
-    'owner_name': 'Leonor Rivera',
-    'purok': 'Purok 6',
-    'account_number': 'TAG-2026-1772',
-    'current_leak_status': 'normal',
-    'current_m3_usage': 13.7,
-    'flow_rate': 0.05,
-    'monthly_history': [12.8, 13.2, 13.4, 13.7],
-    'leak_detected_at': null
-  }
-];
+final List<Map<String, dynamic>> seedBillingRecords = [];
+final List<Map<String, dynamic>> seedWorkers = [];
+final List<Map<String, dynamic>> seedHouseholds = [];
 
 final Map<String, dynamic> seedCentralAssets = {
   'main_tank_level': 68,
-  'ph_level': 5.8,
-  'ph_status': 'warning',
-  'ph_desc': 'Acidic pH detected. Add neutralizing agent.',
   'turbidity': 6.2,
-  'turbidity_status': 'warning',
-  'turbidity_desc': 'Slightly high turbidity. Filter check recommended.',
+  'turbidity_status': 'normal',
+  'turbidity_desc': 'Optimal water clarity.',
+  'ph_level': 7.2,
+  'ph_status': 'normal',
+  'ph_desc': 'pH neutral & compliant.',
   'last_updated': '2026-06-25T11:00:00Z'
 };
 
-final List<Map<String, dynamic>> seedMaintenanceLogs = [
-  {
-    'task_id': 'LOG-1001',
-    'house_id': 'HH-102',
-    'worker_id': 'EMP-304',
-    'purok': 'Purok 1',
-    'description': 'Replaced main brass pipe fitting. Leak resolved.',
-    'date': '2026-06-23T09:30:00Z',
-    'status_resolved': true
-  },
-  {
-    'task_id': 'LOG-1002',
-    'house_id': 'HH-104',
-    'worker_id': 'EMP-304',
-    'purok': 'Purok 2',
-    'description': 'Inspected meter calibration. Flow rate verified normal.',
-    'date': '2026-06-24T14:20:00Z',
-    'status_resolved': true
-  }
-];
+final List<Map<String, dynamic>> seedMaintenanceLogs = [];
 
 class Database {
   List<Map<String, dynamic>> _households = [];
@@ -239,11 +37,23 @@ class Database {
   List<Map<String, dynamic>> _billingRecords = [];
   List<Map<String, dynamic>> _announcements = [];
   bool _isInitialized = false;
+  bool isDatabaseOnline = false;
 
   Future<bool> refreshData() async {
     try {
-      final response = await HttpRequest.getString('/api/all-data');
-      final data = json.decode(response) as Map<String, dynamic>;
+      final jwt = window.localStorage['waterhall_jwt'];
+      final headers = <String, String>{};
+      if (jwt != null && jwt.isNotEmpty) {
+        headers['Authorization'] = 'Bearer ' + jwt;
+      }
+      
+      final xhr = await HttpRequest.request(
+        '/api/all-data',
+        method: 'GET',
+        requestHeaders: headers
+      );
+      // Dart HttpRequest.request throws on non-2xx, so reaching here means success
+      final data = json.decode(xhr.responseText!) as Map<String, dynamic>;
       
       _households = List<Map<String, dynamic>>.from(data['households']);
       _centralAssets = Map<String, dynamic>.from(data['centralAssets']);
@@ -252,37 +62,39 @@ class Database {
       _billingRecords = List<Map<String, dynamic>>.from(data['billingRecords']);
       if (data.containsKey('announcements')) {
         _announcements = List<Map<String, dynamic>>.from(data['announcements']);
-        window.localStorage[dbKeys['announcements']!] = json.encode(_announcements);
       }
       
-      // Update local storage cache to stay in sync with cloud
-      window.localStorage[dbKeys['households']!] = json.encode(_households);
-      window.localStorage[dbKeys['centralAssets']!] = json.encode(_centralAssets);
-      window.localStorage[dbKeys['maintenanceLogs']!] = json.encode(_maintenanceLogs);
-      window.localStorage[dbKeys['workers']!] = json.encode(_workers);
-      window.localStorage[dbKeys['billingRecords']!] = json.encode(_billingRecords);
-      
-      print("Database refreshed successfully from server.");
+      isDatabaseOnline = true;
+      _isInitialized = true;
       syncUnsyncedData();
       return true;
     } catch (e) {
-      print("Error refreshing data from server: $e");
+      print("refreshData failed: $e");
+      isDatabaseOnline = false;
       return false;
     }
   }
 
-  Future<void> init() async {
-    if (_isInitialized) return;
-    
+  Future<bool> init() async {
     // Register network online listener to auto-sync when connection is restored
     window.onOnline.listen((_) {
-      print("Network connection restored. Processing offline actions...");
       syncUnsyncedData();
     });
 
     try {
-      final response = await HttpRequest.getString('/api/all-data');
-      final data = json.decode(response) as Map<String, dynamic>;
+      final jwt = window.localStorage['waterhall_jwt'];
+      final headers = <String, String>{};
+      if (jwt != null && jwt.isNotEmpty) {
+        headers['Authorization'] = 'Bearer ' + jwt;
+      }
+      
+      final xhr = await HttpRequest.request(
+        '/api/all-data',
+        method: 'GET',
+        requestHeaders: headers
+      );
+      // Success — server is online
+      final data = json.decode(xhr.responseText!) as Map<String, dynamic>;
       
       _households = List<Map<String, dynamic>>.from(data['households']);
       _centralAssets = Map<String, dynamic>.from(data['centralAssets']);
@@ -291,55 +103,22 @@ class Database {
       _billingRecords = List<Map<String, dynamic>>.from(data['billingRecords']);
       if (data.containsKey('announcements')) {
         _announcements = List<Map<String, dynamic>>.from(data['announcements']);
-        window.localStorage[dbKeys['announcements']!] = json.encode(_announcements);
       }
-      
-      // Update local storage cache to stay in sync with cloud
-      window.localStorage[dbKeys['households']!] = json.encode(_households);
-      window.localStorage[dbKeys['centralAssets']!] = json.encode(_centralAssets);
-      window.localStorage[dbKeys['maintenanceLogs']!] = json.encode(_maintenanceLogs);
-      window.localStorage[dbKeys['workers']!] = json.encode(_workers);
-      window.localStorage[dbKeys['billingRecords']!] = json.encode(_billingRecords);
 
       _isInitialized = true;
-      print("Database successfully synchronized with SQLite backend.");
-      
-      // Sync any offline operations that are waiting in the queue
+      isDatabaseOnline = true;
+      print("Database initialized successfully from server.");
       syncUnsyncedData();
+      return true;
     } catch (e) {
-      print("Error fetching database from server, using local fallback: $e");
-      _initFallback();
-      _isInitialized = true;
-    }
-  }
-
-  void _initFallback() {
-    if (window.localStorage[dbKeys['households']!] == null) {
-      window.localStorage[dbKeys['households']!] = json.encode(seedHouseholds);
-    }
-    if (window.localStorage[dbKeys['centralAssets']!] == null) {
-      window.localStorage[dbKeys['centralAssets']!] = json.encode(seedCentralAssets);
-    }
-    if (window.localStorage[dbKeys['maintenanceLogs']!] == null) {
-      window.localStorage[dbKeys['maintenanceLogs']!] = json.encode(seedMaintenanceLogs);
-    }
-    if (window.localStorage[dbKeys['workers']!] == null) {
-      window.localStorage[dbKeys['workers']!] = json.encode(seedWorkers);
-    }
-    if (window.localStorage[dbKeys['billingRecords']!] == null) {
-      window.localStorage[dbKeys['billingRecords']!] = json.encode(seedBillingRecords);
-    }
-    if (window.localStorage[dbKeys['announcements']!] == null) {
-      window.localStorage[dbKeys['announcements']!] = json.encode([]);
-    }
-
-    _households = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['households']!]!));
-    _centralAssets = Map<String, dynamic>.from(json.decode(window.localStorage[dbKeys['centralAssets']!]!));
-    _maintenanceLogs = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['maintenanceLogs']!]!));
-    _workers = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['workers']!]!));
-    _billingRecords = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['billingRecords']!]!));
-    if (window.localStorage.containsKey(dbKeys['announcements'])) {
-      _announcements = List<Map<String, dynamic>>.from(json.decode(window.localStorage[dbKeys['announcements']!]!));
+      print("Database init failed (server offline): $e");
+      // Load minimal fallback so UI doesn't crash when rendering empty assets
+      if (_centralAssets.isEmpty) {
+        _centralAssets = Map<String, dynamic>.from(seedCentralAssets);
+      }
+      _isInitialized = true; // Mark initialized so the app doesn't hang
+      isDatabaseOnline = false;
+      return false;
     }
   }
 
@@ -392,7 +171,10 @@ class Database {
           path,
           method: 'POST',
           sendData: json.encode(data),
-          requestHeaders: {'Content-Type': 'application/json'}
+          requestHeaders: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + (window.localStorage['waterhall_jwt'] ?? '')
+          }
         );
         if (xhr.status == 200) {
           remainingActions.remove(action);
@@ -417,8 +199,21 @@ class Database {
 
   Map<String, dynamic>? getHousehold(String id) {
     final households = getHouseholds();
+    final clean = id.toLowerCase().trim();
+    final numOnly = clean.replaceAll('hh-', '').trim();
     try {
-      return households.firstWhere((h) => h['house_id'] == id);
+      return households.firstWhere((h) {
+        final hId = (h['house_id'] ?? '').toString().toLowerCase().trim();
+        final hNum = hId.replaceAll('hh-', '').trim();
+        final accNum = (h['account_number'] ?? '').toString().toLowerCase().trim();
+        final owner = (h['owner_name'] ?? '').toString().toLowerCase().trim();
+        final combined = "${h['purok']} ${h['lot'] ?? ''}".toLowerCase().trim();
+        return clean == hId ||
+               numOnly == hNum ||
+               clean == accNum ||
+               clean == owner ||
+               clean == combined;
+      });
     } catch (_) {
       return null;
     }
@@ -438,7 +233,6 @@ class Database {
         households[index]['leak_detected_at'] = null;
       }
       _syncWithServer('/api/households/update', households[index]);
-      window.localStorage[dbKeys['households']!] = json.encode(households);
       return households[index];
     }
     return null;
@@ -497,20 +291,27 @@ class Database {
     return newLog;
   }
 
-  Map<String, dynamic>? validateResident(String purokLot, String password) {
+  Map<String, dynamic>? validateResident(String identifier, String password) {
+    if (!isDatabaseOnline) return null;
     final households = getHouseholds();
+    final cleanId = identifier.toLowerCase().trim();
+    final cleanPass = password.toLowerCase().trim();
     try {
       final resident = households.firstWhere((h) {
-        String combined = "${h['purok']} ${h['lot'] ?? ''}".toLowerCase().trim();
-        return combined == purokLot.toLowerCase().trim() || h['account_number'].toString().toLowerCase() == purokLot.toLowerCase().trim();
+        final hId = (h['house_id'] ?? '').toString().toLowerCase().trim();
+        final hNum = hId.replaceAll('hh-', '').trim();
+        final accNum = (h['account_number'] ?? '').toString().toLowerCase().trim();
+        final owner = (h['owner_name'] ?? '').toString().toLowerCase().trim();
+        final combined = "${h['purok']} ${h['lot'] ?? ''}".toLowerCase().trim();
+
+        return cleanId == hId ||
+               cleanId == hNum ||
+               cleanId == accNum ||
+               cleanId == owner ||
+               cleanId == combined;
       });
 
-      if (resident['password'] == null || resident['password'] == '') {
-        resident['password'] = password;
-        _syncWithServer('/api/households/update', resident);
-        window.localStorage[dbKeys['households']!] = json.encode(households);
-        return resident;
-      } else if (resident['password'] == password) {
+      if (resident['password'] != null && resident['password'].toString().toLowerCase() == cleanPass) {
         return resident;
       }
       return null;
@@ -523,14 +324,18 @@ class Database {
     return _workers;
   }
 
-  Map<String, dynamic>? validateWorker(String workerName, String password, String zone) {
+  Map<String, dynamic>? validateWorker(String workerNameOrId, String password, String zone) {
+    if (!isDatabaseOnline) return null;
+    final lowerInput = workerNameOrId.toLowerCase().trim();
     try {
-      final worker = _workers.firstWhere((w) => 
-          w['name'].toString().toLowerCase() == workerName.toLowerCase().trim() && 
-          w['worker_id'].toString().toLowerCase() == password.toLowerCase().trim());
+      final worker = _workers.firstWhere((w) {
+        final wId = (w['worker_id'] ?? '').toString().toLowerCase().trim();
+        final wName = (w['name'] ?? '').toString().toLowerCase().trim();
+        return wId == lowerInput || wName == lowerInput;
+      });
       return {
         ...worker,
-        'selected_zone': zone
+        'selected_zone': worker['zone'] ?? 'Purok 1'
       };
     } catch (_) {
       return null;

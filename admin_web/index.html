@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WATERHALL | Admin Portal</title>
+  <link rel="stylesheet" href="/admin/styles.css?v=3" />
+  <!-- Chart.js for premium data visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- Login Screen -->
+  <div id="login-screen">
+    <div class="login-box">
+      <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:32px;">
+        <img src="/admin/logo.png" alt="WATERHALL Logo" style="width:140px; height:auto; border-radius:12px; margin-bottom:8px;">
+        <p style="color:var(--text-muted); font-size:13px; letter-spacing:1px; text-transform:uppercase; font-weight:600;">Admin Portal</p>
+      </div>
+      <div class="login-error" id="login-error">Invalid credentials or unauthorized role.</div>
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="login-username" placeholder="Enter admin username">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div style="position:relative;">
+          <input type="password" id="login-password" placeholder="Enter password" style="padding-right: 48px;">
+          <button type="button" id="btn-toggle-pw" onclick="togglePassword()" title="Show/hide password" style="
+            position:absolute; right:12px; top:50%; transform:translateY(-50%);
+            background:none; border:none; cursor:pointer; color:var(--text-muted);
+            padding:4px; display:flex; align-items:center; transition:color 0.2s;
+          ">
+            <!-- Eye icon (show) -->
+            <svg id="eye-show" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+            <!-- Eye-off icon (hide) -->
+            <svg id="eye-hide" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display:none;">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div style="text-align: right; margin-bottom: 15px; margin-top: -5px;">
+        <a href="#" id="btn-forgot-password" style="font-size: 13px; color: var(--accent-color); text-decoration: none; font-weight: 500;">Forgot Password?</a>
+      </div>
+      <button class="btn" style="width: 100%; justify-content: center; margin-top: 10px;" id="btn-login">Login to Dashboard</button>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="/admin/logo.png" alt="WATERHALL" style="width:44px; height:44px; object-fit:cover; border-radius:12px; box-shadow: 0 8px 24px rgba(255, 150, 50, 0.3);">
+      WATERHALL
+    </div>
+    <div class="nav-menu">
+      <div class="nav-item active" data-tab="tab-dashboard">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+        Overview
+      </div>
+      <div class="nav-item" data-tab="tab-directory">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+        User Directory
+      </div>
+      <div class="nav-item" data-tab="tab-assets">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+        IoT Control
+      </div>
+    </div>
+    <div class="user-profile">
+      <div class="avatar">A</div>
+      <div class="user-info">
+        <h4 id="auth-name">Admin</h4>
+        <p>System Administrator</p>
+      </div>
+      <button style="margin-left:auto; background:transparent; border:none; color:var(--danger); cursor:pointer;" id="btn-logout" title="Logout">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Area -->
+  <main class="main-content">
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <p style="color: var(--text-muted);">Syncing with WATERHALL Database...</p>
+    </div>
+
+    <div id="admin-db-offline-banner" style="display: none; background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); color: #fca5a5; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; font-weight: 500; align-items: center; gap: 10px;">
+      <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      <span><strong>Database Offline:</strong> Connection to backend server lost. Live updates are paused until the server is running.</span>
+    </div>
+
+    <div class="header">
+      <h1 id="page-title">System Overview</h1>
+      <div class="date-badge" id="current-date">Fetching date...</div>
+    </div>
+
+    <!-- Dashboard Tab -->
+    <div id="tab-dashboard" class="tab-content active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-header">Total Households</div>
+          <div class="stat-value" id="stat-households">0</div>
+          <div class="stat-trend" id="trend-households">Syncing...</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-header">Active Workers</div>
+          <div class="stat-value" id="stat-workers">0</div>
+          <div class="stat-trend" id="trend-workers">Syncing...</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-header">Pending Collections</div>
+          <div class="stat-value" id="stat-bills">?0</div>
+          <div class="stat-trend" id="trend-bills">Syncing...</div>
+        </div>
+      </div>
+      
+      <div class="charts-grid">
+        <div class="chart-container">
+          <h3>Collection Overview (Last 5 Months)</h3>
+          <canvas id="collectionsChart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Reservoir Water Quality</h3>
+          <canvas id="qualityChart"></canvas>
+        </div>
+      </div>
+      
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div class="panel-title">Recent Field Maintenance Logs</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Task ID</th>
+              <th>Purok</th>
+              <th>Description</th>
+              <th>Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="maintenance-tbody">
+            <!-- Populated via JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Directory Tab -->
+    <div id="tab-directory" class="tab-content">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div class="panel-title">Resident & Household Directory</div>
+          <button class="btn" id="btn-add-resident">+ Register Resident</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>HH ID</th>
+              <th style="width:20%">Owner Name</th>
+              <th>Account Details</th>
+            </tr>
+          </thead>
+          <tbody id="resident-tbody">
+            <!-- Rows injected via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div class="panel-title">Field Worker Directory</div>
+          <button class="btn" id="btn-add-worker">+ Register Worker</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Emp ID</th>
+              <th>Name</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody id="worker-tbody">
+            <!-- Rows injected via JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Assets / IoT Control Tab -->
+    <div id="tab-assets" class="tab-content">
+      <div class="glass-panel" style="max-width: 600px;">
+        <div class="panel-header">
+          <div class="panel-title">Hardware Simulation Override</div>
+        </div>
+        <p style="color:var(--text-muted); font-size:14px; margin-bottom:30px;">
+          Use these controls to manually override the sensor readings for presentation and testing purposes. Changes will broadcast to all residents and workers in real-time.
+        </p>
+
+        <div class="slider-container">
+          <div class="slider-header">
+            <span>Reservoir Water Level</span>
+            <span id="sim-tank-val">68%</span>
+          </div>
+          <input type="range" id="slider-tank" min="0" max="100" value="68">
+        </div>
+
+        <div class="slider-container">
+          <div class="slider-header">
+            <span>Water Turbidity (NTU)</span>
+            <span id="sim-turbidity-val">6.2 NTU</span>
+          </div>
+          <input type="range" id="slider-turbidity" min="0" max="20" step="0.1" value="6.2">
+        </div>
+        
+        <div class="slider-container">
+          <div class="slider-header">
+            <span>pH Level</span>
+            <span id="sim-ph-val">7.2</span>
+          </div>
+          <input type="range" id="slider-ph" min="0" max="14" step="0.1" value="7.2">
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modals -->
+  <div class="modal-overlay" id="modal-resident">
+    <div class="modal">
+      <h3 style="margin-bottom:24px; font-size:24px; font-weight:700;">Register New Household</h3>
+      <div class="form-group">
+        <label>Family Head Name</label>
+        <input type="text" id="res-name" placeholder="Juan Dela Cruz">
+      </div>
+      <div class="form-group">
+        <label>Contact Number (For Password Recovery)</label>
+        <input type="text" id="res-contact" placeholder="09171234567">
+      </div>
+      <div class="form-group">
+        <label>Assigned Password</label>
+        <input type="password" id="res-password" placeholder="Enter secure password">
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:32px;">
+        <button class="btn btn-secondary" id="btn-res-cancel">Cancel</button>
+        <button class="btn" id="btn-res-save">Save Resident</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-worker">
+    <div class="modal">
+      <h3 style="margin-bottom:24px; font-size:24px; font-weight:700;">Register New Field Worker</h3>
+      <div class="form-group">
+        <label>Worker Full Name</label>
+        <input type="text" id="work-name" placeholder="Andres Bonifacio">
+      </div>
+      <div class="form-group">
+        <label>Employee ID (Username)</label>
+        <input type="text" id="work-id" placeholder="EMP-401">
+      </div>
+      <div class="form-group">
+        <label>Contact Number (For Password Recovery)</label>
+        <input type="text" id="work-contact" placeholder="09171234567">
+      </div>
+      <div class="form-group">
+        <label>Assigned Password</label>
+        <input type="password" id="work-password" placeholder="Enter secure password">
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:32px;">
+        <button class="btn btn-secondary" id="btn-work-cancel">Cancel</button>
+        <button class="btn" id="btn-work-save">Save Worker</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Recovery Modal -->
+  <div class="modal-overlay" id="modal-forgot-pw" style="display: none;">
+    <div class="modal" style="max-width: 400px; padding: 32px; border-radius: 16px; background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);">
+      <h3 style="margin-bottom:24px; font-size:22px; font-weight:700; color: var(--text-color);">Account Password Recovery</h3>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Role</label>
+        <select id="recover-role" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color); font-weight: 500;">
+          <option value="admin">Administrator</option>
+          <option value="worker">Field Worker / Technician</option>
+          <option value="resident">Resident Citizen</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Username / Account ID</label>
+        <input type="text" id="recover-username" placeholder="e.g. admin, EMP-301, or HH-117" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
+      </div>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Registered Contact Number</label>
+        <input type="text" id="recover-contact" placeholder="e.g. 09171234567" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
+      </div>
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">New Password</label>
+        <input type="password" id="recover-new-password" placeholder="Enter secure new password" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:12px;">
+        <button class="btn btn-secondary" id="btn-recover-cancel">Cancel</button>
+        <button class="btn" id="btn-recover-submit">Reset Password</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/admin/app.js?v=8"></script>
+</body>
+</html>

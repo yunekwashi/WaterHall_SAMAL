@@ -69,6 +69,7 @@ class _MainScreenState extends State<MainScreen> {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0x00000000))
+      ..enableZoom(false)
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (String url) {
@@ -96,8 +97,6 @@ class _MainScreenState extends State<MainScreen> {
         ),
       );
 
-    await _controller.clearCache();
-    await _controller.clearLocalStorage();
     _controller.loadRequest(Uri.parse(_getAppUrl()));
 
     setState(() {
@@ -106,8 +105,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   String _getAppUrl() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    return "http://$_ipAddress:8000/index.html?role=$_role&t=$timestamp";
+    return "http://$_ipAddress:8000/index.html?role=$_role";
   }
 
   void _showSettingsDialog() {

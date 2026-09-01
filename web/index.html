@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>WATERHALL</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2.6.9">
+  <link rel="stylesheet" href="styles.css?v=3.0.4">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#070B13">
   <script>
@@ -78,78 +78,78 @@
     <!-- App Screen Viewport -->
     <div class="app-screen">
       
+      <!-- DATABASE OFFLINE BLOCKING OVERLAY -->
+      <div id="db-offline-overlay" class="db-offline-modal" style="display: none;">
+        <div class="offline-card">
+          <svg class="offline-icon" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+          </svg>
+          <div class="offline-title">Database Offline</div>
+          <div class="offline-desc">
+            Cannot connect to the WATERHALL database server.<br>
+            Application access is locked until the database server is running.
+          </div>
+          <button id="btn-retry-db-connection" class="offline-btn" type="button">
+            Retry Database Connection
+          </button>
+        </div>
+      </div>
+
       <!-- Views Container -->
       <div class="view-container">
 
+        <!-- Compatibility Placeholders for Dart controller -->
+        <div id="view-directory" style="display:none;"></div>
+        <div id="view-assets" style="display:none;"></div>
+
         <!-- 1. LOGIN SCREEN -->
         <div id="view-login" class="app-view active">
-          <div class="login-header">
-            <div class="login-logo" style="background: none; box-shadow: none;">
-              <img src="logo.png" alt="WATERHALL Logo" style="width: 90px; height: 90px; object-fit: contain;">
-            </div>
-            <h1>WATERHALL</h1>
-            <p>Worker & Field Terminal</p>
-          </div>
-
-          <div class="login-form">
-            <div class="login-error" id="login-error-msg" style="display: none;">
-              Invalid credentials. Use <strong>EMP-304</strong> or <strong>TAG-2026-0041</strong>.
+          <div class="login-card-container">
+            <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:32px;">
+              <img src="logo.png" alt="WATERHALL Logo" style="width:140px; height:auto; border-radius:12px; margin-bottom:8px;">
+              <p id="web-portal-title" style="color:var(--text-muted); font-size:13px; letter-spacing:1px; text-transform:uppercase; font-weight:600; text-align:center;">Worker Portal</p>
             </div>
 
-            <div class="form-group">
-              <label for="employee-id">Username</label>
-              <div class="input-wrapper">
-                <svg viewBox="0 0 24 24">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                </svg>
-                <input type="text" id="employee-id" class="form-input" placeholder="e.g. Purok 1 Lot 1" required>
+            <div class="login-form">
+              <div class="login-error" id="login-error-msg" style="display: none; background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.2); color: var(--danger); padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 20px;">
+                Invalid credentials. Please check your username and password.
               </div>
-            </div>
 
-            <div class="form-group" id="password-container">
-              <label for="login-password">Password</label>
-              <div class="input-wrapper">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
-                </svg>
-                <input type="password" id="login-password" class="form-input" placeholder="Enter Password" required>
+              <div class="form-group">
+                <label for="employee-id">Username</label>
+                <input type="text" id="employee-id" class="form-input" placeholder="Enter username" required>
               </div>
-            </div>
 
-            <div class="form-group" id="zone-assignment-container">
-              <label for="zone-assignment">Zone Assignment</label>
-              <div class="input-wrapper">
-                <svg viewBox="0 0 24 24">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                </svg>
-                <select id="zone-assignment" class="form-input" required>
-                  <option value="Purok 1">Purok 1 (Centrum)</option>
-                  <option value="Purok 2" selected>Purok 2 (Poblacion)</option>
-                  <option value="Purok 3">Purok 3 (Coastal)</option>
-                  <option value="Purok 4">Purok 4 (Upland)</option>
-                  <option value="Purok 5">Purok 5 (Hillside)</option>
-                  <option value="Purok 6">Purok 6 (Highway)</option>
-                </select>
+              <div class="form-group" id="password-container">
+                <label for="login-password">Password</label>
+                <div style="position:relative; width: 100%;">
+                  <input type="password" id="login-password" class="form-input" placeholder="Enter password" style="padding-right: 48px;" required>
+                  <button type="button" id="btn-toggle-web-pw" title="Show/hide password" style="
+                    position:absolute; right:12px; top:50%; transform:translateY(-50%);
+                    background:none; border:none; cursor:pointer; color:var(--text-muted);
+                    padding:4px; display:flex; align-items:center; transition:color 0.2s;
+                  ">
+                    <!-- Eye icon (show) -->
+                    <svg id="web-eye-show" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                    <!-- Eye-off icon (hide) -->
+                    <svg id="web-eye-hide" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display:none;">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
+
+              <div style="text-align: right; margin-bottom: 16px; margin-top: -8px;">
+                <a href="#" id="btn-web-forgot-password" style="font-size: 13px; color: var(--accent-light); text-decoration: none; font-weight: 500; opacity: 0.85;">Forgot Password?</a>
+              </div>
+              
+              <button type="button" class="login-btn" id="btn-login" style="width: 100%; justify-content: center; font-weight:700;">
+                <span>Login to Dashboard</span>
+              </button>
             </div>
-
-            <button type="button" class="login-btn" id="btn-login">
-              <span>Sign In to Terminal</span>
-              <svg style="width:20px;height:20px;fill:currentColor" viewBox="0 0 24 24">
-                <path d="M10 17v-4H3v-2h7V7l5 5-5 5zm9 2H5v-2h14V5H5V3h14c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2z" />
-              </svg>
-            </button>
-            <button type="button" class="login-btn" id="btn-quick-login" style="margin-top: 10px; display: none; background-color: var(--neon-cyan); color: var(--navy-primary);">
-              <span>Quick Login (Demo Resident)</span>
-            </button>
-            <button type="button" class="login-btn" id="btn-quick-login-worker" style="margin-top: 10px; display: none; background-color: var(--amber-bright); color: var(--navy-primary);">
-              <span>Quick Login (Demo Worker)</span>
-            </button>
-          </div>
-
-          <div class="login-footer">
-            <strong>Barangay Tagpopongan, IGACOS</strong><br>
-            IoT Water Management System v2.6.5
           </div>
         </div>
 
@@ -178,105 +178,11 @@
                 <span class="alert-badge" id="dash-alert-count">0</span>
               </div>
               <div class="alert-list" id="dash-alert-list">
-                <!-- Injected dynamically: leaks and quality alarms -->
+                <!-- Injected dynamically: quality alarms -->
               </div>
             </div>
 
-            <!-- Assigned Purok details -->
-            <div class="dashboard-section">
-              <div class="section-title">Assigned Patrol Zones</div>
-              
-              <!-- Mock SVG Map of Tagpopongan puroks -->
-              <div class="map-widget">
-                <!-- Simulated map grid -->
-                <svg width="100%" height="100%" viewBox="0 0 380 160" class="tactical-map">
-                  <defs>
-                    <pattern id="map-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(51, 65, 85, 0.15)" stroke-width="1" />
-                    </pattern>
-                    <radialGradient id="sonar-glow" cx="50%" cy="50%" r="50%">
-                      <stop offset="0%" stop-color="var(--amber-safety)" stop-opacity="0.4"/>
-                      <stop offset="100%" stop-color="var(--amber-safety)" stop-opacity="0"/>
-                    </radialGradient>
-                  </defs>
-                  
-                  <!-- Radar Tech Grid Backing -->
-                  <rect width="100%" height="100%" fill="url(#map-grid)" />
-                  
-                  <!-- Contours & Roads -->
-                  <path d="M10 50 Q 120 70 200 40 T 370 90" fill="none" stroke="var(--navy-border)" stroke-width="8" opacity="0.2"/>
-                  <path d="M150 10 Q 180 90 120 150" fill="none" stroke="var(--navy-border)" stroke-width="5" opacity="0.2"/>
-                  <path d="M50 150 C 120 120 280 160 350 110" fill="none" stroke="var(--navy-border)" stroke-width="4" opacity="0.1"/>
-                  
-                  <!-- Tagpopongan Bay Contour line -->
-                  <path d="M0 130 Q 100 110 220 140 T 380 120 L 380 160 L 0 160 Z" fill="rgba(15, 23, 42, 0.3)" />
-                  
-                  <!-- Water Main Pipeline (Blue highlight) -->
-                  <path d="M30 40 L 160 55 L 220 80 L 320 110" fill="none" stroke="#2563EB" stroke-width="3" stroke-dasharray="4 4" class="map-pipeline" />
-                  
-                  <!-- Reservoir Pin -->
-                  <g class="map-marker reservoir-pin" style="transform:translate(30px, 40px)">
-                    <circle cx="0" cy="0" r="10" fill="#3B82F6" opacity="0.3" class="reservoir-pulse" />
-                    <circle cx="0" cy="0" r="6" fill="#2563EB" stroke="#FFF" stroke-width="1" />
-                    <text x="8" y="4" fill="var(--text-on-dark-muted)" font-size="8" font-weight="800">Res. Tank</text>
-                  </g>
-                  
-                  <!-- Purok Markers with dynamic leak pins -->
-                  <!-- P1 Marker -->
-                  <g class="map-marker-pin" id="pin-p1" cx="80" cy="65" style="transform:translate(80px, 65px)">
-                    <circle cx="0" cy="0" r="16" class="pin-pulse" />
-                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
-                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P1</text>
-                  </g>
-                  <!-- P2 Marker -->
-                  <g class="map-marker-pin" id="pin-p2" cx="160" cy="55" style="transform:translate(160px, 55px)">
-                    <circle cx="0" cy="0" r="18" class="pin-pulse" />
-                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#EF4444" stroke="#FFF" stroke-width="1.5" />
-                    <text x="-5" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P2</text>
-                  </g>
-                  <!-- P3 Marker -->
-                  <g class="map-marker-pin" id="pin-p3" cx="130" cy="115" style="transform:translate(130px, 115px)">
-                    <circle cx="0" cy="0" r="16" class="pin-pulse" />
-                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
-                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P3</text>
-                  </g>
-                  <!-- P4 Marker -->
-                  <g class="map-marker-pin" id="pin-p4" cx="240" cy="50" style="transform:translate(240px, 50px)">
-                    <circle cx="0" cy="0" r="18" class="pin-pulse" />
-                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#EF4444" stroke="#FFF" stroke-width="1.5" />
-                    <text x="-5" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P4</text>
-                  </g>
-                  <!-- P5 Marker -->
-                  <g class="map-marker-pin" id="pin-p5" cx="290" cy="85" style="transform:translate(290px, 85px)">
-                    <circle cx="0" cy="0" r="16" class="pin-pulse" />
-                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
-                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P5</text>
-                  </g>
-                  <!-- P6 Marker -->
-                  <g class="map-marker-pin" id="pin-p6" cx="330" cy="120" style="transform:translate(330px, 120px)">
-                    <circle cx="0" cy="0" r="16" class="pin-pulse" />
-                    <circle cx="0" cy="0" r="8" class="pin-bg" fill="#10B981" />
-                    <text x="-4" y="3" fill="#FFFFFF" font-size="9" font-weight="800">P6</text>
-                  </g>
-                </svg>
 
-                <div class="map-legend">
-                  <div class="legend-item">
-                    <span class="legend-color" style="background-color: var(--alert-green)"></span>
-                    <span>Normal Zone</span>
-                  </div>
-                  <div class="legend-item">
-                    <span class="legend-color" style="background-color: var(--alert-red)"></span>
-                    <span>Leak Detected</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Zone Selection Cards -->
-              <div class="zone-grid" id="dashboard-zone-grid">
-                <!-- Cards injected dynamically based on database -->
-              </div>
-            </div>
 
             <!-- Maintenance glance log -->
             <div class="dashboard-section">
@@ -295,59 +201,7 @@
         </div>
 
 
-        <!-- 3. HOUSE DIRECTORY & PIPE MONITORING -->
-        <div id="view-directory" class="app-view">
-          <div class="view-header">
-            <h2>Meter Directory</h2>
-            <p>Search and inspect household flow rates and meters</p>
-          </div>
-
-          <!-- Filters and Search -->
-          <div class="directory-controls">
-            <div class="search-input-wrapper">
-              <svg viewBox="0 0 24 24">
-                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-              </svg>
-              <input type="text" id="dir-search" class="search-input" placeholder="Search by Owner or Account #...">
-            </div>
-            
-            <div class="filter-row">
-              <select id="filter-purok" class="filter-select">
-                <option value="all">All Puroks</option>
-                <option value="Purok 1">Purok 1</option>
-                <option value="Purok 2">Purok 2</option>
-                <option value="Purok 3">Purok 3</option>
-                <option value="Purok 4">Purok 4</option>
-                <option value="Purok 5">Purok 5</option>
-                <option value="Purok 6">Purok 6</option>
-              </select>
-
-              <select id="filter-status" class="filter-select">
-                <option value="all">All Statuses</option>
-                <option value="leak">Leak Detected</option>
-                <option value="normal">Normal Flow</option>
-              </select>
-            </div>
-            
-            <button type="button" class="submit-log-btn" id="btn-open-register-modal" style="margin-top: 10px; width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px; background-color: var(--neon-blue);">
-              <svg style="width: 20px; height: 20px; fill: currentColor;" viewBox="0 0 24 24"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-              Register New User
-            </button>
-          </div>
-
-          <!-- Household directory list -->
-          <div class="directory-list" id="dir-household-list">
-            <!-- Dynamic household cards injected here -->
-          </div>
-
-          <!-- Empty State -->
-          <div class="empty-state" id="dir-empty-state">
-            <svg viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
-            </svg>
-            <p>No household matches the search/filter parameters.</p>
-          </div>
-        </div>
+        <!-- Directory removed and migrated to Admin Panel -->
 
 
         <!-- 3b. WORKER: RESIDENT DETAILS SCREEN -->
@@ -364,9 +218,7 @@
           
           <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
             
-            <div class="reservoir-status-banner" id="worker-res-leak-status" style="display:flex; align-items:center; gap:8px;">
-              <!-- Leak status here -->
-            </div>
+
 
             <!-- Current Bill Card -->
             <div class="chart-card" style="margin-top:0;">
@@ -387,96 +239,7 @@
             <button type="button" class="submit-log-btn" style="background:var(--blue-primary); color:white;">Send Payment Reminder</button>
           </div>
         </div>
-        <!-- 4. ASSET STATUS MONITORING -->
-        <div id="view-assets" class="app-view">
-          <div class="view-header">
-            <h2>Water Asset Telemetry</h2>
-            <p>Central Reservoir & Quality Feed (IoT Live)</p>
-          </div>
-
-          <div class="assets-scroll">
-            
-            <!-- Reservoir tank visual card -->
-            <div class="reservoir-card">
-              <div class="reservoir-header">
-                <span class="reservoir-title">Central Reservoir Level</span>
-                <span class="reservoir-percentage" id="asset-tank-percent">0%</span>
-              </div>
-              
-              <!-- Interactive Visual Tank -->
-              <div class="tank-visual-container">
-                <div class="tank-water" id="asset-tank-fill">
-                  <div class="liquid-wave wave-front"></div>
-                  <div class="liquid-wave wave-back"></div>
-                  <div class="liquid-bubbles">
-                    <div class="bubble bubble-1"></div>
-                    <div class="bubble bubble-2"></div>
-                    <div class="bubble bubble-3"></div>
-                    <div class="bubble bubble-4"></div>
-                    <div class="bubble bubble-5"></div>
-                  </div>
-                </div>
-                <div class="tank-labels">
-                  <span class="tank-level-line">100% - Capacity Max</span>
-                  <span class="tank-level-line">75% - Normal Range</span>
-                  <span class="tank-level-line">50% - Threshold Alert</span>
-                  <span class="tank-level-line">25% - Pressure Warning</span>
-                </div>
-              </div>
-
-              <div class="reservoir-status-banner" id="asset-tank-banner">
-                Reservoir Status: Normal Operating Pressure
-              </div>
-            </div>
-
-            <!-- Quality Feed Parameters -->
-            <div class="quality-feed-grid">
-              
-              <!-- Turbidity Parameter -->
-              <div class="quality-card">
-                <div class="quality-card-header">
-                  <span class="quality-label">Turbidity (Clarity)</span>
-                  <span class="quality-badge normal" id="asset-turbidity-badge">Normal</span>
-                </div>
-                <div class="quality-value-row">
-                  <span class="quality-value" id="asset-turbidity-val">1.8</span>
-                  <span class="quality-unit">NTU</span>
-                </div>
-                
-                <div class="quality-scale-container">
-                  <div class="quality-scale-fill turbidity-fill" id="asset-turbidity-fill" style="width: 36%;"></div>
-                </div>
-                <p class="quality-desc" id="asset-turbidity-desc">Clarity is excellent. Below standard limit of 5.0 NTU.</p>
-              </div>
-
-            </div>
-
-            <!-- Live Sensor Simulator Hardware Panel (Fidelity boost) -->
-            <div class="hardware-simulator">
-              <h3 class="hardware-title">IoT Telemetry Hardware Simulator</h3>
-              <div class="sim-slider-group">
-                
-                <div class="sim-slider-row">
-                  <div class="sim-label-row">
-                    <span>Simulated Reservoir Tank Level:</span>
-                    <strong id="sim-tank-val">68%</strong>
-                  </div>
-                  <input type="range" id="slider-tank" class="sim-input" min="10" max="100" value="68">
-                </div>
-
-                <div class="sim-slider-row">
-                  <div class="sim-label-row">
-                    <span>Simulated Turbidity:</span>
-                    <strong id="sim-turbidity-val">6.2 NTU</strong>
-                  </div>
-                  <input type="range" id="slider-turbidity" class="sim-input" min="0.5" max="12" step="0.1" value="6.2">
-                </div>
-
-              </div>
-            </div>
-
-          </div>
-        </div>
+        <!-- Assets view removed and migrated to Admin Panel -->
 
 
         <!-- 5. WORKER PROFILE & STATS -->
@@ -494,7 +257,6 @@
               <div class="profile-info">
                 <h3 class="profile-name" id="worker-name">---</h3>
                 <span class="profile-role" id="worker-role">---</span>
-                <span class="profile-zone" id="worker-zone-lbl">---</span>
               </div>
             </div>
 
@@ -502,7 +264,7 @@
             <div class="profile-stats-grid">
               <div class="stat-box">
                 <div class="stat-num" id="profile-stat-total">10</div>
-                <div class="stat-lbl">Assigned Meters</div>
+                <div class="stat-lbl">Total Managed Meters</div>
               </div>
               <div class="stat-box">
                 <div class="stat-num" id="profile-stat-logs">2</div>
@@ -553,8 +315,19 @@
 
             </div>
 
-            <!-- Logout -->
-            <button type="button" class="logout-btn" id="btn-logout">Sign Out of Device</button>
+            <!-- Logout Card -->
+            <div class="logout-card-container">
+              <div class="logout-avatar-circle" id="worker-logout-avatar">--</div>
+              <div class="logout-user-details">
+                <div class="logout-user-name" id="worker-logout-name">---</div>
+                <div class="logout-user-role" id="worker-logout-role">---</div>
+              </div>
+              <button type="button" class="logout-action-btn" id="btn-logout" aria-label="Sign Out">
+                <svg viewBox="0 0 24 24">
+                  <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+                </svg>
+              </button>
+            </div>
 
           </div>
         </div>
@@ -604,34 +377,34 @@
 
             <!-- Live Bill Computation Receipt -->
             <div class="reservoir-card" style="border-style:dashed; background-color:var(--white);">
-              <span class="reservoir-title" style="font-size:11px; text-transform:uppercase; text-align:center; display:block; border-bottom:1px dashed var(--navy-border); padding-bottom:8px; margin-bottom:8px; color:var(--navy-primary)">
+              <span class="reservoir-title" style="font-size:11px; text-transform:uppercase; text-align:center; display:block; border-bottom:1px dashed var(--navy-border); padding-bottom:8px; margin-bottom:8px; color:#000000; font-weight:bold;">
                 Barangay Tagpopongan Water Invoice Draft
               </span>
               
-              <div style="display:flex; flex-direction:column; gap:8px; font-size:13px;">
+              <div style="display:flex; flex-direction:column; gap:8px; font-size:13px; color:#000000;">
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Billing Cycle:</span>
-                  <strong style="color:var(--navy-primary)">June 2026</strong>
+                  <span>Billing Cycle:</span>
+                  <strong>June 2026</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Total Consumption:</span>
-                  <strong style="color:var(--navy-primary)"><span id="bill-calc-consumption">0.0</span> m³</strong>
+                  <span>Total Consumption:</span>
+                  <strong><span id="bill-calc-consumption">0.0</span> m³</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Base Charge (First 10 m³):</span>
-                  <strong style="color:var(--navy-primary)">₱120.00</strong>
+                  <span>Base Charge (First 10 m³):</span>
+                  <strong>₱120.00</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Excess Charge (Excess x ₱15.00):</span>
-                  <strong style="color:var(--navy-primary)">₱<span id="bill-calc-excess">0.00</span></strong>
+                  <span>Excess Charge (Excess x ₱15.00):</span>
+                  <strong>₱<span id="bill-calc-excess">0.00</span></strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Environmental/Maintenance:</span>
-                  <strong style="color:var(--navy-primary)">₱50.00</strong>
+                  <span>Environmental/Maintenance:</span>
+                  <strong>₱50.00</strong>
                 </div>
-                <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px;">
-                  <strong style="color:var(--navy-primary)">Total Bill Amount:</strong>
-                  <strong style="color:var(--amber-safety); font-size:18px;">₱<span id="bill-calc-total">170.00</span></strong>
+                <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px; color:#000000;">
+                  <strong>Total Bill Amount:</strong>
+                  <strong style="font-size:18px;">₱<span id="bill-calc-total">170.00</span></strong>
                 </div>
               </div>
             </div>
@@ -698,45 +471,45 @@
             </div>
 
             <div class="reservoir-card" style="border:1.5px solid var(--navy-border); background-color:var(--white);">
-              <span class="reservoir-title" style="font-size:12px; font-weight:800; text-transform:uppercase; text-align:center; display:block; border-bottom:1.5px solid var(--off-white); padding-bottom:8px; margin-bottom:8px; color:var(--navy-primary)">
+              <span class="reservoir-title" style="font-size:12px; font-weight:800; text-transform:uppercase; text-align:center; display:block; border-bottom:1.5px solid var(--off-white); padding-bottom:8px; margin-bottom:8px; color:#000000;">
                 Current Billing Statement
               </span>
-              <div style="display:flex; flex-direction:column; gap:10px; font-size:13px;">
+              <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; color:#000000;">
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Billing Cycle:</span>
-                  <strong style="color:var(--navy-primary)">June 2026</strong>
+                  <span>Billing Cycle:</span>
+                  <strong>June 2026</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Payment Status:</span>
+                  <span>Payment Status:</span>
                   <span id="resident-bill-status" class="quality-badge warning" style="font-size:11px; font-weight:700;">Pending Payment</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--gray-medium); padding-top:8px;">
-                  <span style="color:var(--text-muted)">Prev Reading:</span>
-                  <strong style="color:var(--navy-primary)"><span id="resident-prev-reading">0.0</span> m³</strong>
+                  <span>Prev Reading:</span>
+                  <strong><span id="resident-prev-reading">0.0</span> m³</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Current Reading:</span>
-                  <strong style="color:var(--navy-primary)"><span id="resident-curr-reading">0.0</span> m³</strong>
+                  <span>Current Reading:</span>
+                  <strong><span id="resident-curr-reading">0.0</span> m³</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Consumption Volume:</span>
-                  <strong style="color:var(--navy-primary)"><span id="resident-calc-consumption">0.0</span> m³</strong>
+                  <span>Consumption Volume:</span>
+                  <strong><span id="resident-calc-consumption">0.0</span> m³</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--gray-medium); padding-top:8px;">
-                  <span style="color:var(--text-muted)">Base Rate (First 10 m³):</span>
-                  <strong style="color:var(--navy-primary)">₱120.00</strong>
+                  <span>Base Rate (First 10 m³):</span>
+                  <strong>₱120.00</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Excess Usage (x ₱15.00):</span>
-                  <strong style="color:var(--navy-primary)">₱<span id="resident-calc-excess">0.00</span></strong>
+                  <span>Excess Usage (x ₱15.00):</span>
+                  <strong>₱<span id="resident-calc-excess">0.00</span></strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span style="color:var(--text-muted)">Environmental Fee:</span>
-                  <strong style="color:var(--navy-primary)">₱50.00</strong>
+                  <span>Environmental Fee:</span>
+                  <strong>₱50.00</strong>
                 </div>
-                <div style="display:flex; justify-content:space-between; border-top:1.5px solid var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px;">
-                  <strong style="color:var(--navy-primary)">Total Amount Due:</strong>
-                  <strong style="color:var(--amber-safety); font-size:18px;">₱<span id="resident-calc-total">0.00</span></strong>
+                <div style="display:flex; justify-content:space-between; border-top:1.5px solid var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px; color:#000000;">
+                  <strong>Total Amount Due:</strong>
+                  <strong style="font-size:18px;">₱<span id="resident-calc-total">0.00</span></strong>
                 </div>
               </div>
             </div>
@@ -785,10 +558,6 @@
           
           <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
             
-            <div id="resident-leak-flag" class="reservoir-status-banner" style="font-weight:700; text-align:left; display:flex; align-items:center; gap:8px;">
-              <!-- Loaded dynamically (Green check or Red warning) -->
-            </div>
-
             <div class="log-form-card">
               <span class="log-form-title">
                 <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:var(--amber-safety)">
@@ -797,13 +566,50 @@
                 Report Asset Issue to Technicians
               </span>
               <div class="log-form-field">
-                <label for="resident-log-desc">Describe Leak or Pressure Issue</label>
+                <label for="resident-issue-category">Select Issue Category</label>
+                <select id="resident-issue-category" class="log-select">
+                  <option value="Water Leak (High flow/flooding)">💧 Water Leak (High flow/flooding)</option>
+                  <option value="Low Water Pressure / No Water">📉 Low Water Pressure / No Water</option>
+                  <option value="Cloudy / Discolored Water">🧪 Cloudy / Discolored Water</option>
+                  <option value="Broken Water Meter">📟 Broken Water Meter</option>
+                  <option value="Pipe/Joint Leak">🛠️ Pipe/Joint Leak</option>
+                  <option value="Other Concerns">❓ Other Concerns</option>
+                </select>
+              </div>
+              <div class="log-form-field">
+                <label for="resident-log-desc">Additional Details (Optional)</label>
                 <textarea id="resident-log-desc" class="log-textarea" placeholder="e.g. Faucet flow is weak, or wet soil near meter coupler..."></textarea>
+              </div>
+              <div class="log-form-field">
+                <label>Add Photo Evidence</label>
+                <div class="photo-upload-container">
+                  <input type="file" id="resident-photo-input" accept="image/*" style="display:none;">
+                  <button type="button" class="photo-upload-btn" id="btn-resident-photo-trigger">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+                    </svg>
+                    <span>Choose Photo</span>
+                  </button>
+                  <span id="resident-photo-name" class="photo-name-lbl">No file chosen</span>
+                  <div id="resident-photo-preview" class="photo-preview-box" style="display:none;"></div>
+                </div>
               </div>
               <button type="button" class="submit-log-btn" id="btn-resident-submit-log">Send Alert Notification</button>
             </div>
 
-            <button type="button" class="logout-btn" id="btn-resident-logout" style="margin-top:20px">Sign Out of Portal</button>
+            <!-- Logout Card -->
+            <div class="logout-card-container" style="margin-top:20px">
+              <div class="logout-avatar-circle" id="resident-logout-avatar">--</div>
+              <div class="logout-user-details">
+                <div class="logout-user-name" id="resident-logout-name">---</div>
+                <div class="logout-user-role" id="resident-logout-role">---</div>
+              </div>
+              <button type="button" class="logout-action-btn" id="btn-resident-logout" aria-label="Sign Out">
+                <svg viewBox="0 0 24 24">
+                  <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+                </svg>
+              </button>
+            </div>
 
           </div>
         </div>
@@ -818,18 +624,7 @@
           </svg>
           <span>Dashboard</span>
         </a>
-        <a href="#" class="nav-tab" data-target="view-directory">
-          <svg viewBox="0 0 24 24">
-            <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM10 9h8v2h-8zm0 3h8v2h-8zm0-6h8v2h-8z" />
-          </svg>
-          <span>Directory</span>
-        </a>
-        <a href="#" class="nav-tab" data-target="view-assets">
-          <svg viewBox="0 0 24 24">
-            <path d="M12 2c-5.33 4.55-8 8.1-8 10.8C4 17.64 8.03 21 12 21s8-3.36 8-8.2c0-2.7-2.67-6.25-8-10.8zm0 16.5c-2.76 0-5-2.02-5-4.5 0-1.63 1.5-3.86 5-6.84 3.5 2.98 5 5.2 5 6.84 0 2.48-2.24 4.5-5 4.5zM12 6c-.28 0-.5.22-.5.5v3c0 .28.22.5.5.5s.5-.22.5-.5v-3c0-.28-.22-.5-.5-.5z" />
-          </svg>
-          <span>Assets</span>
-        </a>
+        <!-- Directory and Assets tabs removed -->
         <a href="#" class="nav-tab" data-target="view-billing">
           <svg viewBox="0 0 24 24">
             <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 4h2v2h-2V7zm0 4h2v2h-2v-2zm-4-4h2v2H7V7zm0 4h2v2H7v-2zm0 4h2v2H7v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm0-4h2v2h-2v-2zm0-4h2v2h-2V7z"/>
@@ -853,90 +648,7 @@
       </div>
 
 
-      <!-- REGISTER USER MODAL -->
-      <div class="modal-overlay" id="register-user-modal">
-        <div class="modal-content">
-          <div class="modal-header">
-            <div class="modal-header-left">
-              <h3>Register New User</h3>
-              <p>Create Resident or Worker account</p>
-            </div>
-            <button class="modal-close-btn" id="btn-close-register-modal">
-              <svg viewBox="0 0 24 24">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-              </svg>
-            </button>
-          </div>
-          <div class="modal-body" style="padding: 16px;">
-            <div class="form-group">
-              <label for="reg-role">Account Type</label>
-              <select id="reg-role" class="form-input">
-                <option value="resident">Resident (Household)</option>
-                <option value="worker">Worker (Field Tech)</option>
-              </select>
-            </div>
-
-            <!-- Resident Fields -->
-            <div id="reg-resident-fields">
-              <div class="form-group">
-                <label for="reg-res-name">Owner Full Name</label>
-                <input type="text" id="reg-res-name" class="form-input" placeholder="e.g. Maria C. Santos">
-              </div>
-              <div class="form-group">
-                <label for="reg-res-purok">Purok</label>
-                <select id="reg-res-purok" class="form-input">
-                  <option value="Purok 1">Purok 1</option>
-                  <option value="Purok 2">Purok 2</option>
-                  <option value="Purok 3">Purok 3</option>
-                  <option value="Purok 4">Purok 4</option>
-                  <option value="Purok 5">Purok 5</option>
-                  <option value="Purok 6">Purok 6</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="reg-res-lot">Lot / House Number</label>
-                <input type="text" id="reg-res-lot" class="form-input" placeholder="e.g. Lot 12">
-              </div>
-            </div>
-
-            <!-- Worker Fields -->
-            <div id="reg-worker-fields" style="display: none;">
-              <div class="form-group">
-                <label for="reg-work-name">Worker Full Name</label>
-                <input type="text" id="reg-work-name" class="form-input" placeholder="e.g. Juan Luna">
-              </div>
-              <div class="form-group">
-                <label for="reg-work-role">Role</label>
-                <select id="reg-work-role" class="form-input">
-                  <option value="Field Technician">Field Technician</option>
-                  <option value="Lead Field Tech">Lead Field Tech</option>
-                  <option value="Zone Inspector">Zone Inspector</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="reg-work-zone">Assigned Zone</label>
-                <select id="reg-work-zone" class="form-input">
-                  <option value="Purok 1">Purok 1</option>
-                  <option value="Purok 2">Purok 2</option>
-                  <option value="Purok 3">Purok 3</option>
-                  <option value="Purok 4">Purok 4</option>
-                  <option value="Purok 5">Purok 5</option>
-                  <option value="Purok 6">Purok 6</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label for="reg-password">Set Password</label>
-              <input type="password" id="reg-password" class="form-input" placeholder="Enter secure password">
-            </div>
-
-            <button type="button" class="submit-log-btn" id="btn-submit-register" style="margin-top: 10px;">
-              Register Account
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- REGISTER USER MODAL REMOVED (Migrated to Admin Portal) -->
 
       <!-- HOUSE DETAILS MODAL DRAWER OVERLAY -->
       <div class="modal-overlay" id="house-detail-modal">
@@ -956,18 +668,6 @@
 
           <div class="modal-body">
             
-            <!-- Live Pipe Leak Toggle -->
-            <div class="toggle-panel">
-              <div class="toggle-label-group">
-                <span class="toggle-main-label" id="modal-leak-title">Meter Pipe Flow Status</span>
-                <span class="toggle-desc" id="modal-leak-desc">Green: Normal Flow | Red: Leak Risk</span>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="modal-leak-toggle">
-                <span class="slider"></span>
-              </label>
-            </div>
-
             <!-- Meter Details Row -->
             <div class="metrics-row">
               <div class="metric-card">
@@ -1043,6 +743,36 @@
         </a>
       </nav>
 
+      <!-- Account Recovery Modal -->
+      <div class="modal-overlay" id="web-modal-forgot-pw" style="display: none; z-index: 1000; align-items: center; justify-content: center;">
+        <div class="offline-card" style="max-width: 380px; width: 90%; padding: 24px; border-radius: 12px; background: #0c1524; border: 1px solid #1f3044; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); text-align: left;">
+          <h3 style="margin-bottom:18px; font-size:18px; font-weight:700; color: #fff; text-align: center;">Account Password Recovery</h3>
+          <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+            <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Role</label>
+            <select id="web-recover-role" class="form-input" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+              <option value="resident">Resident Citizen</option>
+              <option value="worker">Field Worker / Technician</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+            <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Username / Account ID</label>
+            <input type="text" id="web-recover-username" class="form-input" placeholder="e.g. HH-117 or EMP-301" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
+            <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Registered Contact Number</label>
+            <input type="text" id="web-recover-contact" class="form-input" placeholder="e.g. 09171234567" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+          </div>
+          <div class="form-group" style="margin-bottom: 20px; display: flex; flex-direction: column;">
+            <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">New Password</label>
+            <input type="password" id="web-recover-new-password" class="form-input" placeholder="Enter secure new password" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:10px;">
+            <button class="offline-btn" id="btn-web-recover-cancel" style="background: #1e293b; color: #fff; padding: 8px 16px; font-size: 14px; border: none; cursor: pointer; border-radius: 6px;">Cancel</button>
+            <button class="offline-btn" id="btn-web-recover-submit" style="background: #0284c7; color: #fff; padding: 8px 16px; font-size: 14px; border: none; cursor: pointer; border-radius: 6px;">Reset Password</button>
+          </div>
+        </div>
+      </div>
+
       <!-- SERVER OFFLINE MODAL -->
       <div class="modal-overlay" id="server-offline-modal" style="display: none;">
         <div class="offline-card">
@@ -1056,6 +786,6 @@
       </div>
     </div> <!-- Close app-screen -->
     </div> <!-- Close device-container -->
-  <script src="app.js?v=2.6.9"></script>
+  <script src="app.js?v=3.0.4"></script>
 </body>
 </html>
