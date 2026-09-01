@@ -64,59 +64,18 @@ class AppController {
     final uri = Uri.parse(window.location.href);
     final role = uri.queryParameters['role'];
 
+    final portalTitle = document.getElementById('web-portal-title');
     if (role == 'resident') {
-      final zoneContainer = document.getElementById('zone-assignment-container');
-      if (zoneContainer != null) {
-        zoneContainer.style.display = 'none';
-      }
+      if (portalTitle != null) portalTitle.text = 'Resident Portal';
       final empIdInput = document.getElementById('employee-id') as InputElement?;
       if (empIdInput != null) {
-        empIdInput.placeholder = "e.g. TAG-2026-0041";
+        empIdInput.placeholder = "Enter household ID or name";
       }
-      final labelEl = document.querySelector('label[for="employee-id"]');
-      if (labelEl != null) {
-        labelEl.text = "Resident Account Number";
-      }
-      final titleEl = document.querySelector('.login-header p');
-      if (titleEl != null) {
-        titleEl.text = "Resident Portal Login";
-      }
-      final btnTextEl = document.querySelector('#btn-login span');
-      if (btnTextEl != null) {
-        btnTextEl.text = "Sign In to Portal";
-      }
-      final loginErrorMsg = document.getElementById('login-error-msg');
-      if (loginErrorMsg != null) {
-        loginErrorMsg.innerHtml = "Invalid Resident credentials. Use <strong>TAG-2026-0041</strong>.";
-      }
-      final quickLoginBtn = document.getElementById('btn-quick-login');
-      if (quickLoginBtn != null) {
-        quickLoginBtn.style.display = 'flex';
-      }
-    } else if (role == 'worker') {
+    } else {
+      if (portalTitle != null) portalTitle.text = 'Worker Portal';
       final empIdInput = document.getElementById('employee-id') as InputElement?;
       if (empIdInput != null) {
-        empIdInput.placeholder = "e.g. EMP-304";
-      }
-      final labelEl = document.querySelector('label[for="employee-id"]');
-      if (labelEl != null) {
-        labelEl.text = "Employee Credentials / ID";
-      }
-      final titleEl = document.querySelector('.login-header p');
-      if (titleEl != null) {
-        titleEl.text = "Worker & Field Terminal";
-      }
-      final btnTextEl = document.querySelector('#btn-login span');
-      if (btnTextEl != null) {
-        btnTextEl.text = "Sign In to Terminal";
-      }
-      final loginErrorMsg = document.getElementById('login-error-msg');
-      if (loginErrorMsg != null) {
-        loginErrorMsg.innerHtml = "Invalid Worker credentials. Use <strong>EMP-304</strong>.";
-      }
-      final quickLoginBtnWorker = document.getElementById('btn-quick-login-worker');
-      if (quickLoginBtnWorker != null) {
-        quickLoginBtnWorker.style.display = 'flex';
+        empIdInput.placeholder = "Enter employee ID";
       }
     }
 
@@ -190,6 +149,27 @@ class AppController {
     final passwordInput = document.getElementById('login-password') as InputElement?;
     final zoneSelect = document.getElementById('zone-assignment') as SelectElement?;
     final loginErrorMsg = document.getElementById('login-error-msg');
+
+    final btnToggleWebPw = document.getElementById('btn-toggle-web-pw');
+    btnToggleWebPw?.onClick.listen((e) {
+      e.preventDefault();
+      final pwInput = document.getElementById('login-password') as InputElement?;
+      final eyeShow = document.getElementById('web-eye-show');
+      final eyeHide = document.getElementById('web-eye-hide');
+      if (pwInput != null) {
+        if (pwInput.type == 'password') {
+          pwInput.type = 'text';
+          if (eyeShow != null) eyeShow.style.display = 'none';
+          if (eyeHide != null) eyeHide.style.display = 'block';
+          if (btnToggleWebPw != null) btnToggleWebPw.style.color = '#F4D03F';
+        } else {
+          pwInput.type = 'password';
+          if (eyeShow != null) eyeShow.style.display = 'block';
+          if (eyeHide != null) eyeHide.style.display = 'none';
+          if (btnToggleWebPw != null) btnToggleWebPw.style.color = 'var(--text-muted)';
+        }
+      }
+    });
 
     quickLoginBtn?.onClick.listen((e) {
       final households = db.getHouseholds();
@@ -508,6 +488,89 @@ class AppController {
       if (inputEl != null) inputEl.value = '';
       showToast('Announcement broadcasted!');
     });
+
+    // --- Forgot Password Events ---
+    final btnWebForgotPw = document.getElementById('btn-web-forgot-password');
+    final modalWebForgotPw = document.getElementById('web-modal-forgot-pw');
+    final btnWebRecoverCancel = document.getElementById('btn-web-recover-cancel');
+    final btnWebRecoverSubmit = document.getElementById('btn-web-recover-submit');
+
+    btnWebForgotPw?.onClick.listen((e) {
+      e.preventDefault();
+      if (modalWebForgotPw != null) {
+        modalWebForgotPw.style.display = 'flex';
+      }
+    });
+
+    btnWebRecoverCancel?.onClick.listen((e) {
+      e.preventDefault();
+      if (modalWebForgotPw != null) {
+        modalWebForgotPw.style.display = 'none';
+      }
+    });
+
+    btnWebRecoverSubmit?.onClick.listen((e) async {
+      e.preventDefault();
+      final roleSelect = document.getElementById('web-recover-role') as SelectElement?;
+      final idInput = document.getElementById('web-recover-id') as InputElement?;
+      final phoneInput = document.getElementById('web-recover-phone') as InputElement?;
+      final newPwInput = document.getElementById('web-recover-new-password') as InputElement?;
+      final errorEl = document.getElementById('web-recover-error');
+      final successEl = document.getElementById('web-recover-success');
+
+      if (errorEl != null) errorEl.style.display = 'none';
+      if (successEl != null) successEl.style.display = 'none';
+
+      final roleVal = roleSelect?.value ?? '';
+      final idVal = idInput?.value?.trim() ?? '';
+      final phoneVal = phoneInput?.value?.trim() ?? '';
+      final newPwVal = newPwInput?.value?.trim() ?? '';
+
+      if (idVal.isEmpty || phoneVal.isEmpty || newPwVal.isEmpty) {
+        if (errorEl != null) {
+          errorEl.text = 'All fields are required.';
+          errorEl.style.display = 'block';
+        }
+        return;
+      }
+
+      try {
+        final xhr = await HttpRequest.request(
+          '/api/recover-account',
+          method: 'POST',
+          sendData: json.encode({
+            'role': roleVal,
+            'username': idVal,
+            'contact_no': phoneVal,
+            'new_password': newPwVal
+          }),
+          requestHeaders: {'Content-Type': 'application/json'}
+        );
+
+        if (xhr.status == 200) {
+          final resp = json.decode(xhr.responseText ?? '{}');
+          if (successEl != null) {
+            successEl.text = resp['message'] ?? 'Password reset successfully!';
+            successEl.style.display = 'block';
+          }
+          if (idInput != null) idInput.value = '';
+          if (phoneInput != null) phoneInput.value = '';
+          if (newPwInput != null) newPwInput.value = '';
+          
+          Future.delayed(Duration(seconds: 2), () {
+            if (modalWebForgotPw != null) {
+              modalWebForgotPw.style.display = 'none';
+            }
+            if (successEl != null) successEl.style.display = 'none';
+          });
+        }
+      } catch (e) {
+        if (errorEl != null) {
+          errorEl.text = 'Verification failed. Please check details.';
+          errorEl.style.display = 'block';
+        }
+      }
+    });
   }
 
   void showLoginError(String msg, Element? errorEl) {
@@ -544,6 +607,23 @@ class AppController {
     if (floatingRoleSwitchBtn != null) {
       floatingRoleSwitchBtn!.style.display = 'none'; // ALWAYS HIDDEN
     }
+
+    currentWorker = worker;
+    window.localStorage['waterhall_session'] = json.encode(worker);
+
+    // Render logout card details
+    final List<String> parts = worker['name'].toString().split(' ');
+    final cleanParts = parts.where((p) => p.trim().isNotEmpty).toList();
+    final initials = cleanParts.map((n) => n.isNotEmpty ? n[0] : '').join('');
+    final safeInitials = initials.substring(0, initials.length < 2 ? initials.length : 2).toUpperCase();
+
+    final workerLogoutName = document.getElementById('worker-logout-name');
+    final workerLogoutRole = document.getElementById('worker-logout-role');
+    final workerLogoutAvatar = document.getElementById('worker-logout-avatar');
+
+    if (workerLogoutName != null) workerLogoutName.text = worker['name'];
+    if (workerLogoutRole != null) workerLogoutRole.text = worker['role'] ?? 'Field Worker';
+    if (workerLogoutAvatar != null) workerLogoutAvatar.text = safeInitials;
 
     switchTab('view-dashboard');
 
@@ -1177,8 +1257,10 @@ class AppController {
 
     if (workerAvatarEl != null) {
       final List<String> parts = currentWorker!['name'].toString().split(' ');
-      final initials = parts.map((n) => n.isNotEmpty ? n[0] : '').join('').substring(0, parts.length.clamp(1, 2));
-      workerAvatarEl.text = initials.toUpperCase();
+      final cleanParts = parts.where((p) => p.trim().isNotEmpty).toList();
+      final initials = cleanParts.map((n) => n.isNotEmpty ? n[0] : '').join('');
+      final safeInitials = initials.substring(0, initials.length < 2 ? initials.length : 2).toUpperCase();
+      workerAvatarEl.text = safeInitials;
     }
 
     final households = db.getHouseholds();
