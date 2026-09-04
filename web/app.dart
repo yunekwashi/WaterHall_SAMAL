@@ -311,10 +311,9 @@ class AppController {
     final logoutBtn = document.getElementById('btn-logout') as ButtonElement?;
     logoutBtn?.onClick.listen((e) {
       window.localStorage.remove('waterhall_session');
+      window.localStorage.remove('waterhall_jwt');
       currentWorker = null;
       enforceLoginGate();
-      if (empIdInput != null) empIdInput.value = '';
-      if (passwordInput != null) passwordInput.value = '';
       showToast("Signed out of Tech session");
     });
 
@@ -322,9 +321,9 @@ class AppController {
     final residentLogoutBtn = document.getElementById('btn-resident-logout') as ButtonElement?;
     residentLogoutBtn?.onClick.listen((e) {
       window.localStorage.remove('waterhall_resident_session');
+      window.localStorage.remove('waterhall_jwt');
       currentResidentId = null;
       enforceLoginGate();
-      if (empIdInput != null) empIdInput.value = '';
       showToast("Signed out of Resident Portal");
     });
 
@@ -632,6 +631,43 @@ class AppController {
     if (floatingRoleSwitchBtn != null) {
       floatingRoleSwitchBtn!.style.display = 'none';
     }
+
+    // 1. Clear login credentials and errors
+    final empIdInput = document.getElementById('employee-id') as InputElement?;
+    final passwordInput = document.getElementById('login-password') as InputElement?;
+    final loginErrorMsg = document.getElementById('login-error-msg');
+    if (empIdInput != null) empIdInput.value = '';
+    if (passwordInput != null) passwordInput.value = '';
+    if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+
+    // 2. Clear resident support fields
+    final residentLogDesc = document.getElementById('resident-log-desc') as TextAreaElement?;
+    if (residentLogDesc != null) residentLogDesc.value = '';
+    final residentPhotoName = document.getElementById('resident-photo-name');
+    if (residentPhotoName != null) residentPhotoName.text = 'No file chosen';
+    final residentPhotoPreview = document.getElementById('resident-photo-preview');
+    if (residentPhotoPreview != null) {
+      residentPhotoPreview.style.display = 'none';
+      residentPhotoPreview.style.backgroundImage = '';
+    }
+
+    // 3. Clear worker directory, billing, and announcement fields
+    final dirSearch = document.getElementById('dir-search') as InputElement?;
+    if (dirSearch != null) dirSearch.value = '';
+    final billMeterSearch = document.getElementById('bill-meter-search') as InputElement?;
+    if (billMeterSearch != null) billMeterSearch.value = '';
+    final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
+    if (billCurrInput != null) billCurrInput.value = '';
+    final workerAnnouncementInput = document.getElementById('worker-announcement-input') as TextAreaElement?;
+    if (workerAnnouncementInput != null) workerAnnouncementInput.value = '';
+
+    // 4. Reset logout card display placeholders
+    final resLogoutName = document.getElementById('resident-logout-name');
+    final resLogoutRole = document.getElementById('resident-logout-role');
+    final resLogoutAvatar = document.getElementById('resident-logout-avatar');
+    if (resLogoutName != null) resLogoutName.text = '---';
+    if (resLogoutRole != null) resLogoutRole.text = '---';
+    if (resLogoutAvatar != null) resLogoutAvatar.text = '--';
   }
 
   void showApp(Map<String, dynamic> worker) {
@@ -1613,6 +1649,26 @@ class AppController {
       floatingRoleSwitchBtn!.style.display = 'none'; // NEVER show this to residents
     }
 
+    // Populate Resident Logout Card
+    final household = db.getHousehold(houseId);
+    if (household != null) {
+      final resLogoutName = document.getElementById('resident-logout-name');
+      final resLogoutRole = document.getElementById('resident-logout-role');
+      final resLogoutAvatar = document.getElementById('resident-logout-avatar');
+
+      final ownerName = (household['owner_name'] ?? '').toString();
+      if (resLogoutName != null) resLogoutName.text = ownerName.isNotEmpty ? ownerName : houseId;
+      if (resLogoutRole != null) resLogoutRole.text = '${household['house_id']} • ${household['purok']}';
+
+      if (resLogoutAvatar != null) {
+        final List<String> parts = ownerName.split(' ');
+        final cleanParts = parts.where((p) => p.trim().isNotEmpty).toList();
+        final initials = cleanParts.map((n) => n.isNotEmpty ? n[0] : '').join('');
+        final safeInitials = initials.substring(0, initials.length < 2 ? initials.length : 2).toUpperCase();
+        resLogoutAvatar.text = safeInitials.isNotEmpty ? safeInitials : 'RES';
+      }
+    }
+
     switchTab('view-resident-home');
   }
 
@@ -1660,6 +1716,23 @@ class AppController {
     if (resProfileName != null) resProfileName.text = household['owner_name'];
     if (resProfileMeta != null) {
       resProfileMeta.text = 'Meter ID: ${household['house_id']} | ${household['account_number']} | ${household['purok']}';
+    }
+
+    // Populate Resident Support tab logout card
+    final resLogoutName = document.getElementById('resident-logout-name');
+    final resLogoutRole = document.getElementById('resident-logout-role');
+    final resLogoutAvatar = document.getElementById('resident-logout-avatar');
+
+    final ownerName = (household['owner_name'] ?? '').toString();
+    if (resLogoutName != null) resLogoutName.text = ownerName.isNotEmpty ? ownerName : household['house_id'];
+    if (resLogoutRole != null) resLogoutRole.text = '${household['house_id']} • ${household['purok']}';
+
+    if (resLogoutAvatar != null) {
+      final List<String> parts = ownerName.split(' ');
+      final cleanParts = parts.where((p) => p.trim().isNotEmpty).toList();
+      final initials = cleanParts.map((n) => n.isNotEmpty ? n[0] : '').join('');
+      final safeInitials = initials.substring(0, initials.length < 2 ? initials.length : 2).toUpperCase();
+      resLogoutAvatar.text = safeInitials.isNotEmpty ? safeInitials : 'RES';
     }
 
     // Leak Flag Warning
