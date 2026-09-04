@@ -308,12 +308,12 @@ body {
 
 /* --- View Login Screen Overhaul --- */
 #view-login {
+  display: none;
   background-color: var(--bg-dark);
   background-image: 
     radial-gradient(circle at 30% 40%, rgba(40, 116, 166, 0.4), transparent 50%),
     radial-gradient(circle at 70% 60%, rgba(244, 208, 63, 0.08), transparent 50%);
   color: var(--text-on-dark);
-  display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
