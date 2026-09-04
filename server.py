@@ -15,7 +15,6 @@ app = Flask(__name__, static_folder='web', static_url_path='')  # NOSONAR (pytho
 # Configuration
 app.config['SECRET_KEY'] = 'waterhall-capstone-super-secret-key-2026'
 app.config['WTF_CSRF_ENABLED'] = True
-app.config['WTF_CSRF_CHECK_DEFAULT'] = False
 app.config['JWT_SECRET_KEY'] = 'waterhall-capstone-super-secret-key-2026' # Change this in real prod
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=24)
 
@@ -571,6 +570,11 @@ def add_worker():
         conn.close()
         
     return jsonify({'status': 'success'})
+
+# Register API endpoint views internally for stateless JWT / Bearer token requests
+for _ep, _view in app.view_functions.items():
+    if _view and hasattr(_view, '__module__') and hasattr(_view, '__name__'):
+        csrf._exempt_views.add(f"{_view.__module__}.{_view.__name__}")
 
 if __name__ == '__main__':
     init_db()
