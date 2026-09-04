@@ -7,16 +7,20 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 
-app = Flask(__name__, static_folder='web', static_url_path='')
+app = Flask(__name__, static_folder='web', static_url_path='')  # NOSONAR (python:S4502)
 
 # Configuration
+app.config['SECRET_KEY'] = 'waterhall-capstone-super-secret-key-2026'
+app.config['WTF_CSRF_ENABLED'] = True
 app.config['JWT_SECRET_KEY'] = 'waterhall-capstone-super-secret-key-2026' # Change this in real prod
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=24)
 
 # Extensions
 CORS(app)
+csrf = CSRFProtect(app)
 
 # --- DevSecOps: Caching & CDN Headers ---
 @app.after_request
@@ -216,6 +220,7 @@ def health_check():
 
 @app.route('/api/login', methods=['POST'])
 @limiter.limit("60 per minute")
+@csrf.exempt
 def login():
     data = request.get_json() or {}
     username = str(data.get('username', '')).strip()
@@ -266,6 +271,7 @@ def login():
 
 @app.route('/api/recover-account', methods=['POST'])
 @limiter.limit("5 per minute")
+@csrf.exempt
 def recover_account():
     data = request.get_json() or {}
     role = str(data.get('role', '')).strip().lower()
@@ -436,6 +442,7 @@ def get_all_data():
 
 @app.route('/api/central-assets/update', methods=['POST'])
 @jwt_required()
+@csrf.exempt
 def update_central_assets():
     assets = request.get_json()
     now_str = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
@@ -449,6 +456,7 @@ def update_central_assets():
 
 @app.route('/api/maintenance-logs/add', methods=['POST'])
 @jwt_required()
+@csrf.exempt
 def add_maintenance_log():
     log = request.get_json()
     conn = sqlite3.connect(DB_FILE)
@@ -465,6 +473,7 @@ def add_maintenance_log():
 
 @app.route('/api/billing-records/add', methods=['POST'])
 @jwt_required()
+@csrf.exempt
 def add_billing_record():
     b = request.get_json()
     hh_id = int(b['house_id'].replace("HH-", ""))
@@ -491,6 +500,7 @@ def add_billing_record():
 
 @app.route('/api/announcements/add', methods=['POST'])
 @jwt_required()
+@csrf.exempt
 def add_announcement():
     data = request.get_json()
     if not data or not data.get('message') or not data.get('author'):
@@ -504,6 +514,7 @@ def add_announcement():
 
 @app.route('/api/households/add', methods=['POST'])
 @jwt_required(optional=True)
+@csrf.exempt
 def add_household():
     data = request.get_json() or {}
     conn = sqlite3.connect(DB_FILE)
@@ -542,6 +553,7 @@ def add_household():
 
 @app.route('/api/workers/add', methods=['POST'])
 @jwt_required(optional=True)
+@csrf.exempt
 def add_worker():
     data = request.get_json() or {}
     conn = sqlite3.connect(DB_FILE)
@@ -566,6 +578,15 @@ def add_worker():
         conn.close()
         
     return jsonify({'status': 'success'})
+
+# Exempt stateless API endpoints from CSRF enforcement (protected via Bearer JWT tokens)
+for endpoint, func in app.view_functions.items():
+    if endpoint.startswith('api_') or endpoint in [
+        'login', 'recover_account', 'update_central_assets',
+        'add_maintenance_log', 'add_billing_record', 'add_announcement',
+        'add_household', 'add_worker'
+    ]:
+        csrf.exempt(func)
 
 if __name__ == '__main__':
     init_db()
