@@ -201,7 +201,8 @@ class AppController {
       }
     });
 
-    loginBtn?.onClick.listen((e) {
+    loginBtn?.onClick.listen((e) async {
+      e.preventDefault();
       final empId = empIdInput?.value?.trim() ?? '';
       final password = passwordInput?.value?.trim() ?? '';
       final selectedZone = zoneSelect?.value ?? '';
@@ -211,15 +212,59 @@ class AppController {
         return;
       }
 
-      // Get role from URL query param
+      // 1. Authenticate with Server API /api/login
+      try {
+        final xhr = await HttpRequest.request(
+          '/api/login',
+          method: 'POST',
+          requestHeaders: {'Content-Type': 'application/json'},
+          sendData: json.encode({'username': empId, 'password': password}),
+        );
+        
+        final data = json.decode(xhr.responseText!) as Map<String, dynamic>;
+        final token = data['access_token'] as String;
+        final userRole = data['role'] as String;
+        final id = data['id'] as String;
+        final name = data['name'] as String;
+
+        window.localStorage['waterhall_jwt'] = token;
+
+        // Refresh database with the newly authenticated token
+        await db.refreshData();
+
+        if (userRole == 'resident') {
+          window.localStorage.remove('waterhall_session');
+          currentWorker = null;
+          showResidentPortal(id);
+          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+          showToast('Logged in as Resident: ' + name);
+          return;
+        } else {
+          currentWorker = {
+            'worker_id': id,
+            'name': name,
+            'role': 'Collector',
+            'selected_zone': selectedZone.isNotEmpty ? selectedZone : 'Purok 1',
+          };
+          window.localStorage['waterhall_session'] = json.encode(currentWorker);
+          window.localStorage.remove('waterhall_resident_session');
+          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
+          showApp(currentWorker!);
+          showToast('Logged in as Tech: ' + name);
+          return;
+        }
+      } catch (err) {
+        print("Server login error: $err");
+      }
+
+      // 2. Offline Fallback Validation
       final uri = Uri.parse(window.location.href);
       final role = uri.queryParameters['role'];
 
       if (role == 'resident') {
-        // 2. Try validating as resident
         final resident = db.validateResident(empId, password);
         if (resident != null) {
-          window.localStorage.remove('waterhall_session'); // Clear worker session
+          window.localStorage.remove('waterhall_session');
           currentWorker = null;
           showResidentPortal(resident['house_id']);
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
@@ -227,24 +272,22 @@ class AppController {
           return;
         }
       } else if (role == 'worker') {
-        // 1. Try validating as worker
         final worker = db.validateWorker(empId, password, selectedZone);
         if (worker != null) {
           currentWorker = worker;
           window.localStorage['waterhall_session'] = json.encode(worker);
-          window.localStorage.remove('waterhall_resident_session'); // Clear resident session
+          window.localStorage.remove('waterhall_resident_session');
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
           showApp(worker);
           showToast('Logged in as Tech: ' + worker['name']);
           return;
         }
       } else {
-        // Unified default behavior (both allowed)
         final worker = db.validateWorker(empId, password, selectedZone);
         if (worker != null) {
           currentWorker = worker;
           window.localStorage['waterhall_session'] = json.encode(worker);
-          window.localStorage.remove('waterhall_resident_session'); // Clear resident session
+          window.localStorage.remove('waterhall_resident_session');
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
           showApp(worker);
           showToast('Logged in as Tech: ' + worker['name']);
@@ -253,7 +296,7 @@ class AppController {
 
         final resident = db.validateResident(empId, password);
         if (resident != null) {
-          window.localStorage.remove('waterhall_session'); // Clear worker session
+          window.localStorage.remove('waterhall_session');
           currentWorker = null;
           showResidentPortal(resident['house_id']);
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
@@ -262,7 +305,6 @@ class AppController {
         }
       }
 
-      // 3. Fallback: invalid credentials
       showLoginError('Credentials "' + empId + '" not recognized. Check details.', loginErrorMsg);
     });
 
@@ -583,6 +625,7 @@ class AppController {
   void enforceLoginGate() {
     views.values.forEach((v) => v.classes.remove('active'));
     loginView.classes.add('active');
+    loginView.style.display = 'flex';
     activeTab = 'view-login';
     bottomNav.style.display = 'none';
     residentBottomNav.style.display = 'none'; // ADDED: hide resident nav on logout
@@ -594,6 +637,7 @@ class AppController {
   void showApp(Map<String, dynamic> worker) {
     // Hide login
     loginView.classes.remove('active');
+    loginView.style.display = 'none';
     views.values.forEach((v) => v.classes.remove('active'));
     
     currentResidentId = null;
@@ -1558,6 +1602,7 @@ class AppController {
     window.localStorage.remove('waterhall_session'); // EXPLICITLY ENSURE worker session is clear
 
     loginView.classes.remove('active');
+    loginView.style.display = 'none';
     views.values.forEach((v) => v.classes.remove('active'));
     
     // EXPLICITLY hide worker nav and show resident nav
