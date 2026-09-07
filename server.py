@@ -590,5 +590,5 @@ for _ep, _view in app.view_functions.items():
 if __name__ == '__main__':
     init_db()
     is_debug = os.environ.get('FLASK_DEBUG', 'false').lower() in ('true', '1')
-    print("Starting Flask server on port 8000...")
-    app.run(host='0.0.0.0', port=8000, debug=is_debug)
+    print("Starting Flask server on 127.0.0.1:8000...")
+    app.run(host='127.0.0.1', port=8000, debug=is_debug)
