@@ -495,9 +495,9 @@ async function broadcastSim() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
     body: JSON.stringify({
-      main_tank_level: parseInt(tank),
-      turbidity: parseFloat(turb),
-      ph_level: parseFloat(ph)
+      main_tank_level: Number.parseInt(tank, 10),
+      turbidity: Number.parseFloat(turb),
+      ph_level: Number.parseFloat(ph)
     })
   });
   fetchData(true);

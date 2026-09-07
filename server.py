@@ -453,7 +453,7 @@ def get_all_data():
 @jwt_required()
 def update_central_assets():
     assets = request.get_json()
-    now_str = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, ph_level, tds_ppm, recorded_at) VALUES (?, ?, ?, ?, ?)',
@@ -468,7 +468,7 @@ def add_maintenance_log():
     log = request.get_json()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    date_str = log.get('date', datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+    date_str = log.get('date', datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
     c.execute('''
         INSERT INTO maintenance_logs (house_id, worker_id, purok, description, status_resolved, date, photo_base64)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -534,7 +534,7 @@ def add_household():
         c.execute('''
             INSERT INTO households (purok_id, family_head_name, registration_date, password_hash, contact_no)
             VALUES (?, ?, ?, ?, ?)
-        ''', (purok_id, data.get('owner_name', 'Unnamed Household'), datetime.datetime.utcnow().strftime('%Y-%m-%d'), pass_hash, data.get('contact')))
+        ''', (purok_id, data.get('owner_name', 'Unnamed Household'), datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'), pass_hash, data.get('contact')))
         
         hh_id = c.lastrowid
         
