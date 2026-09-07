@@ -319,7 +319,7 @@ function renderCharts(data) {
     }
   });
 
-  const labels = Object.keys(revByMonth).sort().slice(-5);
+  const labels = Object.keys(revByMonth).sort((a, b) => a.localeCompare(b)).slice(-5);
   const revData = labels.map(l => revByMonth[l]);
 
   charts.collections = new Chart(ctxColl, {
