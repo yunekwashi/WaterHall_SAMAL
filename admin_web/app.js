@@ -36,6 +36,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         showLogin();
       }
     } catch (e) {
+      // Server offline or initial validation failed
+      console.error('Initialization error:', e);
       showAdminOfflineOverlay();
       hideLoader();
     }
@@ -51,6 +53,8 @@ async function checkServerHealth() {
     isServerOnline = res.ok;
     return res.ok;
   } catch (e) {
+    // Network error or aborted request indicates server is offline
+    console.warn('Server health check failed:', e);
     isServerOnline = false;
     return false;
   }
@@ -115,7 +119,7 @@ setInterval(async () => {
     }
     return;
   }
-  if (jwtToken && document.getElementById('login-screen') && document.getElementById('login-screen').style.display === 'none') {
+  if (jwtToken && document.getElementById('login-screen')?.style.display === 'none') {
     fetchData(true);
   }
 }, 2500);
@@ -171,6 +175,8 @@ document.getElementById('btn-login').addEventListener('click', async () => {
       errEl.style.display = 'block';
     }
   } catch (e) {
+    // Connection error during login attempt
+    console.error('Login request failed:', e);
     errEl.textContent = 'Cannot connect to server. Is it running?';
     errEl.style.display = 'block';
     showAdminOfflineOverlay();
@@ -554,6 +560,8 @@ document.getElementById('btn-recover-submit').addEventListener('click', async ()
       alert(data.msg || 'Failed to verify recovery details.');
     }
   } catch (err) {
+    // Connection error during password recovery attempt
+    console.error('Password recovery error:', err);
     alert('Connection error occurred.');
   } finally {
     btn.textContent = 'Reset Password';
