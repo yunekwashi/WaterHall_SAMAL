@@ -19,13 +19,13 @@
       </div>
       <div class="login-error" id="login-error">Invalid credentials or unauthorized role.</div>
       <div class="form-group">
-        <label>Username</label>
-        <input type="text" id="login-username" placeholder="Enter admin username">
+        <label for="login-username">Username</label>
+        <input type="text" id="login-username" name="username" aria-label="Username" placeholder="Enter admin username">
       </div>
       <div class="form-group">
-        <label>Password</label>
+        <label for="login-password">Password</label>
         <div style="position:relative;">
-          <input type="password" id="login-password" placeholder="Enter password" style="padding-right: 48px;">
+          <input type="password" id="login-password" name="password" aria-label="Password" placeholder="Enter password" style="padding-right: 48px;">
           <button type="button" id="btn-toggle-pw" onclick="togglePassword()" title="Show/hide password" style="
             position:absolute; right:12px; top:50%; transform:translateY(-50%);
             background:none; border:none; cursor:pointer; color:var(--text-muted);
@@ -204,26 +204,26 @@
 
         <div class="slider-container">
           <div class="slider-header">
-            <span>Reservoir Water Level</span>
+            <label for="slider-tank" style="font-weight:600; font-size:14px; color:var(--text-color); cursor:pointer;">Reservoir Water Level</label>
             <span id="sim-tank-val">68%</span>
           </div>
-          <input type="range" id="slider-tank" min="0" max="100" value="68">
+          <input type="range" id="slider-tank" name="slider-tank" aria-label="Reservoir Water Level" min="0" max="100" value="68">
         </div>
 
         <div class="slider-container">
           <div class="slider-header">
-            <span>Water Turbidity (NTU)</span>
+            <label for="slider-turbidity" style="font-weight:600; font-size:14px; color:var(--text-color); cursor:pointer;">Water Turbidity (NTU)</label>
             <span id="sim-turbidity-val">6.2 NTU</span>
           </div>
-          <input type="range" id="slider-turbidity" min="0" max="20" step="0.1" value="6.2">
+          <input type="range" id="slider-turbidity" name="slider-turbidity" aria-label="Water Turbidity" min="0" max="20" step="0.1" value="6.2">
         </div>
         
         <div class="slider-container">
           <div class="slider-header">
-            <span>pH Level</span>
+            <label for="slider-ph" style="font-weight:600; font-size:14px; color:var(--text-color); cursor:pointer;">pH Level</label>
             <span id="sim-ph-val">7.2</span>
           </div>
-          <input type="range" id="slider-ph" min="0" max="14" step="0.1" value="7.2">
+          <input type="range" id="slider-ph" name="slider-ph" aria-label="pH Level" min="0" max="14" step="0.1" value="7.2">
         </div>
       </div>
     </div>
@@ -234,16 +234,16 @@
     <div class="modal">
       <h3 style="margin-bottom:24px; font-size:24px; font-weight:700;">Register New Household</h3>
       <div class="form-group">
-        <label>Family Head Name</label>
-        <input type="text" id="res-name" placeholder="Juan Dela Cruz">
+        <label for="res-name">Family Head Name</label>
+        <input type="text" id="res-name" name="res-name" aria-label="Family Head Name" placeholder="Juan Dela Cruz">
       </div>
       <div class="form-group">
-        <label>Contact Number (For Password Recovery)</label>
-        <input type="text" id="res-contact" placeholder="09171234567">
+        <label for="res-contact">Contact Number (For Password Recovery)</label>
+        <input type="text" id="res-contact" name="res-contact" aria-label="Contact Number" placeholder="09171234567">
       </div>
       <div class="form-group">
-        <label>Assigned Password</label>
-        <input type="password" id="res-password" placeholder="Enter secure password">
+        <label for="res-password">Assigned Password</label>
+        <input type="password" id="res-password" name="res-password" aria-label="Assigned Password" placeholder="Enter secure password">
       </div>
       <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:32px;">
         <button class="btn btn-secondary" id="btn-res-cancel">Cancel</button>
@@ -256,20 +256,20 @@
     <div class="modal">
       <h3 style="margin-bottom:24px; font-size:24px; font-weight:700;">Register New Field Worker</h3>
       <div class="form-group">
-        <label>Worker Full Name</label>
-        <input type="text" id="work-name" placeholder="Andres Bonifacio">
+        <label for="work-name">Worker Full Name</label>
+        <input type="text" id="work-name" name="work-name" aria-label="Worker Full Name" placeholder="Andres Bonifacio">
       </div>
       <div class="form-group">
-        <label>Employee ID (Username)</label>
-        <input type="text" id="work-id" placeholder="EMP-401">
+        <label for="work-id">Employee ID (Username)</label>
+        <input type="text" id="work-id" name="work-id" aria-label="Employee ID" placeholder="EMP-401">
       </div>
       <div class="form-group">
-        <label>Contact Number (For Password Recovery)</label>
-        <input type="text" id="work-contact" placeholder="09171234567">
+        <label for="work-contact">Contact Number (For Password Recovery)</label>
+        <input type="text" id="work-contact" name="work-contact" aria-label="Contact Number" placeholder="09171234567">
       </div>
       <div class="form-group">
-        <label>Assigned Password</label>
-        <input type="password" id="work-password" placeholder="Enter secure password">
+        <label for="work-password">Assigned Password</label>
+        <input type="password" id="work-password" name="work-password" aria-label="Assigned Password" placeholder="Enter secure password">
       </div>
       <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:32px;">
         <button class="btn btn-secondary" id="btn-work-cancel">Cancel</button>
@@ -283,24 +283,24 @@
     <div class="modal" style="max-width: 400px; padding: 32px; border-radius: 16px; background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);">
       <h3 style="margin-bottom:24px; font-size:22px; font-weight:700; color: var(--text-color);">Account Password Recovery</h3>
       <div class="form-group" style="margin-bottom: 16px;">
-        <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Role</label>
-        <select id="recover-role" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color); font-weight: 500;">
+        <label for="recover-role" style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Role</label>
+        <select id="recover-role" name="recover-role" aria-label="Role" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color); font-weight: 500;">
           <option value="admin">Administrator</option>
           <option value="worker">Field Worker / Technician</option>
           <option value="resident">Resident Citizen</option>
         </select>
       </div>
       <div class="form-group" style="margin-bottom: 16px;">
-        <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Username / Account ID</label>
-        <input type="text" id="recover-username" placeholder="e.g. admin, EMP-301, or HH-117" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
+        <label for="recover-username" style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Username / Account ID</label>
+        <input type="text" id="recover-username" name="recover-username" aria-label="Username or Account ID" placeholder="e.g. admin, EMP-301, or HH-117" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
       </div>
       <div class="form-group" style="margin-bottom: 16px;">
-        <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Registered Contact Number</label>
-        <input type="text" id="recover-contact" placeholder="e.g. 09171234567" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
+        <label for="recover-contact" style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Registered Contact Number</label>
+        <input type="text" id="recover-contact" name="recover-contact" aria-label="Registered Contact Number" placeholder="e.g. 09171234567" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
       </div>
       <div class="form-group" style="margin-bottom: 24px;">
-        <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">New Password</label>
-        <input type="password" id="recover-new-password" placeholder="Enter secure new password" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
+        <label for="recover-new-password" style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">New Password</label>
+        <input type="password" id="recover-new-password" name="recover-new-password" aria-label="New Password" placeholder="Enter secure new password" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color);">
       </div>
       <div style="display:flex; justify-content:flex-end; gap:12px;">
         <button class="btn btn-secondary" id="btn-recover-cancel">Cancel</button>
