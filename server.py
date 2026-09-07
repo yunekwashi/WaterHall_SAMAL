@@ -13,13 +13,19 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__, static_folder='web', static_url_path='')  # NOSONAR (python:S4502)
 
 # Configuration
-app.config['SECRET_KEY'] = 'waterhall-capstone-super-secret-key-2026'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 app.config['WTF_CSRF_ENABLED'] = True
-app.config['JWT_SECRET_KEY'] = 'waterhall-capstone-super-secret-key-2026' # Change this in real prod
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'waterhall-capstone-jwt-token-key-2026')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=24)
 
 # Extensions
-CORS(app)
+ALLOWED_ORIGINS = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'http://localhost:3000',
+    'http://localhost:5000'
+]
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
 csrf = CSRFProtect(app)
 
 # --- DevSecOps: Caching & CDN Headers ---
@@ -43,7 +49,7 @@ limiter = Limiter(
 )
 
 DB_FILE = 'waterhall.db'
-DEFAULT_PASSWORD_HASH = generate_password_hash('waterhall2026')
+DEFAULT_PASSWORD_HASH = generate_password_hash(os.environ.get('DEFAULT_PASSWORD', 'waterhall2026'))
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -194,25 +200,30 @@ def init_db():
     conn.close()
 
 
+def safe_serve_file(base_folder, requested_path, default_file='index.html'):
+    base_dir = os.path.abspath(base_folder)
+    target_path = os.path.abspath(os.path.join(base_dir, requested_path))
+    # Validate canonical path to prevent directory traversal
+    if target_path.startswith(base_dir) and os.path.isfile(target_path):
+        rel_path = os.path.relpath(target_path, base_dir)
+        return send_from_directory(base_dir, rel_path)
+    return send_file(os.path.join(base_dir, default_file))
+
 @app.route('/')
 def serve_index():
-    return send_file(os.path.join(app.static_folder, 'index.html'))
+    return send_file(os.path.join(os.path.abspath(app.static_folder), 'index.html'))
 
 @app.route('/<path:path>')
 def serve_static(path):
-    if os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
-    return send_file(os.path.join(app.static_folder, 'index.html'))
+    return safe_serve_file(app.static_folder, path)
 
 @app.route('/admin')
 def serve_admin_index():
-    return send_file(os.path.join('admin_web', 'index.html'))
+    return send_file(os.path.join(os.path.abspath('admin_web'), 'index.html'))
 
 @app.route('/admin/<path:path>')
 def serve_admin_static(path):
-    if os.path.exists(os.path.join('admin_web', path)):
-        return send_from_directory('admin_web', path)
-    return send_file(os.path.join('admin_web', 'index.html'))
+    return safe_serve_file('admin_web', path)
 
 @app.route('/api/health')
 def health_check():
