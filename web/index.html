@@ -343,13 +343,13 @@
             
             <!-- Meter Selector Panel (Searchable Autocomplete) -->
             <div class="reservoir-card" style="position:relative; overflow:visible; z-index:100;">
-              <span class="reservoir-title" style="font-size:12px; text-transform:uppercase; color:var(--text-muted)">Search & Select Meter</span>
+              <label for="bill-meter-search" class="reservoir-title" style="font-size:12px; text-transform:uppercase; color:var(--text-muted); display:block; cursor:pointer;">Search & Select Meter</label>
               <div class="form-group" style="margin-top:4px; position:relative;">
                 <div class="search-input-wrapper" style="position:relative; display:flex; align-items:center;">
                   <svg viewBox="0 0 24 24" style="position:absolute; left:12px; width:18px; height:18px; fill:var(--navy-primary); pointer-events:none;">
                     <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
                   </svg>
-                  <input type="text" id="bill-meter-search" style="width:100%; padding:10px 10px 10px 38px; font-size:14px; background-color:var(--off-white); border:1.5px solid var(--navy-border); color:var(--navy-primary); border-radius:var(--radius-md); font-weight:600; outline:none;" placeholder="Type Owner or Account #..." autocomplete="off">
+                  <input type="text" id="bill-meter-search" name="bill-meter-search" aria-label="Search and select meter" style="width:100%; padding:10px 10px 10px 38px; font-size:14px; background-color:var(--off-white); border:1.5px solid var(--navy-border); color:var(--navy-primary); border-radius:var(--radius-md); font-weight:600; outline:none;" placeholder="Type Owner or Account #..." autocomplete="off">
                 </div>
                 <!-- Autocomplete Dropdown List -->
                 <div id="bill-meter-results" class="search-results-dropdown">
@@ -370,8 +370,8 @@
                 <div class="metric-card-val" id="bill-prev-reading" style="font-size:18px;">0.0</div>
               </div>
               <div class="metric-card">
-                <span class="metric-card-lbl">Current Input (m³)</span>
-                <input type="number" step="0.1" id="bill-curr-input" style="padding:4px 8px; font-size:16px; font-weight:700; width:100%; border:1.5px solid var(--navy-border); border-radius:var(--radius-sm); margin-top:4px; color:var(--navy-primary); background-color:var(--off-white);" value="0.0">
+                <label for="bill-curr-input" class="metric-card-lbl" style="display:block; cursor:pointer;">Current Input (m³)</label>
+                <input type="number" step="0.1" id="bill-curr-input" name="bill-curr-input" aria-label="Current input reading" style="padding:4px 8px; font-size:16px; font-weight:700; width:100%; border:1.5px solid var(--navy-border); border-radius:var(--radius-sm); margin-top:4px; color:var(--navy-primary); background-color:var(--off-white);" value="0.0">
               </div>
             </div>
 
@@ -581,9 +581,9 @@
                 <textarea id="resident-log-desc" class="log-textarea" placeholder="e.g. Faucet flow is weak, or wet soil near meter coupler..."></textarea>
               </div>
               <div class="log-form-field">
-                <label>Add Photo Evidence</label>
+                <label for="resident-photo-input">Add Photo Evidence</label>
                 <div class="photo-upload-container">
-                  <input type="file" id="resident-photo-input" accept="image/*" style="display:none;">
+                  <input type="file" id="resident-photo-input" name="resident-photo-input" aria-label="Add Photo Evidence" accept="image/*" style="display:none;">
                   <button type="button" class="photo-upload-btn" id="btn-resident-photo-trigger">
                     <svg viewBox="0 0 24 24">
                       <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
@@ -748,23 +748,23 @@
         <div class="offline-card" style="max-width: 380px; width: 90%; padding: 24px; border-radius: 12px; background: #0c1524; border: 1px solid #1f3044; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); text-align: left;">
           <h3 style="margin-bottom:18px; font-size:18px; font-weight:700; color: #fff; text-align: center;">Account Password Recovery</h3>
           <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
-            <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Role</label>
-            <select id="web-recover-role" class="form-input" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+            <label for="web-recover-role" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Role</label>
+            <select id="web-recover-role" name="web-recover-role" aria-label="Role" class="form-input" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
               <option value="resident">Resident Citizen</option>
               <option value="worker">Field Worker / Technician</option>
             </select>
           </div>
           <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
-            <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Username / Account ID</label>
-            <input type="text" id="web-recover-username" class="form-input" placeholder="e.g. HH-117 or EMP-301" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+            <label for="web-recover-username" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Username / Account ID</label>
+            <input type="text" id="web-recover-username" name="web-recover-username" aria-label="Username or Account ID" class="form-input" placeholder="e.g. HH-117 or EMP-301" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
           </div>
           <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
-            <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Registered Contact Number</label>
-            <input type="text" id="web-recover-contact" class="form-input" placeholder="e.g. 09171234567" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+            <label for="web-recover-contact" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Registered Contact Number</label>
+            <input type="text" id="web-recover-contact" name="web-recover-contact" aria-label="Registered Contact Number" class="form-input" placeholder="e.g. 09171234567" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
           </div>
           <div class="form-group" style="margin-bottom: 20px; display: flex; flex-direction: column;">
-            <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">New Password</label>
-            <input type="password" id="web-recover-new-password" class="form-input" placeholder="Enter secure new password" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+            <label for="web-recover-new-password" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">New Password</label>
+            <input type="password" id="web-recover-new-password" name="web-recover-new-password" aria-label="New Password" class="form-input" placeholder="Enter secure new password" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
           </div>
           <div style="display:flex; justify-content:flex-end; gap:10px;">
             <button class="offline-btn" id="btn-web-recover-cancel" style="background: #1e293b; color: #fff; padding: 8px 16px; font-size: 14px; border: none; cursor: pointer; border-radius: 6px;">Cancel</button>
