@@ -13,9 +13,14 @@
   <!-- Login Screen -->
   <div id="login-screen">
     <div class="login-box">
-      <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:32px;">
-        <img src="/admin/logo.png" alt="WATERHALL Logo" style="width:140px; height:auto; border-radius:12px; margin-bottom:8px;">
-        <p style="color:var(--text-muted); font-size:13px; letter-spacing:1px; text-transform:uppercase; font-weight:600;">Admin Portal</p>
+      <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:28px;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:12px;">
+          <img src="/admin/logo.png" alt="WATERHALL Logo" style="width:72px; height:auto; border-radius:10px;">
+          <img src="/admin/tagpopongan_logo.jpg" alt="Barangay Tagpopongan Official Seal" style="width:72px; height:72px; object-fit:cover; border-radius:50%; border:2px solid rgba(255,255,255,0.25); box-shadow:0 4px 12px rgba(0,0,0,0.25);">
+        </div>
+        <h3 style="margin:0; font-size:20px; font-weight:700; color:#fff; text-align:center;">WATERHALL</h3>
+        <p style="margin:4px 0 0 0; color:var(--text-muted); font-size:12px; letter-spacing:1px; text-transform:uppercase; font-weight:600; text-align:center;">Barangay Tagpopongan Water Utility</p>
+        <span style="display:inline-block; margin-top:6px; font-size:11px; padding:3px 10px; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); border-radius:12px; color:#60a5fa; font-weight:600;">Admin Portal</span>
       </div>
       <div class="login-error" id="login-error">Invalid credentials or unauthorized role.</div>
       <div class="form-group">
@@ -52,9 +57,13 @@
 
   <!-- Sidebar -->
   <aside class="sidebar">
-    <div class="brand">
-      <img src="/admin/logo.png" alt="WATERHALL" style="width:44px; height:44px; object-fit:cover; border-radius:12px; box-shadow: 0 8px 24px rgba(255, 150, 50, 0.3);">
-      WATERHALL
+    <div class="brand" style="flex-direction:column; align-items:flex-start; gap:6px; padding-bottom:14px;">
+      <div style="display:flex; align-items:center; gap:10px; width:100%;">
+        <img src="/admin/logo.png" alt="WATERHALL Logo" style="width:40px; height:40px; object-fit:cover; border-radius:10px; box-shadow: 0 8px 24px rgba(255, 150, 50, 0.3);">
+        <img src="/admin/tagpopongan_logo.jpg" alt="Barangay Tagpopongan Official Seal" style="width:40px; height:40px; object-fit:cover; border-radius:50%; border:2px solid rgba(255,255,255,0.2); box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        <span style="font-size:15px; font-weight:700; letter-spacing:0.5px;">WATERHALL</span>
+      </div>
+      <span style="font-size:10px; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:1.2px; padding-left:2px;">Brgy. Tagpopongan</span>
     </div>
     <div class="nav-menu">
       <div class="nav-item active" data-tab="tab-dashboard">
