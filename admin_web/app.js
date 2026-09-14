@@ -424,7 +424,8 @@ window.deleteHousehold = async function(id) {
       if (res.ok) {
         fetchData(false);
       } else {
-        alert("Failed to delete resident.");
+        const body = await res.json().catch(() => ({}));
+        alert("Failed to delete resident.\nReason: " + (body.error || body.msg || res.status));
       }
     } catch (e) {
       alert("Error: " + e.message);
@@ -442,7 +443,8 @@ window.deleteWorker = async function(id) {
       if (res.ok) {
         fetchData(false);
       } else {
-        alert("Failed to delete worker.");
+        const body = await res.json().catch(() => ({}));
+        alert("Failed to delete worker.\nReason: " + (body.error || body.msg || res.status));
       }
     } catch (e) {
       alert("Error: " + e.message);
