@@ -13,14 +13,9 @@
   <!-- Login Screen -->
   <div id="login-screen">
     <div class="login-box">
-      <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:28px;">
-        <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:12px;">
-          <img src="/admin/logo.png" alt="WATERHALL Logo" style="width:72px; height:auto; border-radius:10px;">
-          <img src="/admin/tagpopongan_logo.jpg" alt="Barangay Tagpopongan Official Seal" style="width:72px; height:72px; object-fit:cover; border-radius:50%; border:2px solid rgba(255,255,255,0.25); box-shadow:0 4px 12px rgba(0,0,0,0.25);">
-        </div>
-        <h3 style="margin:0; font-size:20px; font-weight:700; color:#fff; text-align:center;">WATERHALL</h3>
-        <p style="margin:4px 0 0 0; color:var(--text-muted); font-size:12px; letter-spacing:1px; text-transform:uppercase; font-weight:600; text-align:center;">Barangay Tagpopongan Water Utility</p>
-        <span style="display:inline-block; margin-top:6px; font-size:11px; padding:3px 10px; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); border-radius:12px; color:#60a5fa; font-weight:600;">Admin Portal</span>
+      <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:32px;">
+        <img src="/admin/logo.png" alt="WATERHALL Logo" style="width:140px; height:auto; border-radius:12px; margin-bottom:8px;">
+        <p style="color:var(--text-muted); font-size:13px; letter-spacing:1px; text-transform:uppercase; font-weight:600;">Admin Portal</p>
       </div>
       <div class="login-error" id="login-error">Invalid credentials or unauthorized role.</div>
       <div class="form-group">
@@ -53,17 +48,21 @@
       </div>
       <button class="btn" style="width: 100%; justify-content: center; margin-top: 10px;" id="btn-login">Login to Dashboard</button>
     </div>
+    <!-- Brgy. Tagpopongan Footer for Admin Login -->
+    <div style="position:absolute; bottom:24px; text-align:center; display:flex; flex-direction:column; align-items:center; opacity:0.8; width:100%;">
+      <p style="color:var(--text-muted); font-size:11px; margin-bottom:6px; letter-spacing:1px; text-transform:uppercase;">Official System Of</p>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <img src="/admin/tagpopongan_logo.jpg" alt="Barangay Tagpopongan Official Seal" style="width:24px; height:24px; border-radius:50%; object-fit:cover; border:1px solid rgba(255,255,255,0.2);">
+        <span style="color:#fff; font-size:12px; font-weight:600; letter-spacing:0.5px;">Brgy. Tagpopongan, IGACOS</span>
+      </div>
+    </div>
   </div>
 
   <!-- Sidebar -->
   <aside class="sidebar">
-    <div class="brand" style="flex-direction:column; align-items:flex-start; gap:6px; padding-bottom:14px;">
-      <div style="display:flex; align-items:center; gap:10px; width:100%;">
-        <img src="/admin/logo.png" alt="WATERHALL Logo" style="width:40px; height:40px; object-fit:cover; border-radius:10px; box-shadow: 0 8px 24px rgba(255, 150, 50, 0.3);">
-        <img src="/admin/tagpopongan_logo.jpg" alt="Barangay Tagpopongan Official Seal" style="width:40px; height:40px; object-fit:cover; border-radius:50%; border:2px solid rgba(255,255,255,0.2); box-shadow:0 4px 12px rgba(0,0,0,0.3);">
-        <span style="font-size:15px; font-weight:700; letter-spacing:0.5px;">WATERHALL</span>
-      </div>
-      <span style="font-size:10px; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:1.2px; padding-left:2px;">Brgy. Tagpopongan</span>
+    <div class="brand">
+      <img src="/admin/logo.png" alt="WATERHALL" style="width:44px; height:44px; object-fit:cover; border-radius:12px; box-shadow: 0 8px 24px rgba(255, 150, 50, 0.3);">
+      WATERHALL
     </div>
     <div class="nav-menu">
       <div class="nav-item active" data-tab="tab-dashboard">
@@ -92,6 +91,15 @@
       <button style="margin-left:auto; background:transparent; border:none; color:var(--danger); cursor:pointer;" id="btn-logout" title="Logout">
         <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
       </button>
+    </div>
+    
+    <!-- Brgy. Tagpopongan Footer for Sidebar -->
+    <div style="padding:16px; border-top:1px solid rgba(255,255,255,0.05); display:flex; align-items:center; gap:10px; margin-top:auto;">
+      <img src="/admin/tagpopongan_logo.jpg" alt="Barangay Tagpopongan Official Seal" style="width:28px; height:28px; border-radius:50%; object-fit:cover; border:1px solid rgba(255,255,255,0.2);">
+      <div style="display:flex; flex-direction:column;">
+        <span style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Official System Of</span>
+        <span style="font-size:12px; color:#fff; font-weight:600;">Brgy. Tagpopongan</span>
+      </div>
     </div>
   </aside>
 
