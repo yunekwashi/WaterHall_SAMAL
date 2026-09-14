@@ -594,19 +594,20 @@ def delete_household(hh_id):
     else:
         hh_id_val = hh_id
 
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+    conn = None
     try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
         c.execute("PRAGMA foreign_keys = ON;")
 
         # Check the household exists first
         c.execute("SELECT household_id FROM households WHERE household_id = ?", (hh_id_val,))
         if not c.fetchone():
-            conn.close()
             return jsonify({"msg": "Household not found"}), 404
 
         # billing_records has ON DELETE RESTRICT on meter_id, so we must
-        # manually delete in order: billing_records → water_meters → household
+        # manually delete in the correct order:
+        # 1. billing_records, 2. water_meters, 3. household
         c.execute('''
             DELETE FROM billing_records
             WHERE meter_id IN (
@@ -617,13 +618,14 @@ def delete_household(hh_id):
         c.execute("DELETE FROM water_meters WHERE household_id = ?", (hh_id_val,))
         c.execute("DELETE FROM households WHERE household_id = ?", (hh_id_val,))
         conn.commit()
+        return jsonify({'status': 'success'})
     except Exception as e:
-        conn.rollback()
-        conn.close()
+        if conn:
+            conn.rollback()
         return jsonify({"msg": "Error deleting household", "error": str(e)}), 500
     finally:
-        conn.close()
-    return jsonify({'status': 'success'})
+        if conn:
+            conn.close()
 
 @app.route('/api/workers/<worker_id>', methods=['DELETE'])
 @jwt_required(optional=True)
