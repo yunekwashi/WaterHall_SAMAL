@@ -588,9 +588,8 @@ def add_worker():
 @app.route('/api/households/<hh_id>', methods=['DELETE'])
 @jwt_required(optional=True)
 def delete_household(hh_id):
-    # Depending on how the ID is passed (e.g. "HH-5" or just "5")
-    # In `all-data` households have house_id like 'HH-1'. Let's handle both.
-    if isinstance(hh_id, str) and hh_id.startswith('HH-'):
+    # Handle both "HH-5" and "5" formats
+    if isinstance(hh_id, str) and hh_id.upper().startswith('HH-'):
         hh_id_val = hh_id[3:]
     else:
         hh_id_val = hh_id
@@ -598,10 +597,25 @@ def delete_household(hh_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     try:
-        # Get the household ID to cascade delete properly
-        c.execute("DELETE FROM households WHERE household_id = ?", (hh_id_val,))
-        if c.rowcount == 0:
+        c.execute("PRAGMA foreign_keys = ON;")
+
+        # Check the household exists first
+        c.execute("SELECT household_id FROM households WHERE household_id = ?", (hh_id_val,))
+        if not c.fetchone():
+            conn.close()
             return jsonify({"msg": "Household not found"}), 404
+
+        # billing_records has ON DELETE RESTRICT on meter_id, so we must
+        # manually delete in order: billing_records → water_meters → household
+        c.execute('''
+            DELETE FROM billing_records
+            WHERE meter_id IN (
+                SELECT meter_id FROM water_meters WHERE household_id = ?
+            )
+        ''', (hh_id_val,))
+
+        c.execute("DELETE FROM water_meters WHERE household_id = ?", (hh_id_val,))
+        c.execute("DELETE FROM households WHERE household_id = ?", (hh_id_val,))
         conn.commit()
     except Exception as e:
         conn.rollback()
