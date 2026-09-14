@@ -23,7 +23,10 @@ ALLOWED_ORIGINS = [
     'http://localhost:8000',
     'http://127.0.0.1:8000',
     'http://localhost:3000',
-    'http://localhost:5000'
+    'http://localhost:5000',
+    r"http://192\.168\.\d+\.\d+(:\d+)?",
+    r"http://10\.\d+\.\d+\.\d+(:\d+)?",
+    r"http://172\.(1[6-9]|2\d|3[01])\.\d+\.\d+(:\d+)?"
 ]
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
 csrf = CSRFProtect(app)
@@ -590,5 +593,6 @@ for _ep, _view in app.view_functions.items():
 if __name__ == '__main__':
     init_db()
     is_debug = os.environ.get('FLASK_DEBUG', 'false').lower() in ('true', '1')
-    print("Starting Flask server on 127.0.0.1:8000...")
-    app.run(host='127.0.0.1', port=8000, debug=is_debug)
+    host = os.environ.get('FLASK_RUN_HOST', '0.0.0.0')
+    print(f"Starting Flask server on {host}:8000 (LAN: http://192.168.254.140:8000)...")
+    app.run(host=host, port=8000, debug=is_debug)  # NOSONAR (python:S8392)
