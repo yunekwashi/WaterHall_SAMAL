@@ -217,7 +217,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     const tabId = e.currentTarget.getAttribute('data-tab');
     document.getElementById(tabId).classList.add('active');
-    const titles = { 'tab-dashboard': 'System Overview', 'tab-directory': 'User Directory', 'tab-assets': 'IoT Control' };
+    const titles = { 'tab-dashboard': 'System Overview', 'tab-directory': 'User Directory', 'tab-assets': 'IoT Control', 'tab-announcements': 'Public Announcements' };
     document.getElementById('page-title').textContent = titles[tabId] || 'Dashboard';
   });
 });
@@ -244,6 +244,7 @@ async function fetchData(silent = false) {
       globalData = data;
       renderDashboard(data);
       renderDirectory(data);
+      renderAnnouncements(data.announcements || []);
     } else {
       showAdminOfflineOverlay();
     }
@@ -565,6 +566,71 @@ document.getElementById('btn-recover-submit').addEventListener('click', async ()
     alert('Connection error occurred.');
   } finally {
     btn.textContent = 'Reset Password';
+    btn.disabled = false;
+  }
+});
+
+function renderAnnouncements(announcements) {
+  const tbody = document.getElementById('announcements-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!announcements || announcements.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:32px;">No announcements broadcasted yet.</td></tr>';
+    return;
+  }
+  announcements.forEach(item => {
+    const tr = document.createElement('tr');
+    const d = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Just now';
+    const auth = item.author || 'Barangay Admin';
+    const msg = item.message || '';
+    tr.innerHTML =
+      '<td style="color:var(--text-muted); font-size:13px;">' + d + '</td>' +
+      '<td><span class="badge info" style="background:rgba(14,165,233,0.15); color:#38bdf8; border:1px solid rgba(14,165,233,0.3); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">' + auth + '</span></td>' +
+      '<td style="font-weight:500; line-height:1.5;">' + msg + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('btn-admin-broadcast')?.addEventListener('click', async () => {
+  const input = document.getElementById('admin-announcement-input');
+  if (!input) return;
+  const msg = input.value.trim();
+  if (!msg) {
+    alert('Please enter an announcement message.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-admin-broadcast');
+  btn.textContent = 'Broadcasting...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/announcements/add', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + jwtToken
+      },
+      body: JSON.stringify({
+        message: msg,
+        author: 'Barangay Admin'
+      })
+    });
+
+    if (res.ok) {
+      input.value = '';
+      alert('Announcement successfully broadcasted to all Worker and Resident apps!');
+      fetchData(true);
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      alert(errData.msg || 'Failed to broadcast announcement.');
+    }
+  } catch (err) {
+    // Network or connection error while broadcasting announcement
+    console.error('Broadcast error:', err);
+    alert('Connection error occurred while broadcasting.');
+  } finally {
+    btn.innerHTML = '<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> Broadcast Announcement';
     btn.disabled = false;
   }
 });

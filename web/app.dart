@@ -763,6 +763,18 @@ class AppController {
       dashTitle.text = 'Field Terminal: ${currentWorker!['selected_zone']}';
     }
 
+    final latestAnnouncement = db.getLatestAnnouncement();
+    final workerBannerEl = document.getElementById('worker-announcement-banner');
+    final workerMsgEl = document.getElementById('worker-announcement-message');
+    if (workerBannerEl != null && workerMsgEl != null) {
+      if (latestAnnouncement != null && (latestAnnouncement['message'] as String).isNotEmpty) {
+        workerMsgEl.text = latestAnnouncement['message'];
+        workerBannerEl.style.display = 'flex';
+      } else {
+        workerBannerEl.style.display = 'none';
+      }
+    }
+
     final households = db.getHouseholds();
     final assets = db.getCentralAssets();
     final logs = db.getMaintenanceLogs();
