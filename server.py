@@ -585,6 +585,51 @@ def add_worker():
         
     return jsonify({'status': 'success'})
 
+@app.route('/api/households/<hh_id>', methods=['DELETE'])
+@jwt_required(optional=True)
+def delete_household(hh_id):
+    # Depending on how the ID is passed (e.g. "HH-5" or just "5")
+    # In `all-data` households have house_id like 'HH-1'. Let's handle both.
+    if isinstance(hh_id, str) and hh_id.startswith('HH-'):
+        hh_id_val = hh_id[3:]
+    else:
+        hh_id_val = hh_id
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    try:
+        # Get the household ID to cascade delete properly
+        c.execute("DELETE FROM households WHERE household_id = ?", (hh_id_val,))
+        if c.rowcount == 0:
+            return jsonify({"msg": "Household not found"}), 404
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"msg": "Error deleting household", "error": str(e)}), 500
+    finally:
+        conn.close()
+    return jsonify({'status': 'success'})
+
+@app.route('/api/workers/<worker_id>', methods=['DELETE'])
+@jwt_required(optional=True)
+def delete_worker(worker_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    try:
+        # Exclude deleting Admin if we want to prevent self-deletion
+        c.execute("DELETE FROM users WHERE username = ? AND role != 'Admin'", (worker_id,))
+        if c.rowcount == 0:
+            return jsonify({"msg": "Worker not found or cannot delete Admin"}), 404
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"msg": "Error deleting worker", "error": str(e)}), 500
+    finally:
+        conn.close()
+    return jsonify({'status': 'success'})
+
 # Register API endpoint views internally for stateless JWT / Bearer token requests
 for _ep, _view in app.view_functions.items():
     if _view and hasattr(_view, '__module__') and hasattr(_view, '__name__'):
