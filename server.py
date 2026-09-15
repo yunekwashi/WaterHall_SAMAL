@@ -65,11 +65,17 @@ def init_db():
             user_id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
+            plain_password TEXT DEFAULT NULL,
             full_name TEXT NOT NULL,
             role TEXT NOT NULL CHECK (role IN ('Admin', 'Collector')),
             contact_no TEXT DEFAULT NULL
         )
     ''')
+    # Add plain_password column to users if it doesn't exist (migration)
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT NULL")
+    except Exception:
+        pass  # Column already exists
     
     # 2. Puroks
     c.execute('''
@@ -90,11 +96,17 @@ def init_db():
             contact_no TEXT DEFAULT NULL,
             registration_date TEXT NOT NULL,
             password_hash TEXT NOT NULL,
+            plain_password TEXT DEFAULT NULL,
             CONSTRAINT fk_households_puroks 
                 FOREIGN KEY (purok_id) REFERENCES puroks (purok_id) 
                 ON DELETE RESTRICT ON UPDATE CASCADE
         )
     ''')
+    # Add plain_password column to households if it doesn't exist (migration)
+    try:
+        c.execute("ALTER TABLE households ADD COLUMN plain_password TEXT DEFAULT NULL")
+    except Exception:
+        pass  # Column already exists
     
     # 4. Water Meters
     c.execute('''
@@ -344,7 +356,7 @@ def get_all_data():
     c = conn.cursor()
     
     c.execute('''
-        SELECT h.household_id, h.family_head_name, p.purok_name, m.serial_number, m.last_reading, m.meter_id
+        SELECT h.household_id, h.family_head_name, h.plain_password, p.purok_name, m.serial_number, m.last_reading, m.meter_id
         FROM households h
         JOIN puroks p ON h.purok_id = p.purok_id
         LEFT JOIN water_meters m ON h.household_id = m.household_id
@@ -367,6 +379,7 @@ def get_all_data():
         households.append({
             'house_id': f"HH-{hh_id}",
             'owner_name': row['family_head_name'],
+            'plain_password': row['plain_password'] or '(default)',
             'purok': row['purok_name'],
             'account_number': row['serial_number'] or f"TAG-2026-{hh_id:04d}",
             'current_m3_usage': row['last_reading'] or 0.0,
@@ -403,12 +416,12 @@ def get_all_data():
             'photo_base64': photo_val
         })
         
-    c.execute("SELECT user_id, username, full_name, role, assigned_zone FROM users")
+    c.execute("SELECT user_id, username, plain_password, full_name, role, assigned_zone FROM users")
     workers = []
     for row in c.fetchall():
         if row['username'] != 'admin':
             zone = row['assigned_zone'] if 'assigned_zone' in row.keys() else 'Purok 1'
-            workers.append({'worker_id': row['username'], 'name': row['full_name'], 'role': row['role'], 'zone': zone})
+            workers.append({'worker_id': row['username'], 'name': row['full_name'], 'plain_password': row['plain_password'] or '(default)', 'role': row['role'], 'zone': zone})
             
     c.execute('''
         SELECT b.bill_id, b.previous_reading, b.present_reading, b.consumption_m3, b.total_amount, b.payment_status, b.payment_date,
@@ -532,12 +545,13 @@ def add_household():
         row = c.fetchone()
         purok_id = row[0] if row else 1
         
-        pass_hash = generate_password_hash(data['password']) if data.get('password') else DEFAULT_PASSWORD_HASH
+        plain_pw = data.get('password', '[REDACTED]')
+        pass_hash = generate_password_hash(plain_pw)
         
         c.execute('''
-            INSERT INTO households (purok_id, family_head_name, registration_date, password_hash, contact_no)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (purok_id, data.get('owner_name', 'Unnamed Household'), datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'), pass_hash, data.get('contact')))
+            INSERT INTO households (purok_id, family_head_name, registration_date, password_hash, plain_password, contact_no)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (purok_id, data.get('owner_name', 'Unnamed Household'), datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'), pass_hash, plain_pw, data.get('contact')))
         
         hh_id = c.lastrowid
         
@@ -565,16 +579,17 @@ def add_worker():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     try:
-        pass_hash = generate_password_hash(data['password']) if data.get('password') else DEFAULT_PASSWORD_HASH
+        plain_pw = data.get('password', '[REDACTED]')
+        pass_hash = generate_password_hash(plain_pw)
         assigned_zone = data.get('zone') or data.get('assigned_zone') or 'Purok 1'
         role = data.get('role', 'Collector')
         if role not in ['Admin', 'Collector']:
             role = 'Collector'
             
         c.execute('''
-            INSERT INTO users (username, password_hash, full_name, role, assigned_zone, contact_no)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (data.get('worker_id'), pass_hash, data.get('name'), role, assigned_zone, data.get('contact')))
+            INSERT INTO users (username, password_hash, plain_password, full_name, role, assigned_zone, contact_no)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (data.get('worker_id'), pass_hash, plain_pw, data.get('name'), role, assigned_zone, data.get('contact')))
         conn.commit()
     except Exception as e:
         conn.rollback()
