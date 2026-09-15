@@ -1475,7 +1475,30 @@ class AppController {
     final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
 
     final prevVal = double.tryParse(billPrevReading?.text ?? '') ?? 0.0;
-    final currVal = double.tryParse(billCurrInput?.value ?? '') ?? 0.0;
+    
+    final currInputStr = billCurrInput?.value?.trim() ?? '';
+    if (currInputStr.isEmpty) {
+      final billCalcConsumption = document.getElementById('bill-calc-consumption');
+      if (billCalcConsumption != null) billCalcConsumption.text = "0.0";
+      
+      final billCalcExcess = document.getElementById('bill-calc-excess');
+      if (billCalcExcess != null) billCalcExcess.text = "0.00";
+      
+      final billCalcTotal = document.getElementById('bill-calc-total');
+      if (billCalcTotal != null) billCalcTotal.text = "0.00";
+      
+      final btnSaveBill = document.getElementById('btn-save-bill') as ButtonElement?;
+      if (btnSaveBill != null) {
+        btnSaveBill.disabled = true;
+        btnSaveBill.style.opacity = "0.5";
+        btnSaveBill.style.cursor = "not-allowed";
+        final txtSpan = btnSaveBill.querySelector('span');
+        if (txtSpan != null) txtSpan.text = "Enter Input to Calculate";
+      }
+      return;
+    }
+    
+    final currVal = double.tryParse(currInputStr) ?? 0.0;
 
     double consumption = currVal - prevVal;
     if (consumption < 0.0) consumption = 0.0;
