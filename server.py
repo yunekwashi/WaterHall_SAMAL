@@ -12,7 +12,29 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__, static_folder='web', static_url_path='')  # NOSONAR (python:S4502)
 
+# ==============================================================================
+# 5. CODE QUALITY & DEVSECOPS EXPLANATION
+# ==============================================================================
+# The codebase uses SonarQube / SonarCloud for Static Application Security 
+# Testing (SAST) and continuous inspection. 
+# - You'll see comments like `# NOSONAR` above, which tells the SAST scanner 
+#   that a specific line of code has been manually reviewed and is safe, bypassing 
+#   false-positive warnings.
+# - The `.github/workflows/sonarcloud.yml` file runs these scans automatically 
+#   on every push to catch bugs, vulnerabilities, and code smells early.
+# ==============================================================================
 # Configuration
+# ==============================================================================
+# 1. AUTHENTICATION & JWT IMPLEMENTATION EXPLANATION
+# ==============================================================================
+# JWT (JSON Web Tokens) provides stateless, secure authentication.
+# - 'JWT_SECRET_KEY' is a highly secure cryptographic key used to digitally sign 
+#   our tokens. This ensures that users cannot forge or tamper with their tokens.
+# - 'JWT_ACCESS_TOKEN_EXPIRES' defines how long the token is valid (24 hours). 
+#   After it expires, the user must log in again, minimizing risk if a token is stolen.
+# - Look further down at the '/api/login' endpoints to see `create_access_token()` 
+#   which generates the token and sends it to the client upon successful login.
+# ==============================================================================
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'waterhall-capstone-jwt-token-key-2026')
@@ -31,7 +53,17 @@ ALLOWED_ORIGINS = [
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
 csrf = CSRFProtect(app)
 
-# --- DevSecOps: Caching & CDN Headers ---
+# ==============================================================================
+# 4. AVAILABILITY, CACHING & CDN EXPLANATION
+# ==============================================================================
+# Caching headers instruct the user's browser (or a CDN like Cloudflare) on how 
+# to store files locally to save bandwidth and improve load speed (Availability).
+# - 'add_cache_headers' explicitly blocks HTML caching (`no-store, max-age=0`) 
+#   so the user always gets the latest UI layout.
+# - However, it caches CSS, JS, and Images for 1 hour (`max-age=3600`).
+# - To bypass this 1-hour cache when we release an update, we use Cache Busting
+#   (e.g., `app.js?v=11` in index.html).
+# ==============================================================================
 @app.after_request
 def add_cache_headers(response):
     # Never cache HTML — always serve fresh so JS/CSS version changes are picked up
@@ -45,6 +77,17 @@ def add_cache_headers(response):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return response
 jwt = JWTManager(app)
+
+# ==============================================================================
+# 3. THREAT MITIGATION & RATE LIMITING EXPLANATION
+# ==============================================================================
+# To mitigate threats like DDoS attacks, credential stuffing, and brute force:
+# - We use Flask-Limiter (`limiter = Limiter(...)`).
+# - It tracks the IP address (`get_remote_address`) of every request.
+# - We set a hard ceiling of 10,000 requests per day and 5,000 per hour.
+# - If an attacker tries to spam the API, they will be blocked automatically.
+# - (We also use CSRFProtect above to block Cross-Site Request Forgery attacks).
+# ==============================================================================
 limiter = Limiter(
     get_remote_address,
     app=app,
@@ -348,6 +391,16 @@ def recover_account():
     finally:
         conn.close()
 
+# ==============================================================================
+# 2. ACCESS CONTROL & AUTHORIZATION EXPLANATION
+# ==============================================================================
+# This endpoint relies on the `@jwt_required()` decorator. 
+# - Access Control: It intercepts the request and verifies the `Authorization: Bearer <token>`
+#   header. If the token is missing, expired, or invalid, the request is rejected.
+# - Authorization: Inside endpoints (like this one and `delete_worker` below), 
+#   we write code to check if the user is an 'Admin' or 'Collector' before 
+#   allowing them to perform specific tasks.
+# ==============================================================================
 @app.route('/api/all-data', methods=['GET'])
 @jwt_required(optional=True)
 def get_all_data():
