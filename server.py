@@ -13,27 +13,24 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__, static_folder='web', static_url_path='')  # NOSONAR (python:S4502)
 
 # ==============================================================================
-# 5. CODE QUALITY & DEVSECOPS EXPLANATION
+# 5. CODE QUALITY & DEVSECOPS
 # ==============================================================================
-# The codebase uses SonarQube / SonarCloud for Static Application Security 
-# Testing (SAST) and continuous inspection. 
-# - You'll see comments like `# NOSONAR` above, which tells the SAST scanner 
-#   that a specific line of code has been manually reviewed and is safe, bypassing 
-#   false-positive warnings.
-# - The `.github/workflows/sonarcloud.yml` file runs these scans automatically 
-#   on every push to catch bugs, vulnerabilities, and code smells early.
+# We use a tool called SonarCloud to automatically check our code for errors,
+# security issues, and bad practices every time we push code to GitHub.
+# - The comment `# NOSONAR` tells the scanner to skip that one line because 
+#   we already checked it manually and it is safe.
+# - The scan runs automatically via the file: .github/workflows/sonarcloud.yml
 # ==============================================================================
 # Configuration
 # ==============================================================================
-# 1. AUTHENTICATION & JWT IMPLEMENTATION EXPLANATION
+# 1. AUTHENTICATION & JWT
 # ==============================================================================
-# JWT (JSON Web Tokens) provides stateless, secure authentication.
-# - 'JWT_SECRET_KEY' is a highly secure cryptographic key used to digitally sign 
-#   our tokens. This ensures that users cannot forge or tamper with their tokens.
-# - 'JWT_ACCESS_TOKEN_EXPIRES' defines how long the token is valid (24 hours). 
-#   After it expires, the user must log in again, minimizing risk if a token is stolen.
-# - Look further down at the '/api/login' endpoints to see `create_access_token()` 
-#   which generates the token and sends it to the client upon successful login.
+# When a user logs in, the server gives them a special digital ticket called a
+# JWT (JSON Web Token). This ticket proves who they are.
+# - JWT_SECRET_KEY: A secret code the server uses to create and verify tickets.
+#   No one can fake a ticket without knowing this secret.
+# - JWT_ACCESS_TOKEN_EXPIRES: The ticket is only valid for 24 hours.
+#   After that, the user has to log in again to get a new one.
 # ==============================================================================
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 app.config['WTF_CSRF_ENABLED'] = True
@@ -54,15 +51,15 @@ CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
 csrf = CSRFProtect(app)
 
 # ==============================================================================
-# 4. AVAILABILITY, CACHING & CDN EXPLANATION
+# 4. AVAILABILITY, CACHING & CDN
 # ==============================================================================
-# Caching headers instruct the user's browser (or a CDN like Cloudflare) on how 
-# to store files locally to save bandwidth and improve load speed (Availability).
-# - 'add_cache_headers' explicitly blocks HTML caching (`no-store, max-age=0`) 
-#   so the user always gets the latest UI layout.
-# - However, it caches CSS, JS, and Images for 1 hour (`max-age=3600`).
-# - To bypass this 1-hour cache when we release an update, we use Cache Busting
-#   (e.g., `app.js?v=11` in index.html).
+# When you visit the app, your browser saves (caches) files like CSS and JS so
+# the page loads faster next time. This function controls what gets saved and
+# for how long.
+# - HTML pages are NEVER saved by the browser so the user always sees updates.
+# - CSS, JS, and Images are saved for 1 hour to make things load faster.
+# - When we update the JS file, we change the version number (e.g., app.js?v=12)
+#   so the browser knows to download the new version instead of using the old one.
 # ==============================================================================
 @app.after_request
 def add_cache_headers(response):
@@ -79,14 +76,15 @@ def add_cache_headers(response):
 jwt = JWTManager(app)
 
 # ==============================================================================
-# 3. THREAT MITIGATION & RATE LIMITING EXPLANATION
+# 3. THREAT MITIGATION & RATE LIMITING
 # ==============================================================================
-# To mitigate threats like DDoS attacks, credential stuffing, and brute force:
-# - We use Flask-Limiter (`limiter = Limiter(...)`).
-# - It tracks the IP address (`get_remote_address`) of every request.
-# - We set a hard ceiling of 10,000 requests per day and 5,000 per hour.
-# - If an attacker tries to spam the API, they will be blocked automatically.
-# - (We also use CSRFProtect above to block Cross-Site Request Forgery attacks).
+# To stop attackers from flooding the server with too many requests (like a
+# brute-force attack trying thousands of passwords), we limit how often anyone
+# can make a request.
+# - Each device (IP address) is allowed max 5,000 requests per hour.
+# - If they go over the limit, the server automatically blocks them.
+# - We also use CSRFProtect to stop fake/malicious form submissions from 
+#   other websites trying to act as a logged-in user.
 # ==============================================================================
 limiter = Limiter(
     get_remote_address,
@@ -392,14 +390,14 @@ def recover_account():
         conn.close()
 
 # ==============================================================================
-# 2. ACCESS CONTROL & AUTHORIZATION EXPLANATION
+# 2. ACCESS CONTROL & AUTHORIZATION
 # ==============================================================================
-# This endpoint relies on the `@jwt_required()` decorator. 
-# - Access Control: It intercepts the request and verifies the `Authorization: Bearer <token>`
-#   header. If the token is missing, expired, or invalid, the request is rejected.
-# - Authorization: Inside endpoints (like this one and `delete_worker` below), 
-#   we write code to check if the user is an 'Admin' or 'Collector' before 
-#   allowing them to perform specific tasks.
+# Not everyone is allowed to see or do everything in the system.
+# - The `@jwt_required()` tag on an endpoint means you MUST present a valid
+#   login ticket (JWT) to access it. No ticket = request is rejected.
+# - Inside the code, we also check the user's ROLE (Admin or Collector) to 
+#   decide what they are allowed to do. For example, only an Admin can delete 
+#   accounts — a Collector cannot.
 # ==============================================================================
 @app.route('/api/all-data', methods=['GET'])
 @jwt_required(optional=True)
