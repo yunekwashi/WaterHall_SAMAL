@@ -12,7 +12,8 @@ if (-not (Test-Path $targetDir)) {
 $flutterDir = "C:\src\flutter"
 if (Test-Path $flutterDir) {
     Write-Host "Flutter is already installed at C:\src\flutter. Checking environment..." -ForegroundColor Yellow
-} else {
+}
+else {
     # 2. Download stable zip
     $zipUrl = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.22.2-stable.zip"
     $zipFile = "$targetDir\flutter.zip"
@@ -26,7 +27,8 @@ if (Test-Path $flutterDir) {
         Expand-Archive -Path $zipFile -DestinationPath $targetDir -Force
         Remove-Item -Path $zipFile -Force
         Write-Host "Extraction complete!" -ForegroundColor Green
-    } catch {
+    }
+    catch {
         Write-Error "Failed to download or extract Flutter SDK: $_"
         Exit
     }
@@ -38,7 +40,8 @@ $flutterBin = "C:\src\flutter\bin"
 
 if ($userPath -split ';' -contains $flutterBin) {
     Write-Host "Flutter bin is already in your PATH." -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "Adding Flutter bin to User PATH..." -ForegroundColor Cyan
     $newPath = $userPath + ";" + $flutterBin
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
@@ -51,3 +54,4 @@ Write-Host "Verification: Running flutter doctor..." -ForegroundColor Cyan
 
 Write-Host ""
 Write-Host "WATERHALL Flutter setup is complete!" -ForegroundColor Green
+
