@@ -11,5 +11,6 @@ start "" "http://localhost:8000/index.html?role=resident"
 echo [2/2] Starting Python backend server (waterhall.db)...
 echo Press Ctrl+C in this window to stop the server at any time.
 echo.
-python server.py
+cd /d "%~dp0\.."
+python backend\server.py
 pause

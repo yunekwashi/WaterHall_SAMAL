@@ -779,6 +779,28 @@ class AppController {
     final assets = db.getCentralAssets();
     final logs = db.getMaintenanceLogs();
 
+    // Populate Central Reservoir Telemetry for Worker Dashboard (Data Parity with Resident)
+    final workerTankVal = document.getElementById('worker-tank-val');
+    final workerSafetyStatus = document.getElementById('worker-safety-status');
+    final workerTurbVal = document.getElementById('worker-turb-val');
+    final workerTdsVal = document.getElementById('worker-tds-val');
+    final workerPhVal = document.getElementById('worker-ph-val');
+
+    if (workerTankVal != null) workerTankVal.text = '${assets['main_tank_level']}%';
+    if (workerTurbVal != null) workerTurbVal.text = (assets['turbidity'] as num).toStringAsFixed(1);
+    if (workerTdsVal != null) workerTdsVal.text = '${assets['tds_ppm'] ?? 150}';
+    if (workerPhVal != null) workerPhVal.text = (assets['ph_level'] as num).toStringAsFixed(1);
+
+    if (workerSafetyStatus != null) {
+      if (assets['ph_status'] == 'warning' || assets['turbidity_status'] == 'warning') {
+        workerSafetyStatus.text = 'ALERT';
+        workerSafetyStatus.style.color = 'var(--alert-red)';
+      } else {
+        workerSafetyStatus.text = 'SAFE';
+        workerSafetyStatus.style.color = 'var(--alert-green)';
+      }
+    }
+
     final activeLeaks = households.where((h) => h['current_leak_status'] == 'leak').toList();
 
     int qualityAlertCount = 0;
@@ -1059,14 +1081,29 @@ class AppController {
 
     if (nameEl != null) nameEl.text = h['owner_name'];
     if (acctEl != null) acctEl.text = h['account_number'];
-    if (m3El != null) m3El.text = (h['current_m3_usage'] as num).toStringAsFixed(1);
-    
-    // Quick mock calculation for total due
-    final consumption = h['current_m3_usage'] as num;
-    num total = 120.0 + 50.0; // Base + Environmental
-    if (consumption > 10.0) {
-      total += (consumption - 10.0) * 15.0;
+    // Synchronized billing calculations matching Resident Portal
+    final bills = db.getBillingHistoryForHousehold(id);
+    Map<String, dynamic>? latestBill;
+    if (bills.isNotEmpty) {
+      latestBill = bills.first;
     }
+
+    num consumption = 0.0;
+    num total = 0.0;
+    if (latestBill != null) {
+      consumption = (latestBill['consumption'] as num?) ?? 0.0;
+      total = (latestBill['total_due'] as num?) ?? 0.0;
+    } else {
+      final List<num> hist = List<num>.from(h['monthly_history'] ?? []);
+      final num currReading = (h['current_m3_usage'] as num?) ?? 0.0;
+      final num prevReading = hist.length >= 2 ? hist[hist.length - 2] : (currReading - 2.5 > 0 ? currReading - 2.5 : 0.0);
+      consumption = currReading - prevReading;
+      if (consumption < 0) consumption = 0;
+      final excess = consumption > 10.0 ? (consumption - 10.0) * 15.0 : 0.0;
+      total = 120.0 + excess + 50.0;
+    }
+
+    if (m3El != null) m3El.text = consumption.toStringAsFixed(1);
     if (totalEl != null) totalEl.text = total.toStringAsFixed(2);
 
     if (leakEl != null) {
@@ -1729,11 +1766,13 @@ class AppController {
     final resTankVal = document.getElementById('resident-tank-val');
     final resPHVal = document.getElementById('resident-ph-val');
     final resTurbVal = document.getElementById('resident-turb-val');
+    final resTdsVal = document.getElementById('resident-tds-val');
     final resSafetyStatus = document.getElementById('resident-safety-status');
 
     if (resTankVal != null) resTankVal.text = '${assets['main_tank_level']}%';
     if (resPHVal != null) resPHVal.text = (assets['ph_level'] as num).toStringAsFixed(1);
     if (resTurbVal != null) resTurbVal.text = (assets['turbidity'] as num).toStringAsFixed(1);
+    if (resTdsVal != null) resTdsVal.text = '${assets['tds_ppm'] ?? 150}';
 
     if (resSafetyStatus != null) {
       if (assets['ph_status'] == 'warning' || assets['turbidity_status'] == 'warning') {
@@ -1820,8 +1859,9 @@ class AppController {
     } else {
       // Estimate based on telemetry
       final List<num> hist = List<num>.from(household['monthly_history']);
-      prevReading = hist.length >= 2 ? hist[hist.length - 2].toDouble() : (household['current_m3_usage'] as num).toDouble() - 2.5;
-      currReading = (household['current_m3_usage'] as num).toDouble();
+      final num currM3 = (household['current_m3_usage'] as num?) ?? 0.0;
+      prevReading = hist.length >= 2 ? hist[hist.length - 2].toDouble() : (currM3 - 2.5 > 0 ? (currM3 - 2.5).toDouble() : 0.0);
+      currReading = currM3.toDouble();
       consumption = currReading - prevReading;
       if (consumption < 0.0) consumption = 0.0;
       excessCharge = consumption > 10.0 ? (consumption - 10.0) * 15.00 : 0.00;

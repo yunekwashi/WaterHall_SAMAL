@@ -24,6 +24,7 @@ final Map<String, dynamic> seedCentralAssets = {
   'ph_level': 7.2,
   'ph_status': 'normal',
   'ph_desc': 'pH neutral & compliant.',
+  'tds_ppm': 150,
   'last_updated': '2026-06-25T11:00:00Z'
 };
 

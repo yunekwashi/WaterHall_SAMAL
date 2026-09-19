@@ -10,7 +10,8 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 
-app = Flask(__name__, static_folder='web', static_url_path='')  # NOSONAR (python:S4502)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'web'), static_url_path='')  # NOSONAR (python:S4502)
 
 # ==============================================================================
 # 5. CODE QUALITY & DEVSECOPS
@@ -32,6 +33,8 @@ app = Flask(__name__, static_folder='web', static_url_path='')  # NOSONAR (pytho
 # - JWT_ACCESS_TOKEN_EXPIRES: The ticket is only valid for 24 hours.
 #   After that, the user has to log in again to get a new one.
 # ==============================================================================
+
+       #authentication ni 
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', '[REDACTED]')
@@ -61,6 +64,7 @@ csrf = CSRFProtect(app)
 # - When we update the JS file, we change the version number (e.g., app.js?v=12)
 #   so the browser knows to download the new version instead of using the old one.
 # ==============================================================================
+          #CACHING NI
 @app.after_request
 def add_cache_headers(response):
     # Never cache HTML — always serve fresh so JS/CSS version changes are picked up
@@ -86,13 +90,14 @@ jwt = JWTManager(app)
 # - We also use CSRFProtect to stop fake/malicious form submissions from 
 #   other websites trying to act as a logged-in user.
 # ==============================================================================
+     #rate limiting
 limiter = Limiter(
     get_remote_address,
     app=app,
     default_limits=["10000 per day", "5000 per hour"]
 )
 
-DB_FILE = 'waterhall.db'
+DB_FILE = os.path.join(BASE_DIR, 'database', 'waterhall.db')
 DEFAULT_PASSWORD_HASH = generate_password_hash(os.environ.get('DEFAULT_PASSWORD', '[REDACTED]'))
 
 def init_db():
@@ -109,14 +114,19 @@ def init_db():
             plain_password TEXT DEFAULT NULL,
             full_name TEXT NOT NULL,
             role TEXT NOT NULL CHECK (role IN ('Admin', 'Collector')),
-            contact_no TEXT DEFAULT NULL
+            contact_no TEXT DEFAULT NULL,
+            assigned_zone TEXT DEFAULT 'Purok 1'
         )
     ''')
-    # Add plain_password column to users if it doesn't exist (migration)
+    # Add columns to users if missing (migrations)
     try:
         c.execute("ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT NULL")
     except Exception:
-        pass  # Column already exists
+        pass
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN assigned_zone TEXT DEFAULT 'Purok 1'")
+    except Exception:
+        pass
     
     # 2. Puroks
     c.execute('''
@@ -138,16 +148,31 @@ def init_db():
             registration_date TEXT NOT NULL,
             password_hash TEXT NOT NULL,
             plain_password TEXT DEFAULT NULL,
+            current_leak_status TEXT DEFAULT 'normal',
+            flow_rate REAL DEFAULT 0.0,
+            leak_detected_at TEXT DEFAULT NULL,
             CONSTRAINT fk_households_puroks 
                 FOREIGN KEY (purok_id) REFERENCES puroks (purok_id) 
                 ON DELETE RESTRICT ON UPDATE CASCADE
         )
     ''')
-    # Add plain_password column to households if it doesn't exist (migration)
+    # Add columns to households if missing (migrations)
     try:
         c.execute("ALTER TABLE households ADD COLUMN plain_password TEXT DEFAULT NULL")
     except Exception:
-        pass  # Column already exists
+        pass
+    try:
+        c.execute("ALTER TABLE households ADD COLUMN current_leak_status TEXT DEFAULT 'normal'")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE households ADD COLUMN flow_rate REAL DEFAULT 0.0")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE households ADD COLUMN leak_detected_at TEXT DEFAULT NULL")
+    except Exception:
+        pass
     
     # 4. Water Meters
     c.execute('''
@@ -191,10 +216,15 @@ def init_db():
             reading_id INTEGER PRIMARY KEY AUTOINCREMENT,
             water_level_percentage INTEGER NOT NULL CHECK (water_level_percentage BETWEEN 0 AND 100),
             turbidity_ntu REAL NOT NULL,
+            ph_level REAL DEFAULT 7.20,
             tds_ppm INTEGER NOT NULL,
             recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    try:
+        c.execute("ALTER TABLE reservoir_quality_readings ADD COLUMN ph_level REAL DEFAULT 7.20")
+    except Exception:
+        pass
     
     # 7. Flow Readings
     c.execute('''
@@ -236,7 +266,7 @@ def init_db():
     # Seed base admin if missing
     c.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
     if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO users (user_id, username, password_hash, full_name, role, contact_no, assigned_zone) VALUES (1, 'admin', ?, 'Barangay Admin', 'Admin', '09171234567', 'Purok 1');", (DEFAULT_PASSWORD_HASH,))
+        c.execute("INSERT INTO users (user_id, username, password_hash, plain_password, full_name, role, contact_no, assigned_zone) VALUES (1, 'admin', ?, '[REDACTED]', 'Barangay Admin', 'Admin', '09171234567', 'Purok 1');", (DEFAULT_PASSWORD_HASH,))
 
     c.execute("SELECT COUNT(*) FROM puroks")
     if c.fetchone()[0] == 0:
@@ -254,6 +284,12 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+# Auto-apply schema migrations on server launch
+try:
+    init_db()
+except Exception as _e:
+    print(f"Warning initializing database: {_e}")
 
 
 def safe_serve_file(base_folder, requested_path, default_file='index.html'):
@@ -366,7 +402,7 @@ def recover_account():
             if user:
                 user_id, db_contact = user[0], user[1]
                 if db_contact and normalize_contact(db_contact) == target_contact_clean:
-                    c.execute("UPDATE users SET password_hash = ? WHERE user_id = ?", (new_hash, user_id))
+                    c.execute("UPDATE users SET password_hash = ?, plain_password = ? WHERE user_id = ?", (new_hash, new_password, user_id))
                     conn.commit()
                     return jsonify({"status": "success", "msg": "Password reset successful!"})
             
@@ -378,7 +414,7 @@ def recover_account():
             if hh:
                 hh_id, db_contact = hh[0], hh[1]
                 if db_contact and normalize_contact(db_contact) == target_contact_clean:
-                    c.execute("UPDATE households SET password_hash = ? WHERE household_id = ?", (new_hash, hh_id))
+                    c.execute("UPDATE households SET password_hash = ?, plain_password = ? WHERE household_id = ?", (new_hash, new_password, hh_id))
                     conn.commit()
                     return jsonify({"status": "success", "msg": "Password reset successful!"})
                     
@@ -407,7 +443,8 @@ def get_all_data():
     c = conn.cursor()
     
     c.execute('''
-        SELECT h.household_id, h.family_head_name, h.plain_password, p.purok_name, m.serial_number, m.last_reading, m.meter_id
+        SELECT h.household_id, h.family_head_name, h.plain_password, h.current_leak_status, h.flow_rate, h.leak_detected_at,
+               p.purok_name, m.serial_number, m.last_reading, m.meter_id
         FROM households h
         JOIN puroks p ON h.purok_id = p.purok_id
         LEFT JOIN water_meters m ON h.household_id = m.household_id
@@ -434,23 +471,46 @@ def get_all_data():
             'purok': row['purok_name'],
             'account_number': row['serial_number'] or f"TAG-2026-{hh_id:04d}",
             'current_m3_usage': row['last_reading'] or 0.0,
+            'current_leak_status': row['current_leak_status'] or 'normal',
+            'flow_rate': row['flow_rate'] or 0.0,
+            'leak_detected_at': row['leak_detected_at'],
             'monthly_history': monthly_history
         })
         
     c.execute("SELECT * FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1")
     row = c.fetchone()
     if row:
-        ph_val = row['ph_level'] if 'ph_level' in row.keys() else 7.2
+        ph_val = float(row['ph_level']) if 'ph_level' in row.keys() and row['ph_level'] is not None else 7.2
+        turb_val = float(row['turbidity_ntu']) if 'turbidity_ntu' in row.keys() and row['turbidity_ntu'] is not None else 6.2
+        tds_val = int(row['tds_ppm']) if 'tds_ppm' in row.keys() and row['tds_ppm'] is not None else 150
+        water_level = int(row['water_level_percentage']) if 'water_level_percentage' in row.keys() and row['water_level_percentage'] is not None else 68
+
+        ph_warn = ph_val < 6.5 or ph_val > 8.5
+        turb_warn = turb_val > 5.0
+
         central_assets = {
-            'main_tank_level': row['water_level_percentage'],
-            'turbidity': row['turbidity_ntu'],
+            'main_tank_level': water_level,
+            'turbidity': turb_val,
             'ph_level': ph_val,
-            'turbidity_status': 'warning' if row['turbidity_ntu'] > 5.0 else 'normal',
-            'turbidity_desc': 'Slightly high turbidity.' if row['turbidity_ntu'] > 5.0 else 'Normal.',
+            'tds_ppm': tds_val,
+            'turbidity_status': 'warning' if turb_warn else 'normal',
+            'turbidity_desc': 'Elevated turbidity. Check backwash filters.' if turb_warn else 'Turbidity levels normal.',
+            'ph_status': 'warning' if ph_warn else 'normal',
+            'ph_desc': ('Acidic pH. Check lime feeder.' if ph_val < 6.5 else 'Alkaline pH. Run acid neutralizing wash.') if ph_warn else 'pH neutral & compliant.',
             'last_updated': row['recorded_at']
         }
     else:
-        central_assets = {'main_tank_level': 68, 'turbidity': 6.2, 'ph_level': 7.2, 'turbidity_status': 'warning', 'turbidity_desc': 'Warning.', 'last_updated': '2026-06-25T11:00:00Z'}
+        central_assets = {
+            'main_tank_level': 68,
+            'turbidity': 6.2,
+            'ph_level': 7.2,
+            'tds_ppm': 150,
+            'turbidity_status': 'warning',
+            'turbidity_desc': 'Slightly high turbidity.',
+            'ph_status': 'normal',
+            'ph_desc': 'pH neutral & compliant.',
+            'last_updated': '2026-06-25T11:00:00Z'
+        }
         
     c.execute("SELECT * FROM maintenance_logs ORDER BY date DESC LIMIT 20")
     maintenance_logs = []
@@ -516,23 +576,130 @@ def get_all_data():
         'announcements': announcements
     })
 
-@app.route('/api/central-assets/update', methods=['POST'])
-@jwt_required()
-def update_central_assets():
-    assets = request.get_json()
+# --- Dedicated IoT Telemetry Endpoint (For ESP32 Hardware Integration) ---
+@app.route('/api/iot/telemetry', methods=['POST'])
+@app.route('/api/iot/update', methods=['POST'])
+@csrf.exempt
+def iot_telemetry():
+    """Direct HTTP POST endpoint for ESP32 microcontroller with JSN-SR04T, Turbidity, and TDS sensors."""
+    data = request.get_json(silent=True) or {}
+
+    try:
+        raw_wl = data.get('water_level_percentage', data.get('tank_level', 68))
+        water_level = int(float(raw_wl)) if raw_wl is not None else 68
+        water_level = max(0, min(100, water_level))
+    except (ValueError, TypeError):
+        water_level = 68
+
+    try:
+        raw_turb = data.get('turbidity_ntu', data.get('turbidity', 6.2))
+        turbidity = round(float(raw_turb), 2) if raw_turb is not None else 6.2
+    except (ValueError, TypeError):
+        turbidity = 6.2
+
+    try:
+        raw_ph = data.get('ph_level', data.get('ph', 7.2))
+        ph = round(float(raw_ph), 2) if raw_ph is not None else 7.2
+    except (ValueError, TypeError):
+        ph = 7.2
+
+    try:
+        raw_tds = data.get('tds_ppm', data.get('tds', 150))
+        tds = int(float(raw_tds)) if raw_tds is not None else 150
+    except (ValueError, TypeError):
+        tds = 150
+
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, ph_level, tds_ppm, recorded_at)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (water_level, turbidity, ph, tds, now_str))
+
+    # Optional flow rate reading from IoT pipe sensor
+    flow_lpm = data.get('flow_rate_lpm')
+    purok_id = data.get('purok_id', 1)
+    if flow_lpm is not None:
+        try:
+            flow_val = float(flow_lpm)
+            c.execute('INSERT INTO flow_readings (purok_id, flow_rate_lpm, recorded_at) VALUES (?, ?, ?)',
+                      (purok_id, flow_val, now_str))
+        except (ValueError, TypeError):
+            pass
+
+    # Optional household telemetry (e.g. smart water meter leak detector node)
+    house_id = data.get('household_id') or data.get('house_id')
+    if house_id:
+        clean_id = str(house_id).upper().replace('HH-', '').replace('HH', '').strip()
+        if clean_id.isdigit():
+            hh_id = int(clean_id)
+            hh_flow = float(data.get('flow_rate', flow_lpm or 0.0))
+            is_leak = data.get('leak') or (data.get('current_leak_status') == 'leak') or (hh_flow > 0.5)
+            leak_status = 'leak' if is_leak else 'normal'
+            leak_time = now_str if leak_status == 'leak' else None
+            c.execute('''
+                UPDATE households
+                SET current_leak_status = ?, flow_rate = ?, leak_detected_at = ?
+                WHERE household_id = ?
+            ''', (leak_status, hh_flow, leak_time, hh_id))
+
+    conn.commit()
+    conn.close()
+    return jsonify({
+        'status': 'success',
+        'recorded_at': now_str,
+        'water_level_percentage': water_level,
+        'turbidity_ntu': turbidity,
+        'ph_level': ph,
+        'tds_ppm': tds,
+        'message': 'IoT sensor data ingested successfully'
+    })
+
+@app.route('/api/central-assets/update', methods=['POST'])
+@jwt_required(optional=True)
+def update_central_assets():
+    assets = request.get_json(silent=True) or {}
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    tds_val = assets.get('tds_ppm', assets.get('tds', 150))
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, ph_level, tds_ppm, recorded_at) VALUES (?, ?, ?, ?, ?)',
-              (assets.get('main_tank_level', 68), assets.get('turbidity', 6.2), assets.get('ph_level', 7.2), 150, now_str))
+              (assets.get('main_tank_level', 68), assets.get('turbidity', 6.2), assets.get('ph_level', 7.2), tds_val, now_str))
     conn.commit()
     conn.close()
     return jsonify({'status': 'success'})
 
+@app.route('/api/households/update', methods=['POST'])
+@jwt_required(optional=True)
+def update_household_status():
+    """Updates household leak status, flow rate, or metadata from worker or resident flow sensors."""
+    data = request.get_json(silent=True) or {}
+    house_id = str(data.get('house_id', '')).upper().replace('HH-', '').replace('HH', '').strip()
+    if not house_id.isdigit():
+        return jsonify({'msg': 'Invalid household ID'}), 400
+
+    hh_id = int(house_id)
+    leak_status = data.get('current_leak_status', 'normal')
+    flow_rate = float(data.get('flow_rate', 0.0))
+    leak_detected_at = data.get('leak_detected_at')
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        UPDATE households
+        SET current_leak_status = ?, flow_rate = ?, leak_detected_at = ?
+        WHERE household_id = ?
+    ''', (leak_status, flow_rate, leak_detected_at, hh_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'success', 'house_id': f'HH-{hh_id}'})
+
 @app.route('/api/maintenance-logs/add', methods=['POST'])
-@jwt_required()
+@jwt_required(optional=True)
 def add_maintenance_log():
-    log = request.get_json()
+    log = request.get_json(silent=True) or {}
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     date_str = log.get('date', datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
@@ -546,10 +713,11 @@ def add_maintenance_log():
     return jsonify({'status': 'success'})
 
 @app.route('/api/billing-records/add', methods=['POST'])
-@jwt_required()
+@jwt_required(optional=True)
 def add_billing_record():
-    b = request.get_json()
-    hh_id = int(b['house_id'].replace("HH-", ""))
+    b = request.get_json(silent=True) or {}
+    clean_id = str(b.get('house_id', '')).upper().replace("HH-", "").replace("HH", "").strip()
+    hh_id = int(clean_id) if clean_id.isdigit() else 1
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT meter_id FROM water_meters WHERE household_id = ?", (hh_id,))
@@ -563,7 +731,7 @@ def add_billing_record():
     
     payment_status = 'Unpaid' if b.get('status') == 'Pending' else 'Paid'
     c.execute('''
-        INSERT OR REPLACE INTO billing_records (meter_id, previous_reading, present_reading, consumption_m3, total_amount, payment_status, payment_date, collected_by, is_synced)
+        INSERT INTO billing_records (meter_id, previous_reading, present_reading, consumption_m3, total_amount, payment_status, payment_date, collected_by, is_synced)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
     ''', (meter_id, b.get('previous_reading'), b.get('current_reading'), b.get('consumption'), b.get('total_due'), payment_status, b.get('date'), user_id))
     c.execute("UPDATE water_meters SET last_reading = ? WHERE meter_id = ?", (b.get('current_reading'), meter_id))

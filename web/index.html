@@ -152,14 +152,14 @@
               </button>
             </div>
           </div>
-          <!-- Brgy. Tagpopongan Footer for Mobile App -->
-          <div style="position:absolute; bottom:20px; left:0; width:100%; text-align:center; display:flex; flex-direction:column; align-items:center; opacity:0.8;">
-            <p style="color:var(--text-muted); font-size:10px; margin-bottom:6px; letter-spacing:1px; text-transform:uppercase;">Official System Of</p>
-            <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
-              <img src="tagpopongan_logo.jpg" alt="Barangay Tagpopongan Official Seal" style="width:20px; height:20px; border-radius:50%; object-fit:cover; border:1px solid rgba(255,255,255,0.2);">
-              <span style="color:#fff; font-size:11px; font-weight:600; letter-spacing:0.5px;">Brgy. Tagpopongan, IGACOS</span>
+          <!-- Barangay Tagpopongan Official Seal Footer -->
+          <footer class="login-footer-branding" id="login-footer-seal">
+            <p class="login-footer-subtitle">Official System Of</p>
+            <div class="login-footer-row">
+              <img src="tagpopongan_logo.jpg" alt="Barangay Tagpopongan Official Seal" class="login-footer-seal">
+              <span class="login-footer-text">Brgy. Tagpopongan, IGACOS</span>
             </div>
-          </div>
+          </footer>
         </div>
 
 
@@ -181,6 +181,37 @@
               <div style="flex:1;">
                 <div class="announcement-title">Barangay Announcement</div>
                 <div class="announcement-message" id="worker-announcement-message"></div>
+              </div>
+            </div>
+
+            <!-- Central Reservoir Telemetry Card for Workers (Live IoT) -->
+            <div class="reservoir-card" style="border: 1.5px solid var(--navy-border); background-color: var(--white); margin: 16px 16px 0 16px;">
+              <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
+                Central Reservoir Telemetry (IoT Live)
+              </span>
+              <div class="metrics-row" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="metric-card">
+                  <span class="metric-card-lbl">Water Level</span>
+                  <div class="metric-card-val"><span id="worker-tank-val">--%</span></div>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-card-lbl">Water Safety</span>
+                  <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="worker-safety-status">SAFE</div>
+                </div>
+              </div>
+              <div class="metrics-row" style="margin-top: 8px; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                <div class="metric-card">
+                  <span class="metric-card-lbl">Turbidity</span>
+                  <div class="metric-card-val"><span id="worker-turb-val">--</span> <small style="font-size:10px;">NTU</small></div>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-card-lbl">TDS Solids</span>
+                  <div class="metric-card-val"><span id="worker-tds-val">--</span> <small style="font-size:10px;">ppm</small></div>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-card-lbl">pH Acidity</span>
+                  <div class="metric-card-val"><span id="worker-ph-val">--</span> <small style="font-size:10px;">pH</small></div>
+                </div>
               </div>
             </div>
 
@@ -470,20 +501,28 @@
               <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
                 Central Reservoir Telemetry (IoT Live)
               </span>
-              <div class="metrics-row" style="grid-template-columns: 1fr;">
-                <div class="metric-card" style="flex: 1;">
+              <div class="metrics-row" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="metric-card">
                   <span class="metric-card-lbl">Water Level</span>
                   <div class="metric-card-val"><span id="resident-tank-val">--%</span></div>
                 </div>
-              </div>
-              <div class="metrics-row" style="margin-top: 8px;">
-                <div class="metric-card" style="flex: 1;">
-                  <span class="metric-card-lbl">Turbidity</span>
-                  <div class="metric-card-val"><span id="resident-turb-val">--</span> NTU</div>
-                </div>
-                <div class="metric-card" style="flex: 1;">
+                <div class="metric-card">
                   <span class="metric-card-lbl">Water Safety</span>
                   <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="resident-safety-status">SAFE</div>
+                </div>
+              </div>
+              <div class="metrics-row" style="margin-top: 8px; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                <div class="metric-card">
+                  <span class="metric-card-lbl">Turbidity</span>
+                  <div class="metric-card-val"><span id="resident-turb-val">--</span> <small style="font-size:10px;">NTU</small></div>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-card-lbl">TDS Solids</span>
+                  <div class="metric-card-val"><span id="resident-tds-val">--</span> <small style="font-size:10px;">ppm</small></div>
+                </div>
+                <div class="metric-card">
+                  <span class="metric-card-lbl">pH Acidity</span>
+                  <div class="metric-card-val"><span id="resident-ph-val">--</span> <small style="font-size:10px;">pH</small></div>
                 </div>
               </div>
             </div>
