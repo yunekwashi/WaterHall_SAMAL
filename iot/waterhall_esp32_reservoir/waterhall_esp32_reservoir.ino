@@ -15,6 +15,7 @@
 
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 
 // ==============================================================================
 // 1. NETWORK & SERVER CONFIGURATION
@@ -22,8 +23,9 @@
 const char* WIFI_SSID     = "[REDACTED]";      // Replace with your WiFi SSID
 const char* WIFI_PASSWORD = "[REDACTED]";     // Replace with your WiFi Password
 
-// IP Address of the computer running backend server.py
-// Example: "http://192.168.1.100:8000/api/iot/telemetry"
+// Server Endpoint URL
+// - For local network test: "http://192.168.254.140:8000/api/iot/telemetry"
+// - For Vercel cloud deployment: "https://<your-project>.vercel.app/api/iot/telemetry"
 const char* SERVER_URL    = "http://192.168.254.140:8000/api/iot/telemetry";
 
 // Telemetry transmit interval (in milliseconds)
@@ -238,10 +240,26 @@ void loop() {
     Serial.println("\n[HTTP] Transmitting JSON to " + String(SERVER_URL));
     Serial.println("[HTTP] Payload: " + jsonPayload);
 
-    // 3. Send HTTP POST to WATERHALL Backend
+    // 3. Send HTTP/HTTPS POST to WATERHALL Backend
     HTTPClient http;
-    http.begin(SERVER_URL);
+    bool beginOk = false;
+
+    if (String(SERVER_URL).startsWith("https://")) {
+      WiFiClientSecure secureClient;
+      secureClient.setInsecure(); // Skip certificate verification for serverless endpoints
+      beginOk = http.begin(secureClient, SERVER_URL);
+    } else {
+      WiFiClient standardClient;
+      beginOk = http.begin(standardClient, SERVER_URL);
+    }
+
+    if (!beginOk) {
+      Serial.println("[HTTP] Failed to initialize connection to " + String(SERVER_URL));
+      return;
+    }
+
     http.addHeader("Content-Type", "application/json");
+    http.setTimeout(8000); // 8 second timeout for cloud / edge requests
 
     // Quick visual blink on transmit
     digitalWrite(PIN_STATUS_LED, LOW);

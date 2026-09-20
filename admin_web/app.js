@@ -217,7 +217,15 @@ document.querySelectorAll('.nav-item').forEach(item => {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     const tabId = e.currentTarget.getAttribute('data-tab');
     document.getElementById(tabId).classList.add('active');
-    const titles = { 'tab-dashboard': 'System Overview', 'tab-directory': 'User Directory', 'tab-assets': 'IoT Control', 'tab-announcements': 'Public Announcements' };
+    const titles = { 
+      'tab-dashboard': 'System Overview', 
+      'tab-directory': 'User Directory', 
+      'tab-assets': 'IoT Control', 
+      'tab-announcements': 'Public Announcements',
+      'tab-billing': 'Billing & Collections Audit',
+      'tab-payment-settings': 'Barangay Payment Configuration',
+      'tab-reports': 'Citizen Incident Reports'
+    };
     document.getElementById('page-title').textContent = titles[tabId] || 'Dashboard';
   });
 });
@@ -245,6 +253,10 @@ async function fetchData(silent = false) {
       renderDashboard(data);
       renderDirectory(data);
       renderAnnouncements(data.announcements || []);
+      renderBilling(data.billingRecords || []);
+      renderCollectionsHistory(data.collectionsHistory || []);
+      renderPaymentSettings(data.paymentSettings || {});
+      renderReports(data.residentReports || []);
     } else {
       showAdminOfflineOverlay();
     }
@@ -688,3 +700,170 @@ document.getElementById('btn-admin-broadcast')?.addEventListener('click', async 
     btn.disabled = false;
   }
 });
+
+// ==============================================================================
+// Billing & Collections Renderers
+// ==============================================================================
+function renderBilling(records) {
+  const tbody = document.getElementById('admin-billing-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!records || records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:16px;">No billing statements recorded.</td></tr>';
+    return;
+  }
+  records.forEach(b => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${b.bill_id}</strong></td>
+      <td>${b.house_id}</td>
+      <td><code>${b.account_number}</code></td>
+      <td>${b.billing_month}</td>
+      <td>${b.consumption} m³</td>
+      <td><strong>₱${b.total_due.toFixed(2)}</strong></td>
+      <td><span class="badge ${b.status === 'Paid' ? 'badge-success' : 'badge-warning'}">${b.status}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderCollectionsHistory(collections) {
+  const tbody = document.getElementById('collections-history-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!collections || collections.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:16px;">No synchronized offline collections yet.</td></tr>';
+    return;
+  }
+  collections.forEach(c => {
+    const tr = document.createElement('tr');
+    const amt = parseFloat(c.amount_collected || 0).toFixed(2);
+    tr.innerHTML = `
+      <td><code style="color:var(--accent-color);font-weight:700;">${c.transaction_id}</code></td>
+      <td>${c.family_head_name || 'HH-' + c.household_id}</td>
+      <td>${c.purok_name || 'Purok 1'}</td>
+      <td><strong style="color:var(--success)">₱${amt}</strong></td>
+      <td>${c.payment_method || 'Cash'}</td>
+      <td>${c.collected_by}</td>
+      <td><small style="color:var(--text-muted)">${c.collection_date}</small></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ==============================================================================
+// Dynamic Payment Configuration (Admin Portal)
+// ==============================================================================
+function renderPaymentSettings(settings) {
+  const locInput = document.getElementById('admin-set-location');
+  const methodInput = document.getElementById('admin-set-method');
+  const hoursInput = document.getElementById('admin-set-hours');
+  const workerSelect = document.getElementById('admin-set-worker-collect');
+  const instInput = document.getElementById('admin-set-instructions');
+
+  if (locInput && settings.payment_location && document.activeElement !== locInput) {
+    locInput.value = settings.payment_location;
+  }
+  if (methodInput && settings.payment_method && document.activeElement !== methodInput) {
+    methodInput.value = settings.payment_method;
+  }
+  if (hoursInput && settings.operating_hours && document.activeElement !== hoursInput) {
+    hoursInput.value = settings.operating_hours;
+  }
+  if (workerSelect && settings.allow_worker_collection && document.activeElement !== workerSelect) {
+    workerSelect.value = settings.allow_worker_collection;
+  }
+  if (instInput && settings.payment_instructions && document.activeElement !== instInput) {
+    instInput.value = settings.payment_instructions;
+  }
+}
+
+document.getElementById('btn-save-payment-settings')?.addEventListener('click', async () => {
+  const loc = document.getElementById('admin-set-location')?.value.trim();
+  const method = document.getElementById('admin-set-method')?.value.trim();
+  const hours = document.getElementById('admin-set-hours')?.value.trim();
+  const worker = document.getElementById('admin-set-worker-collect')?.value;
+  const inst = document.getElementById('admin-set-instructions')?.value.trim();
+
+  const payload = {
+    payment_location: loc || 'Barangay Tagpopongan Hall - Treasury Office',
+    payment_method: method || 'In-Person Payment at Barangay Hall / Field Worker Collection',
+    operating_hours: hours || 'Monday - Friday, 8:00 AM - 5:00 PM',
+    allow_worker_collection: worker || 'true',
+    payment_instructions: inst || 'Water bills are due on or before the 25th of each month.'
+  };
+
+  const btn = document.getElementById('btn-save-payment-settings');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/settings/payment', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + jwtToken
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      alert('Payment configuration successfully saved to the online database!\nBoth Resident and Worker apps will now display the updated settings.');
+      fetchData(true);
+    } else {
+      alert('Failed to update payment settings.');
+    }
+  } catch (e) {
+    alert('Connection error occurred while saving payment settings.');
+  } finally {
+    btn.innerHTML = '<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Save Payment Configuration';
+    btn.disabled = false;
+  }
+});
+
+// ==============================================================================
+// Resident Incident Reports
+// ==============================================================================
+function renderReports(reports) {
+  const tbody = document.getElementById('reports-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!reports || reports.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:16px;">No citizen incident reports filed.</td></tr>';
+    return;
+  }
+  reports.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>REP-${r.report_id}</strong></td>
+      <td>${r.family_head_name || r.household_id} (${r.purok_name || 'Purok 1'})</td>
+      <td><span class="badge badge-warning">${r.report_type}</span></td>
+      <td>${r.description}</td>
+      <td><small style="color:var(--text-muted)">${r.created_at}</small></td>
+      <td><span class="badge ${r.status === 'Resolved' ? 'badge-success' : 'badge-danger'}">${r.status}</span></td>
+      <td>
+        ${r.status !== 'Resolved' ? `<button class="btn" style="background:#10B981;color:white;padding:4px 10px;font-size:11px;" onclick="resolveReport(${r.report_id})">Mark Resolved</button>` : '<span style="color:var(--text-muted);font-size:11px;">Resolved</span>'}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.resolveReport = async function(reportId) {
+  try {
+    const res = await fetch('/api/reports/update-status', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + jwtToken
+      },
+      body: JSON.stringify({ report_id: reportId, status: 'Resolved' })
+    });
+    if (res.ok) {
+      fetchData(true);
+    }
+  } catch (e) {
+    console.error('Error resolving report:', e);
+  }
+};
+

@@ -79,21 +79,17 @@
     <!-- App Screen Viewport -->
     <div class="app-screen">
       
-      <!-- DATABASE OFFLINE BLOCKING OVERLAY -->
-      <div id="db-offline-overlay" class="db-offline-modal" style="display: none;">
-        <div class="offline-card">
-          <svg class="offline-icon" viewBox="0 0 24 24">
+      <!-- DATABASE OFFLINE GENTLE BANNER -->
+      <div id="db-offline-overlay" class="offline-banner-notice" style="display: none;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
           </svg>
-          <div class="offline-title">Database Offline</div>
-          <div class="offline-desc">
-            Cannot connect to the WATERHALL database server.<br>
-            Application access is locked until the database server is running.
-          </div>
-          <button id="btn-retry-db-connection" class="offline-btn" type="button">
-            Retry Database Connection
-          </button>
+          <span id="offline-banner-text">Offline Mode Active: Local SQLite storage enabled. Data will auto-sync when online.</span>
         </div>
+        <button id="btn-retry-db-connection" type="button" style="background:rgba(255,255,255,0.2); border:none; color:white; padding:3px 8px; border-radius:4px; font-size:10px; cursor:pointer; font-weight:700;">
+          Retry
+        </button>
       </div>
 
       <!-- Views Container -->
@@ -167,7 +163,13 @@
         <div id="view-dashboard" class="app-view">
           <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
             <div>
-              <h2 id="dash-worker-title">WATERHALL Field Monitor</h2>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <h2 id="dash-worker-title" style="margin:0;">WATERHALL Field Monitor</h2>
+                <div id="worker-sync-status-pill" class="sync-status-pill online">
+                  <span class="sync-dot"></span>
+                  <span id="worker-sync-status-text">Connected</span>
+                </div>
+              </div>
               <p>Brgy. Tagpopongan, Island Garden City of Samal</p>
             </div>
             <img src="logo.png" alt="WATERHALL Logo" style="width: 42px; height: 42px; object-fit: contain;">
@@ -285,7 +287,11 @@
             </div>
             
             <!-- Actions -->
-            <button type="button" class="submit-log-btn" style="background:var(--blue-primary); color:white;">Send Payment Reminder</button>
+            <button type="button" id="btn-open-collect-modal" class="submit-log-btn" style="background:linear-gradient(135deg, #10B981, #059669); color:white; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px;">
+              <svg style="width:18px;height:18px;fill:currentColor" viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+              <span>Record Offline / Online Collection</span>
+            </button>
+            <button type="button" class="submit-log-btn" style="background:var(--blue-primary); color:white; margin-top:8px;">Send Payment Reminder</button>
           </div>
         </div>
         <!-- Assets view removed and migrated to Admin Panel -->
@@ -571,6 +577,21 @@
               </div>
             </div>
 
+            <!-- Dynamic Payment Guidelines Card from Online Database -->
+            <div class="reservoir-card" style="border:1.5px solid var(--navy-border); background-color:var(--white);">
+              <span class="reservoir-title" style="font-size:12px; font-weight:800; text-transform:uppercase; text-align:center; display:block; border-bottom:1.5px solid var(--off-white); padding-bottom:8px; margin-bottom:8px; color:var(--navy-primary);">
+                Official Payment Guidelines
+              </span>
+              <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; color:#1F2937;">
+                <div><span style="color:#64748B; font-weight:700;">Location:</span> <strong id="res-payment-location">Barangay Tagpopongan Hall - Treasury Office</strong></div>
+                <div><span style="color:#64748B; font-weight:700;">Method:</span> <strong id="res-payment-method">In-Person Payment / Field Collector</strong></div>
+                <div><span style="color:#64748B; font-weight:700;">Operating Hours:</span> <strong id="res-payment-hours">Monday - Friday, 8:00 AM - 5:00 PM</strong></div>
+                <div style="margin-top:4px; font-size:11px; color:#334155; line-height:1.4; background:#F1F5F9; padding:8px 10px; border-radius:6px;" id="res-payment-instructions">
+                  Water bills are due on or before the 25th of each month. Payments can be settled in cash at the Barangay Hall Treasury Window or directly with your authorized Purok Field Collector during visits.
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -826,6 +847,42 @@
           <div style="display:flex; justify-content:flex-end; gap:10px;">
             <button class="offline-btn" id="btn-web-recover-cancel" style="background: #1e293b; color: #fff; padding: 8px 16px; font-size: 14px; border: none; cursor: pointer; border-radius: 6px;">Cancel</button>
             <button class="offline-btn" id="btn-web-recover-submit" style="background: #0284c7; color: #fff; padding: 8px 16px; font-size: 14px; border: none; cursor: pointer; border-radius: 6px;">Reset Password</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Offline / Online Bill Collection Modal for Field Workers -->
+      <div id="modal-collect-payment" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:999999; justify-content:center; align-items:center; backdrop-filter:blur(4px);">
+        <div style="width:90%; max-width:360px; background:#1E293B; border:1.5px solid rgba(255,255,255,0.15); padding:24px; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,0.5);">
+          <h3 style="margin-top:0; font-size:17px; color:#F8FAFC; display:flex; align-items:center; gap:8px;">
+            <svg style="width:20px;height:20px;fill:#10B981" viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+            Record Bill Collection
+          </h3>
+          <p style="font-size:11.5px; color:#94A3B8; margin-bottom:16px; line-height:1.4;">
+            Stores to local SQLite cache if offline. Auto-syncs to online database with unique transaction ID when internet returns.
+          </p>
+          
+          <div style="margin-bottom:12px;">
+            <label style="display:block; font-size:11px; font-weight:700; color:#94A3B8; text-transform:uppercase; margin-bottom:4px;">Household</label>
+            <input type="text" id="collect-hh-name" style="width:100%; padding:10px; border-radius:8px; border:1px solid #334155; background:#0F172A; color:#F8FAFC; font-size:13px;" readonly>
+          </div>
+
+          <div style="margin-bottom:12px;">
+            <label style="display:block; font-size:11px; font-weight:700; color:#94A3B8; text-transform:uppercase; margin-bottom:4px;">Amount Collected (₱)</label>
+            <input type="number" id="collect-amount-input" step="0.01" style="width:100%; padding:10px; border-radius:8px; border:1px solid #334155; background:#0F172A; color:#10B981; font-size:16px; font-weight:800;">
+          </div>
+
+          <div style="margin-bottom:20px;">
+            <label style="display:block; font-size:11px; font-weight:700; color:#94A3B8; text-transform:uppercase; margin-bottom:4px;">Payment Method</label>
+            <select id="collect-payment-method" style="width:100%; padding:10px; border-radius:8px; border:1px solid #334155; background:#0F172A; color:#F8FAFC; font-size:13px;">
+              <option value="Cash">Cash (In-person Field Collection)</option>
+              <option value="Barangay Hall">Barangay Hall Direct</option>
+            </select>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; gap:10px;">
+            <button type="button" id="btn-collect-cancel" style="padding:10px 16px; border-radius:8px; border:1px solid #475569; background:transparent; color:#CBD5E1; font-size:13px; font-weight:600; cursor:pointer;">Cancel</button>
+            <button type="button" id="btn-collect-confirm" style="padding:10px 18px; border-radius:8px; border:none; background:linear-gradient(135deg, #10B981, #059669); color:white; font-size:13px; font-weight:700; cursor:pointer;">Confirm & Save</button>
           </div>
         </div>
       </div>

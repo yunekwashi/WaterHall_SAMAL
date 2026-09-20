@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "web/**",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "admin_web/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/admin/?$",
+      "dest": "admin_web/index.html"
+    },
+    {
+      "src": "/admin/(.*)",
+      "dest": "admin_web/$1"
+    },
+    {
+      "src": "/styles.css",
+      "dest": "web/styles.css"
+    },
+    {
+      "src": "/app.js",
+      "dest": "web/app.js"
+    },
+    {
+      "src": "/logo.png",
+      "dest": "web/logo.png"
+    },
+    {
+      "src": "/tagpopongan_logo.jpg",
+      "dest": "web/tagpopongan_logo.jpg"
+    },
+    {
+      "src": "/manifest.json",
+      "dest": "web/manifest.json"
+    },
+    {
+      "src": "/service-worker.js",
+      "dest": "web/service-worker.js"
+    },
+    {
+      "src": "/index.html",
+      "dest": "web/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "web/$1"
+    }
+  ]
+}

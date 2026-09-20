@@ -98,9 +98,14 @@ class AppController {
     // Initialize DB seed
     await db.init();
 
-    // Background Auto-Refresh Telemetry Loop (Every 5 seconds)
-    // Automatically fetches server data (levels, quality, leaks) and updates resident/worker screen
-    Timer.periodic(Duration(seconds: 5), (timer) async {
+    // Listen to sync state changes and update worker/resident UI
+    db.onSyncStatusChange.listen((status) {
+      _updateSyncStatusUI(status);
+    });
+    _updateSyncStatusUI(db.getSyncStatus());
+
+    // Background Auto-Refresh Telemetry Loop (Every 3 seconds for near real-time IoT monitoring)
+    Timer.periodic(Duration(seconds: 3), (timer) async {
       if (currentWorker != null || currentResidentId != null) {
         await db.refreshData();
         if (currentResidentId != null) {
@@ -138,8 +143,50 @@ class AppController {
     bindEvents();
   }
 
+  void _updateSyncStatusUI(Map<String, dynamic> status) {
+    final pill = document.getElementById('worker-sync-status-pill');
+    final textEl = document.getElementById('worker-sync-status-text');
+    final offlineBanner = document.getElementById('db-offline-overlay');
+    final offlineBannerText = document.getElementById('offline-banner-text');
+
+    final String st = status['status'] ?? 'online';
+    final int pendingCount = (status['pendingCount'] as int?) ?? 0;
+    final bool isOnline = (status['isOnline'] as bool?) ?? true;
+
+    if (pill != null && textEl != null) {
+      pill.classes.removeAll(['online', 'offline', 'pending_sync', 'syncing', 'synced']);
+      pill.classes.add(st);
+
+      if (!isOnline) {
+        textEl.text = 'Offline Mode';
+      } else if (status['isSyncing'] == true) {
+        textEl.text = 'Syncing...';
+      } else if (pendingCount > 0) {
+        textEl.text = '$pendingCount Pending Sync';
+      } else {
+        textEl.text = 'Connected';
+      }
+    }
+
+    if (offlineBanner != null) {
+      if (!isOnline) {
+        offlineBanner.style.display = 'flex';
+        if (offlineBannerText != null) {
+          if (pendingCount > 0) {
+            offlineBannerText.text = 'Offline Mode Active: $pendingCount collection(s) stored in local SQLite waiting to sync.';
+          } else {
+            offlineBannerText.text = 'Offline Mode Active: Local SQLite database enabled. Field operations available.';
+          }
+        }
+      } else {
+        offlineBanner.style.display = 'none';
+      }
+    }
+  }
+
   void bindEvents() {
     _initRegistrationHandlers();
+    _bindCollectionHandlers();
 
     // Authentication Handlers
     final loginBtn = document.getElementById('btn-login') as ButtonElement?;
@@ -1890,6 +1937,26 @@ class AppController {
 
     renderSVGChart(List<num>.from(household['monthly_history']), 'resident-chart-container');
     renderResidentLedgerList(bills);
+
+    // Render Dynamic Payment Guidelines from Online Database
+    final settings = db.getPaymentSettings();
+    final resLoc = document.getElementById('res-payment-location');
+    final resMethod = document.getElementById('res-payment-method');
+    final resHours = document.getElementById('res-payment-hours');
+    final resInst = document.getElementById('res-payment-instructions');
+
+    if (resLoc != null && settings.containsKey('payment_location')) {
+      resLoc.text = settings['payment_location']!;
+    }
+    if (resMethod != null && settings.containsKey('payment_method')) {
+      resMethod.text = settings['payment_method']!;
+    }
+    if (resHours != null && settings.containsKey('operating_hours')) {
+      resHours.text = settings['operating_hours']!;
+    }
+    if (resInst != null && settings.containsKey('payment_instructions')) {
+      resInst.text = settings['payment_instructions']!;
+    }
   }
 
   void renderResidentLedgerList(List<Map<String, dynamic>> history) {
@@ -2009,6 +2076,101 @@ class AppController {
         
       } catch (err) {
         showToast('Error: $err');
+      }
+    });
+  }
+
+  void _bindCollectionHandlers() {
+    final btnOpen = document.getElementById('btn-open-collect-modal');
+    final modal = document.getElementById('modal-collect-payment');
+    final btnCancel = document.getElementById('btn-collect-cancel');
+    final btnConfirm = document.getElementById('btn-collect-confirm');
+    final hhNameInput = document.getElementById('collect-hh-name') as InputElement?;
+    final amountInput = document.getElementById('collect-amount-input') as InputElement?;
+    final methodSelect = document.getElementById('collect-payment-method') as SelectElement?;
+
+    btnOpen?.onClick.listen((e) {
+      if (activeHouseholdId == null) return;
+      final h = db.getHousehold(activeHouseholdId!);
+      if (h == null) return;
+
+      if (hhNameInput != null) {
+        hhNameInput.value = "${h['owner_name']} (${h['house_id']})";
+      }
+
+      // Find latest unpaid bill or calculate total
+      final bills = db.getBillingHistoryForHousehold(activeHouseholdId!);
+      num due = 170.00;
+      if (bills.isNotEmpty) {
+        due = (bills.first['total_due'] as num?) ?? 170.00;
+      }
+      if (amountInput != null) {
+        amountInput.value = due.toStringAsFixed(2);
+      }
+
+      modal?.style.display = 'flex';
+    });
+
+    btnCancel?.onClick.listen((e) {
+      modal?.style.display = 'none';
+    });
+
+    btnConfirm?.onClick.listen((e) {
+      if (activeHouseholdId == null || currentWorker == null) return;
+      final amount = double.tryParse(amountInput?.value ?? '') ?? 0.0;
+      if (amount <= 0) {
+        showToast("Please enter a valid payment amount!");
+        return;
+      }
+
+      final method = methodSelect?.value ?? 'Cash';
+      final workerId = (currentWorker!['worker_id'] ?? currentWorker!['name'] ?? 'Collector').toString();
+
+      // Record collection offline (idempotent, generates unique transaction ID)
+      final record = db.recordBillCollectionOffline(
+        houseId: activeHouseholdId!,
+        amount: amount,
+        collectedBy: workerId,
+        paymentMethod: method
+      );
+
+      modal?.style.display = 'none';
+      showToast("Collection recorded! TxID: ${record['transaction_id']}");
+      openWorkerResidentDetails(activeHouseholdId!);
+    });
+
+    // Resident Service / Incident Report Submission Handler
+    final btnSubmitReport = document.getElementById('btn-resident-submit-log');
+    btnSubmitReport?.onClick.listen((e) async {
+      if (currentResidentId == null) return;
+      final catSelect = document.getElementById('resident-issue-category') as SelectElement?;
+      final descText = document.getElementById('resident-log-desc') as TextAreaElement?;
+
+      final cat = catSelect?.value ?? 'Water Leak';
+      final desc = descText?.value?.trim() ?? '';
+      if (desc.isEmpty) {
+        showToast("Please provide details for the report!");
+        return;
+      }
+
+      final success = await db.submitResidentReport(currentResidentId!, cat, desc);
+      if (success) {
+        showToast("Report submitted to Barangay Technicians!");
+        if (descText != null) descText.value = '';
+      } else {
+        showToast("Report saved locally (will sync when online).");
+      }
+    });
+
+    // Offline banner retry button
+    final btnRetry = document.getElementById('btn-retry-db-connection');
+    btnRetry?.onClick.listen((e) async {
+      showToast("Testing server connection...");
+      final ok = await db.refreshData();
+      if (ok) {
+        showToast("Server connected! Online sync active.");
+      } else {
+        showToast("Server unreachable. Continuing in offline mode.");
       }
     });
   }
