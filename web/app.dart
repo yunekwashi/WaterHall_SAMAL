@@ -304,7 +304,12 @@ class AppController {
         print("Server login error: $err");
       }
 
-      // 2. Offline Fallback Validation
+      // 2. Offline Fallback Validation (Field Workers & Residents only)
+      if (empId.toLowerCase().trim() == 'admin') {
+        showLoginError('Admin accounts cannot log in offline. The Admin Portal is only accessible when the online server is running.', loginErrorMsg);
+        return;
+      }
+
       final uri = Uri.parse(window.location.href);
       final role = uri.queryParameters['role'];
 

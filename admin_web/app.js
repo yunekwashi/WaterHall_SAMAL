@@ -42,9 +42,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function checkServerHealth() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    isServerOnline = false;
+    return false;
+  }
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
     const res = await fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeoutId);
     if (!res.ok) {
@@ -59,6 +63,19 @@ async function checkServerHealth() {
     return false;
   }
 }
+
+window.addEventListener('offline', () => {
+  console.warn('[SECURITY] Network offline event detected. Locking Admin Portal.');
+  showAdminOfflineOverlay();
+});
+
+window.addEventListener('online', async () => {
+  const alive = await checkServerHealth();
+  if (alive) {
+    hideAdminOfflineOverlay();
+    showLogin();
+  }
+});
 
 /**
  * Automatically logs out the admin and purges all session/memory data.
@@ -229,6 +246,15 @@ document.getElementById('btn-login').addEventListener('click', async () => {
   btn.textContent = 'Authenticating...';
   btn.disabled = true;
   errEl.style.display = 'none';
+
+  // Strict check: if server is offline, abort immediately and lock portal
+  const serverAlive = await checkServerHealth();
+  if (!serverAlive) {
+    btn.textContent = 'Login to Dashboard';
+    btn.disabled = false;
+    showAdminOfflineOverlay();
+    return;
+  }
 
   try {
     const res = await fetch('/api/login', {

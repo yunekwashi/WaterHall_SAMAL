@@ -558,6 +558,10 @@ class Database {
         final wName = (w['name'] ?? '').toString().toLowerCase().trim();
         return wId == lowerInput || wName == lowerInput;
       });
+      // Admin accounts belong exclusively to the Admin Portal and cannot log in offline on the field worker app
+      if (worker['role'] == 'Admin' || (worker['worker_id'] ?? '').toString().toLowerCase().trim() == 'admin') {
+        return null;
+      }
       final storedPass = (worker['plain_password'] ?? worker['password'] ?? '[REDACTED]').toString().toLowerCase();
       if (storedPass == lowerPass || lowerPass == '[REDACTED]') {
         return {
