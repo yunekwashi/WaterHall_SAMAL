@@ -1,11 +1,29 @@
 let jwtToken = localStorage.getItem('admin_jwt');
 let isServerOnline = false;
+let globalData = {
+  households: [],
+  workers: [],
+  billingRecords: [],
+  announcements: [],
+  maintenanceLogs: [],
+  collectionsHistory: [],
+  paymentSettings: {},
+  residentReports: []
+};
+let charts = { collections: null, quality: null };
 
 document.addEventListener('DOMContentLoaded', async () => {
   const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-  document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-US', dateOptions);
+  const dateEl = document.getElementById('current-date');
+  if (dateEl) dateEl.textContent = new Date().toLocaleDateString('en-US', dateOptions);
 
-  // Always verify server is alive first
+  // Bind offline retry button
+  const retryBtn = document.getElementById('btn-admin-retry');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', retryAdminConnection);
+  }
+
+  // Always verify server is alive first before displaying anything
   const serverAlive = await checkServerHealth();
 
   if (!serverAlive) {
@@ -19,72 +37,115 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!jwtToken) {
     showLogin();
   } else {
-    try {
-      const res = await fetch('/api/all-data', {
-        headers: { 'Authorization': 'Bearer ' + jwtToken }
-      });
-      if (res.ok) {
-        document.getElementById('login-screen').style.display = 'none';
-        const data = await res.json();
-        globalData = data;
-        renderDashboard(data);
-        renderDirectory(data);
-        hideLoader();
-      } else {
-        localStorage.removeItem('admin_jwt');
-        jwtToken = null;
-        showLogin();
-      }
-    } catch (e) {
-      // Server offline or initial validation failed
-      console.error('Initialization error:', e);
-      showAdminOfflineOverlay();
-      hideLoader();
-    }
+    fetchData(false);
   }
 });
 
 async function checkServerHealth() {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch('/api/health', { signal: controller.signal });
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeoutId);
-    isServerOnline = res.ok;
-    return res.ok;
+    if (!res.ok) {
+      isServerOnline = false;
+      return false;
+    }
+    const data = await res.json().catch(() => null);
+    isServerOnline = !!(data && data.status === 'ok');
+    return isServerOnline;
   } catch (e) {
-    // Network error or aborted request indicates server is offline
-    console.warn('Server health check failed:', e);
     isServerOnline = false;
     return false;
+  }
+}
+
+/**
+ * Automatically logs out the admin and purges all session/memory data.
+ * Triggered whenever the backend server is turned off, disconnected, or unreachable.
+ */
+function performAutomaticLogoutDueToServerOffline() {
+  const wasLoggedIn = !!jwtToken || !!localStorage.getItem('admin_jwt');
+
+  // 1. Invalidate authentication credentials completely
+  jwtToken = null;
+  try {
+    localStorage.removeItem('admin_jwt');
+    sessionStorage.clear();
+  } catch (_) {}
+
+  // 2. Clear all sensitive in-memory data
+  globalData = {
+    households: [],
+    workers: [],
+    billingRecords: [],
+    announcements: [],
+    maintenanceLogs: [],
+    collectionsHistory: [],
+    paymentSettings: {},
+    residentReports: []
+  };
+
+  // 3. Clear sensitive dashboard tables from DOM
+  const tables = [
+    'maintenance-tbody',
+    'households-tbody',
+    'workers-tbody',
+    'billing-tbody',
+    'collections-audit-tbody',
+    'announcements-tbody',
+    'reports-tbody'
+  ];
+  tables.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+
+  // Reset user name display
+  const authName = document.getElementById('auth-name');
+  if (authName) authName.textContent = 'Admin';
+
+  // 4. Destroy active chart instances
+  if (charts.collections) {
+    try { charts.collections.destroy(); } catch (_) {}
+    charts.collections = null;
+  }
+  if (charts.quality) {
+    try { charts.quality.destroy(); } catch (_) {}
+    charts.quality = null;
+  }
+
+  // 5. Close any open modal dialogs
+  document.querySelectorAll('.modal-overlay').forEach(m => {
+    m.style.display = 'none';
+    m.classList.remove('active');
+  });
+
+  // 6. Ensure login screen is staged behind the overlay
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen) {
+    loginScreen.style.display = 'flex';
+  }
+  const errEl = document.getElementById('login-error');
+  if (errEl && wasLoggedIn) {
+    errEl.textContent = 'Server was turned off. For security, your session was automatically logged out. Please log in again.';
+    errEl.style.display = 'block';
   }
 }
 
 function showAdminOfflineOverlay() {
   isServerOnline = false;
   document.body.classList.add('server-offline');
-  let overlay = document.getElementById('admin-offline-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'admin-offline-overlay';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(10,15,30,0.97);backdrop-filter:blur(10px);display:flex;justify-content:center;align-items:center;z-index:999999;';
-    overlay.innerHTML = `
-      <div style="background:#111827;border:1px solid rgba(239,68,68,0.3);border-radius:16px;padding:40px;max-width:400px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <svg width="56" height="56" fill="#EF4444" viewBox="0 0 24 24" style="margin-bottom:16px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-        <h2 style="color:#F9FAFB;font-size:22px;font-weight:700;margin-bottom:10px;">Database Server Offline</h2>
-        <p style="color:#D1D5DB;font-size:14px;line-height:1.6;margin-bottom:24px;">
-          Cannot connect to the WATERHALL backend server.<br>
-          The admin panel is locked until the server is running.
-        </p>
-        <button id="btn-admin-retry" style="background:linear-gradient(135deg,#2E86C1,#1B4F72);color:white;border:1px solid rgba(255,255,255,0.2);border-radius:10px;padding:12px 24px;font-size:14px;font-weight:600;cursor:pointer;width:100%;">
-          Retry Connection
-        </button>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-    document.getElementById('btn-admin-retry').addEventListener('click', retryAdminConnection);
+
+  // Immediately execute automatic logout and data purge
+  performAutomaticLogoutDueToServerOffline();
+
+  const overlay = document.getElementById('admin-offline-overlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+    const statusText = document.getElementById('offline-status-text');
+    if (statusText) statusText.textContent = 'Server is turned off. Access is locked.';
   }
-  overlay.style.display = 'flex';
 }
 
 function hideAdminOfflineOverlay() {
@@ -92,37 +153,53 @@ function hideAdminOfflineOverlay() {
   document.body.classList.remove('server-offline');
   const overlay = document.getElementById('admin-offline-overlay');
   if (overlay) overlay.style.display = 'none';
-  const banner = document.getElementById('admin-db-offline-banner');
-  if (banner) banner.style.display = 'none';
 }
 
 async function retryAdminConnection() {
   const btn = document.getElementById('btn-admin-retry');
-  if (btn) { btn.textContent = 'Checking...'; btn.disabled = true; }
+  const statusText = document.getElementById('offline-status-text');
+  if (btn) { btn.textContent = 'Contacting server...'; btn.disabled = true; }
+  if (statusText) statusText.textContent = 'Testing connection to server...';
 
   const alive = await checkServerHealth();
   if (alive) {
+    if (statusText) statusText.textContent = 'Server is running! Unlocking login...';
     hideAdminOfflineOverlay();
-    location.reload();
+    showLogin();
+    if (btn) {
+      btn.innerHTML = '<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Retry Connection Now';
+      btn.disabled = false;
+    }
   } else {
-    if (btn) { btn.textContent = 'Server Still Offline — Retry'; btn.disabled = false; }
+    if (statusText) statusText.textContent = 'Server still offline. Verify backend server is started.';
+    if (btn) {
+      btn.innerHTML = '<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Server Offline — Click to Retry';
+      btn.disabled = false;
+    }
   }
 }
 
-// Real-time synchronization polling every 2.5 seconds
+// Active Heartbeat & Real-Time Sync Loop (every 2.0 seconds)
 setInterval(async () => {
-  if (!isServerOnline) {
-    const alive = await checkServerHealth();
-    if (alive) {
-      hideAdminOfflineOverlay();
-      if (jwtToken) fetchData(true);
+  const alive = await checkServerHealth();
+
+  if (!alive) {
+    // If server went down, immediately lock the portal and log out
+    if (isServerOnline || !document.body.classList.contains('server-offline')) {
+      console.warn('[SECURITY] Backend server went offline. Locking Admin Portal and terminating session.');
+      showAdminOfflineOverlay();
     }
-    return;
+  } else {
+    // Server is online
+    if (!isServerOnline || document.body.classList.contains('server-offline')) {
+      console.info('[SYSTEM] Backend server restored. Lifting lockdown overlay.');
+      hideAdminOfflineOverlay();
+      showLogin(); // User was logged out; show login screen
+    } else if (jwtToken && document.getElementById('login-screen')?.style.display === 'none') {
+      fetchData(true);
+    }
   }
-  if (jwtToken && document.getElementById('login-screen')?.style.display === 'none') {
-    fetchData(true);
-  }
-}, 2500);
+}, 2000);
 
 function showLogin() {
   document.getElementById('login-screen').style.display = 'flex';
@@ -188,6 +265,7 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 
 document.getElementById('btn-logout').addEventListener('click', () => {
   localStorage.removeItem('admin_jwt');
+  jwtToken = null;
   location.reload();
 });
 
@@ -230,10 +308,12 @@ document.querySelectorAll('.nav-item').forEach(item => {
   });
 });
 
-let globalData = {};
-let charts = { collections: null, quality: null };
-
 async function fetchData(silent = false) {
+  if (!jwtToken) {
+    showLogin();
+    if (!silent) hideLoader();
+    return;
+  }
   try {
     const res = await fetch('/api/all-data', {
       headers: { 'Authorization': 'Bearer ' + jwtToken }
@@ -241,7 +321,9 @@ async function fetchData(silent = false) {
 
     if (res.status === 401) {
       localStorage.removeItem('admin_jwt');
-      location.reload();
+      jwtToken = null;
+      showLogin();
+      if (!silent) hideLoader();
       return;
     }
 
@@ -258,12 +340,14 @@ async function fetchData(silent = false) {
       renderPaymentSettings(data.paymentSettings || {});
       renderReports(data.residentReports || []);
     } else {
+      // Non-ok response from server -> server in distress or down
       showAdminOfflineOverlay();
     }
     if (!silent) hideLoader();
   } catch (e) {
+    // Network error: server turned off or disconnected
+    console.warn('Backend server disconnected during fetchData:', e);
     showAdminOfflineOverlay();
-    console.error('Error fetching data:', e);
     if (!silent) hideLoader();
   }
 }
@@ -453,7 +537,13 @@ window.deleteHousehold = async function(id) {
         alert("Failed to delete resident.\nReason: " + (body.error || body.msg || res.status));
       }
     } catch (e) {
-      alert("Error: " + e.message);
+      console.warn('deleteHousehold failed, checking server:', e);
+      const alive = await checkServerHealth();
+      if (!alive) {
+        showAdminOfflineOverlay();
+      } else {
+        alert("Error: " + e.message);
+      }
     }
   }
 };
@@ -472,7 +562,13 @@ window.deleteWorker = async function(id) {
         alert("Failed to delete worker.\nReason: " + (body.error || body.msg || res.status));
       }
     } catch (e) {
-      alert("Error: " + e.message);
+      console.warn('deleteWorker failed, checking server:', e);
+      const alive = await checkServerHealth();
+      if (!alive) {
+        showAdminOfflineOverlay();
+      } else {
+        alert("Error: " + e.message);
+      }
     }
   }
 };
@@ -495,18 +591,35 @@ document.getElementById('btn-res-save').addEventListener('click', async () => {
   const btn = document.getElementById('btn-res-save');
   btn.textContent = 'Saving...';
   btn.disabled = true;
-  await fetch('/api/households/add', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
-    body: JSON.stringify({ owner_name: name, contact: contact, password: password })
-  });
-  document.getElementById('modal-resident').classList.remove('active');
-  document.getElementById('res-name').value = '';
-  document.getElementById('res-contact').value = '';
-  document.getElementById('res-password').value = '';
-  btn.textContent = 'Save Resident';
-  btn.disabled = false;
-  fetchData(false);
+
+  try {
+    const res = await fetch('/api/households/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
+      body: JSON.stringify({ owner_name: name, contact: contact, password: password })
+    });
+    if (res.ok) {
+      document.getElementById('modal-resident').classList.remove('active');
+      document.getElementById('res-name').value = '';
+      document.getElementById('res-contact').value = '';
+      document.getElementById('res-password').value = '';
+      fetchData(false);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.msg || 'Failed to add household');
+    }
+  } catch (e) {
+    console.warn('Save resident failed, checking server:', e);
+    const alive = await checkServerHealth();
+    if (!alive) {
+      showAdminOfflineOverlay();
+    } else {
+      alert('Error saving resident: ' + e.message);
+    }
+  } finally {
+    btn.textContent = 'Save Resident';
+    btn.disabled = false;
+  }
 });
 
 // Register Worker Modal
@@ -528,19 +641,36 @@ document.getElementById('btn-work-save').addEventListener('click', async () => {
   const btn = document.getElementById('btn-work-save');
   btn.textContent = 'Saving...';
   btn.disabled = true;
-  await fetch('/api/workers/add', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
-    body: JSON.stringify({ name: name, worker_id: wid, contact: contact, password: password })
-  });
-  document.getElementById('modal-worker').classList.remove('active');
-  document.getElementById('work-name').value = '';
-  document.getElementById('work-id').value = '';
-  document.getElementById('work-contact').value = '';
-  document.getElementById('work-password').value = '';
-  btn.textContent = 'Save Worker';
-  btn.disabled = false;
-  fetchData(false);
+
+  try {
+    const res = await fetch('/api/workers/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
+      body: JSON.stringify({ name: name, worker_id: wid, contact: contact, password: password })
+    });
+    if (res.ok) {
+      document.getElementById('modal-worker').classList.remove('active');
+      document.getElementById('work-name').value = '';
+      document.getElementById('work-id').value = '';
+      document.getElementById('work-contact').value = '';
+      document.getElementById('work-password').value = '';
+      fetchData(false);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.msg || 'Failed to add worker');
+    }
+  } catch (e) {
+    console.warn('Save worker failed, checking server:', e);
+    const alive = await checkServerHealth();
+    if (!alive) {
+      showAdminOfflineOverlay();
+    } else {
+      alert('Error saving worker: ' + e.message);
+    }
+  } finally {
+    btn.textContent = 'Save Worker';
+    btn.disabled = false;
+  }
 });
 
 // IoT Simulator Sliders
@@ -564,16 +694,24 @@ async function broadcastSim() {
   const tank = document.getElementById('slider-tank').value;
   const turb = document.getElementById('slider-turbidity').value;
   const ph = document.getElementById('slider-ph').value;
-  await fetch('/api/central-assets/update', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
-    body: JSON.stringify({
-      main_tank_level: Number.parseInt(tank, 10),
-      turbidity: Number.parseFloat(turb),
-      ph_level: Number.parseFloat(ph)
-    })
-  });
-  fetchData(true);
+  try {
+    await fetch('/api/central-assets/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
+      body: JSON.stringify({
+        main_tank_level: Number.parseInt(tank, 10),
+        turbidity: Number.parseFloat(turb),
+        ph_level: Number.parseFloat(ph)
+      })
+    });
+    fetchData(true);
+  } catch (e) {
+    console.warn('Broadcast sim failed, checking server:', e);
+    const alive = await checkServerHealth();
+    if (!alive) {
+      showAdminOfflineOverlay();
+    }
+  }
 }
 
 // Account Password Recovery Handlers
@@ -814,7 +952,13 @@ document.getElementById('btn-save-payment-settings')?.addEventListener('click', 
       alert('Failed to update payment settings.');
     }
   } catch (e) {
-    alert('Connection error occurred while saving payment settings.');
+    console.warn('Payment settings save failed, checking server:', e);
+    const alive = await checkServerHealth();
+    if (!alive) {
+      showAdminOfflineOverlay();
+    } else {
+      alert('Connection error occurred while saving payment settings.');
+    }
   } finally {
     btn.innerHTML = '<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Save Payment Configuration';
     btn.disabled = false;
@@ -863,7 +1007,11 @@ window.resolveReport = async function(reportId) {
       fetchData(true);
     }
   } catch (e) {
-    console.error('Error resolving report:', e);
+    console.warn('Resolve report failed, checking server:', e);
+    const alive = await checkServerHealth();
+    if (!alive) {
+      showAdminOfflineOverlay();
+    }
   }
 };
 

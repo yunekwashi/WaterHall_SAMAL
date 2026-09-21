@@ -589,6 +589,172 @@ input[type=range]::-webkit-slider-runnable-track {
   display: none;
 }
 
+/* ==============================================================================
+   Admin Portal Inaccessible / Server Offline Lockdown
+   ============================================================================== */
+body.server-offline {
+  overflow: hidden !important;
+  user-select: none !important;
+}
+
 body.server-offline > *:not(#admin-offline-overlay) {
   display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+#admin-offline-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at center, rgba(15, 55, 82, 0.98), rgba(8, 20, 36, 0.99));
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 99999999 !important;
+  padding: 24px;
+}
+
+.offline-card {
+  background: rgba(18, 48, 72, 0.9);
+  border: 1px solid rgba(255, 74, 74, 0.45);
+  box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.8), 0 0 40px rgba(255, 74, 74, 0.25);
+  border-radius: 24px;
+  padding: 44px 36px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.offline-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #FF4A4A, #F4D03F, #FF4A4A);
+  background-size: 200% 100%;
+  animation: barSlide 3s linear infinite;
+}
+
+@keyframes barSlide {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+
+.offline-icon-wrap {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: rgba(255, 74, 74, 0.12);
+  border: 2px solid rgba(255, 74, 74, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px auto;
+  box-shadow: 0 0 30px rgba(255, 74, 74, 0.3);
+}
+
+.offline-badge {
+  display: inline-block;
+  background: rgba(255, 74, 74, 0.22);
+  color: #FF6B6B;
+  border: 1px solid rgba(255, 74, 74, 0.4);
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.offline-card h2 {
+  font-size: 24px;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin-bottom: 14px;
+  font-family: var(--font-title);
+  letter-spacing: -0.5px;
+}
+
+.offline-card p {
+  color: #D1D5DB;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.offline-status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 24px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.status-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #FF4A4A;
+  box-shadow: 0 0 10px #FF4A4A;
+  animation: pulseOffline 1.5s infinite;
+}
+
+@keyframes pulseOffline {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 74, 74, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(255, 74, 74, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 74, 74, 0); }
+}
+
+.btn-offline-retry {
+  width: 100%;
+  background: linear-gradient(135deg, #2E86C1, #1B4F72);
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 8px 20px rgba(27, 79, 114, 0.4);
+}
+
+.btn-offline-retry:hover {
+  background: linear-gradient(135deg, #3498DB, #2E86C1);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(46, 134, 193, 0.45);
+}
+
+.btn-offline-retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.offline-footer-note {
+  margin-top: 20px;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }

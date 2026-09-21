@@ -509,6 +509,37 @@
     </div>
   </div>
 
-  <script src="/admin/app.js?v=11"></script>
+  <!-- Server Offline Inaccessible Blocker Overlay -->
+  <div id="admin-offline-overlay" style="display: none;">
+    <div class="offline-card">
+      <div class="offline-icon-wrap">
+        <svg width="44" height="44" fill="none" stroke="#FF4A4A" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+        </svg>
+      </div>
+      <div class="offline-badge">SECURITY LOCKDOWN</div>
+      <h2>Server Offline — Portal Inaccessible</h2>
+      <p>
+        The <strong>WATERHALL</strong> backend server is currently turned off or unreachable.
+        <br><br>
+        For security compliance, <strong>all administrator sessions have been terminated and automatically logged out</strong>. The admin portal is locked until the server is running.
+      </p>
+      <div class="offline-status-indicator">
+        <span class="status-pulse-dot"></span>
+        <span id="offline-status-text">Attempting to contact backend server...</span>
+      </div>
+      <button id="btn-admin-retry" class="btn-offline-retry">
+        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:8px;">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        Retry Connection Now
+      </button>
+      <div class="offline-footer-note">
+        Barangay Tagpopongan Water System Management • IGACOS
+      </div>
+    </div>
+  </div>
+
+  <script src="/admin/app.js?v=12"></script>
 </body>
 </html>
