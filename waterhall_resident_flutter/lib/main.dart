@@ -2,7 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'config.dart';
 
 void main() {
   runApp(const MyApp());
@@ -14,7 +14,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'WATERHALL',
+      title: 'WATERHALL Resident Portal',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.dark),
@@ -34,8 +34,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late final WebViewController _controller;
-  String _ipAddress = "192.168.254.140";
-  String _role = "resident"; // Hardcoded to resident
+  String _activeServerUrl = AppConfig.serverBaseUrl;
   bool _isLoading = true;
   bool _initialized = false;
   bool _serverError = false;
@@ -43,7 +42,7 @@ class _MainScreenState extends State<MainScreen> {
 
   void _startErrorTimer() {
     _errorTimer?.cancel();
-    _errorTimer = Timer(const Duration(seconds: 30), () {
+    _errorTimer = Timer(const Duration(seconds: 20), () {
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -56,14 +55,19 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSettingsAndInitWebView();
+    _initAppConnection();
   }
 
-  Future<void> _loadSettingsAndInitWebView() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _initAppConnection() async {
     setState(() {
-      _ipAddress = prefs.getString("server_ip") ?? "192.168.254.140";
-      _role = "resident"; // Always resident
+      _isLoading = true;
+      _serverError = false;
+    });
+
+    final resolvedUrl = await AppConfig.resolveActiveServer();
+
+    setState(() {
+      _activeServerUrl = resolvedUrl;
     });
 
     _controller = WebViewController()
@@ -88,8 +92,6 @@ class _MainScreenState extends State<MainScreen> {
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint("Web Resource Error: ${error.description}");
-            // isForMainFrame is only available in some platform implementations or webview_flutter 4.x
-            // So we just trigger the timer on any error while loading the main page.
             if (_isLoading) {
               _startErrorTimer();
             }
@@ -97,7 +99,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
       );
 
-    _controller.loadRequest(Uri.parse(_getAppUrl()));
+    await _controller.loadRequest(Uri.parse(_getAppUrl()));
 
     setState(() {
       _initialized = true;
@@ -105,69 +107,24 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   String _getAppUrl() {
-    return "http://$_ipAddress:8000/index.html?role=$_role";
+    final cleanUrl = _activeServerUrl.replaceAll(RegExp(r'/+$'), '');
+    return "$cleanUrl/index.html?role=${AppConfig.appRole}";
   }
 
-  void _showSettingsDialog() {
-    final ipController = TextEditingController(text: _ipAddress);
-    String tempRole = _role;
+  Future<void> _retryConnection() async {
+    setState(() {
+      _isLoading = true;
+      _serverError = false;
+    });
+    _errorTimer?.cancel();
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text("⚙️ Connection Settings"),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: ipController,
-                    decoration: const InputDecoration(
-                      labelText: "PC Local Server IP",
-                      hintText: "e.g. 192.168.1.15",
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.datetime,
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("Cancel"),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final cleanIp = ipController.text.trim();
-                    if (cleanIp.isNotEmpty) {
-                      final prefs = await SharedPreferences.getInstance();
-                      await prefs.setString("server_ip", cleanIp);
-                      await prefs.setString("app_role", "resident");
+    final resolved = await AppConfig.resolveActiveServer();
+    setState(() {
+      _activeServerUrl = resolved;
+    });
 
-                      setState(() {
-                        _ipAddress = cleanIp;
-                        _role = "resident";
-                        _isLoading = true;
-                        _serverError = false;
-                      });
-
-                      _errorTimer?.cancel();
-                      await _controller.clearCache();
-                      await _controller.clearLocalStorage();
-                      _controller.loadRequest(Uri.parse(_getAppUrl()));
-                      if (context.mounted) Navigator.pop(context);
-                    }
-                  },
-                  child: const Text("Save & Connect"),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+    await _controller.clearCache();
+    await _controller.loadRequest(Uri.parse(_getAppUrl()));
   }
 
   @override
@@ -179,7 +136,6 @@ class _MainScreenState extends State<MainScreen> {
         if (_initialized && await _controller.canGoBack()) {
           await _controller.goBack();
         } else {
-          // Close the app if we cannot go back
           if (context.mounted) {
             Navigator.of(context).pop();
           }
@@ -200,31 +156,27 @@ class _MainScreenState extends State<MainScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.cloud_off, size: 100, color: Colors.blueGrey),
+                          const Icon(Icons.cloud_off, size: 90, color: Colors.blueGrey),
                           const SizedBox(height: 24),
                           const Text(
-                            "Server Offline",
-                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                            "Service Offline",
+                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           const Text(
-                            "Sorry, the server is shut down. Meanwhile, monitor the app if you want to get an update for your bill.\n\nThank you for your understanding.",
+                            "Unable to reach the WaterHall cloud server at this time.\n\n"
+                            "Please ensure your device is connected to the internet, or tap retry to connect once the service is restored.",
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white70, fontSize: 16, height: 1.5),
+                            style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
                           ),
-                          const SizedBox(height: 40),
+                          const SizedBox(height: 36),
                           ElevatedButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _isLoading = true;
-                                _serverError = false;
-                              });
-                              _errorTimer?.cancel();
-                              _controller.loadRequest(Uri.parse(_getAppUrl()));
-                            },
+                            onPressed: _retryConnection,
                             icon: const Icon(Icons.refresh),
                             label: const Text("Retry Connection"),
                             style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade700,
+                              foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             ),
                           ),
@@ -235,27 +187,12 @@ class _MainScreenState extends State<MainScreen> {
                 )
               else
                 const Center(child: CircularProgressIndicator()),
-              
+
               if (_isLoading)
                 Container(
-                  color: Colors.black54, // Blocks touches and dims the background
+                  color: Colors.black54,
                   child: const Center(child: CircularProgressIndicator()),
                 ),
-
-              // Floating Settings Gear button in top-right
-              Positioned(
-                top: 16,
-                right: 16,
-                child: Opacity(
-                  opacity: 0.85,
-                  child: FloatingActionButton.small(
-                    onPressed: _showSettingsDialog,
-                    backgroundColor: const Color(0xCC1E293B),
-                    foregroundColor: Colors.white,
-                    child: const Icon(Icons.settings, size: 20),
-                  ),
-                ),
-              ),
             ],
           ),
         ),

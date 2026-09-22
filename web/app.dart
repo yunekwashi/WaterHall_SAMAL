@@ -122,21 +122,30 @@ class AppController {
       }
     });
 
-    // Check existing session
+    // Check existing session strictly isolated by application role (?role=resident or ?role=worker)
     final savedWorker = window.localStorage['waterhall_session'];
     final savedResident = window.localStorage['waterhall_resident_session'];
-    if (savedWorker != null) {
-      try {
-        currentWorker = Map<String, dynamic>.from(json.decode(savedWorker));
-        showApp(currentWorker!);
-      } catch (e) {
-        window.localStorage.remove('waterhall_session');
+
+    if (role == 'resident') {
+      // Resident App strictly restores ONLY resident sessions
+      if (savedResident != null && savedResident.isNotEmpty) {
+        showResidentPortal(savedResident);
+      } else {
         enforceLoginGate();
       }
-    } else if (savedResident != null) {
-      showResidentPortal(savedResident);
     } else {
-      enforceLoginGate();
+      // Worker App strictly restores ONLY field worker sessions
+      if (savedWorker != null && savedWorker.isNotEmpty) {
+        try {
+          currentWorker = Map<String, dynamic>.from(json.decode(savedWorker));
+          showApp(currentWorker!);
+        } catch (e) {
+          window.localStorage.remove('waterhall_session');
+          enforceLoginGate();
+        }
+      } else {
+        enforceLoginGate();
+      }
     }
 
     // Bind Event Listeners
@@ -254,6 +263,9 @@ class AppController {
       final password = passwordInput?.value?.trim() ?? '';
       final selectedZone = zoneSelect?.value ?? '';
 
+      final uri = Uri.parse(window.location.href);
+      final role = uri.queryParameters['role'];
+
       if (empId.isEmpty || password.isEmpty) {
         showLoginError("Both Username and Password are required.", loginErrorMsg);
         return;
@@ -280,6 +292,11 @@ class AppController {
         await db.refreshData();
 
         if (userRole == 'resident') {
+          // Guard: Worker App MUST NEVER authenticate or display the Resident Portal
+          if (role == 'worker') {
+            showLoginError('This terminal is for Field Workers only. Residents must use the Resident App.', loginErrorMsg);
+            return;
+          }
           window.localStorage.remove('waterhall_session');
           currentWorker = null;
           showResidentPortal(id);
@@ -287,6 +304,11 @@ class AppController {
           showToast('Logged in as Resident: ' + name);
           return;
         } else {
+          // Guard: Resident App MUST NEVER authenticate or display the Worker Portal
+          if (role == 'resident') {
+            showLoginError('This portal is for Residents only. Field Workers must use the Worker App.', loginErrorMsg);
+            return;
+          }
           currentWorker = {
             'worker_id': id,
             'name': name,
@@ -304,14 +326,11 @@ class AppController {
         print("Server login error: $err");
       }
 
-      // 2. Offline Fallback Validation (Field Workers & Residents only)
+      // 2. Offline Fallback Validation strictly isolated by application role
       if (empId.toLowerCase().trim() == 'admin') {
         showLoginError('Admin accounts cannot log in offline. The Admin Portal is only accessible when the online server is running.', loginErrorMsg);
         return;
       }
-
-      final uri = Uri.parse(window.location.href);
-      final role = uri.queryParameters['role'];
 
       if (role == 'resident') {
         final resident = db.validateResident(empId, password);
@@ -323,18 +342,10 @@ class AppController {
           showToast('Logged in as Resident: ' + resident['owner_name']);
           return;
         }
-      } else if (role == 'worker') {
-        final worker = db.validateWorker(empId, password, selectedZone);
-        if (worker != null) {
-          currentWorker = worker;
-          window.localStorage['waterhall_session'] = json.encode(worker);
-          window.localStorage.remove('waterhall_resident_session');
-          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-          showApp(worker);
-          showToast('Logged in as Tech: ' + worker['name']);
-          return;
-        }
+        showLoginError('Resident account not recognized for "' + empId + '".', loginErrorMsg);
+        return;
       } else {
+        // Field Worker App (?role=worker or default)
         final worker = db.validateWorker(empId, password, selectedZone);
         if (worker != null) {
           currentWorker = worker;
@@ -345,19 +356,9 @@ class AppController {
           showToast('Logged in as Tech: ' + worker['name']);
           return;
         }
-
-        final resident = db.validateResident(empId, password);
-        if (resident != null) {
-          window.localStorage.remove('waterhall_session');
-          currentWorker = null;
-          showResidentPortal(resident['house_id']);
-          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-          showToast('Logged in as Resident: ' + resident['owner_name']);
-          return;
-        }
+        showLoginError('Field worker account not recognized for "' + empId + '".', loginErrorMsg);
+        return;
       }
-
-      showLoginError('Credentials "' + empId + '" not recognized. Check details.', loginErrorMsg);
     });
 
     final logoutBtn = document.getElementById('btn-logout') as ButtonElement?;
@@ -723,6 +724,13 @@ class AppController {
   }
 
   void showApp(Map<String, dynamic> worker) {
+    final uri = Uri.parse(window.location.href);
+    final role = uri.queryParameters['role'];
+    if (role == 'resident') {
+      print('[SECURITY] Resident application is forbidden from loading Worker Portal.');
+      return;
+    }
+
     // Hide login
     loginView.classes.remove('active');
     loginView.style.display = 'none';
@@ -771,6 +779,19 @@ class AppController {
       enforceLoginGate();
       return;
     }
+
+    // Strict tab boundary enforcement: Worker cannot access Resident tabs, Resident cannot access Worker tabs
+    final uri = Uri.parse(window.location.href);
+    final role = uri.queryParameters['role'];
+    if (role == 'worker' && (targetViewId == 'view-resident-home' || targetViewId == 'view-resident-ledger' || targetViewId == 'view-resident-support')) {
+      print('[SECURITY] Worker application is forbidden from switching to Resident tab $targetViewId.');
+      return;
+    }
+    if (role == 'resident' && (targetViewId == 'view-dashboard' || targetViewId == 'view-billing' || targetViewId == 'view-profile' || targetViewId == 'view-directory' || targetViewId == 'view-assets' || targetViewId == 'view-worker-resident-details')) {
+      print('[SECURITY] Resident application is forbidden from switching to Worker tab $targetViewId.');
+      return;
+    }
+
     activeTab = targetViewId;
 
     final navTabs = document.querySelectorAll('.nav-tab');
@@ -1756,6 +1777,13 @@ class AppController {
 
   // --- Resident Portal Controller ---
   void showResidentPortal(String houseId) {
+    final uri = Uri.parse(window.location.href);
+    final role = uri.queryParameters['role'];
+    if (role == 'worker') {
+      print('[SECURITY] Worker application is forbidden from loading Resident Portal.');
+      return;
+    }
+
     currentResidentId = houseId;
     window.localStorage['waterhall_resident_session'] = houseId;
     currentWorker = null; // EXPLICITLY ENSURE worker is null
