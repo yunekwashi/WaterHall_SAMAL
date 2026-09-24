@@ -1,5 +1,11 @@
 # WaterHall GitHub readiness report
 
+**Phase-two local audit record.** The no-push/remote-unchanged statements below
+describe the state before the separately authorized GitHub cleanup. See
+[GITHUB_REMOTE_CLEANUP_REPORT.md](GITHUB_REMOTE_CLEANUP_REPORT.md) for the completed
+remote update and verification, and [GITHUB_SUPPORT_CLEANUP.md](GITHUB_SUPPORT_CLEANUP.md)
+for retained GitHub object/cache follow-up. Credential rotation remains manual.
+
 Local verification dated 25 September 2026. No push or deployment was performed.
 This report concerns the cleaned local repository; the existing GitHub repository
 has not been modified. External credential rotation remains manual.

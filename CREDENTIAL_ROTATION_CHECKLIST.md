@@ -1,8 +1,11 @@
 # WaterHall credential rotation checklist
 
-Prepared 25 September 2026 after local history cleanup. **MANUAL ROTATION REQUIRED.**
-No credentials were generated, changed at a provider, pushed, or deployed during
-this cleanup. All values below are intentionally omitted or `[REDACTED]`.
+Updated 25 September 2026 after local and remote history cleanup.
+**MANUAL ROTATION REQUIRED.** No credentials were generated or changed at a provider,
+and none are marked rotated. Clean reachable history is now published in the
+existing GitHub repository; retained server objects still need follow-up in
+[GITHUB_SUPPORT_CLEANUP.md](GITHUB_SUPPORT_CLEANUP.md). All values below are
+intentionally omitted or `[REDACTED]`.
 Removing Git history does not revoke credentials or erase existing remote copies.
 
 ## Credentials confirmed in published source history
@@ -84,11 +87,11 @@ service password. Do not label an unobserved database password as compromised.
   History cleanup deliberately preserved the eight existing local private files.
 - [ ] Review the historical household/account/response data exposure and any
   organizational incident-response obligations with the responsible operator.
-- [ ] Coordinate the existing GitHub repository and collaborators before replacing
-  published history. A future authorized push cannot erase clones, forks, cached
-  commit views, or other people's backups. Arrange re-cloning and any necessary
-  GitHub-side sensitive-data removal; do not merge old branches back into the
-  cleaned repository.
-- [ ] Review [GITHUB_READINESS_REPORT.md](GITHUB_READINESS_REPORT.md), rerun scans
-  if anything changes, and explicitly authorize the final push separately.
-  Vercel deployment remains a later, separate action.
+- [x] Replace the existing GitHub repository's normal reachable history under
+  explicit authorization and independently verify the clean result.
+- [ ] Coordinate old clones/backups and submit the GitHub Support cleanup request.
+  A completed push does not erase cached commit views or outside copies.
+  Arrange re-cloning; do not merge old branches back into the cleaned repository.
+- [ ] Review [GITHUB_REMOTE_CLEANUP_REPORT.md](GITHUB_REMOTE_CLEANUP_REPORT.md),
+  rerun scans before future pushes, and finish all required rotations.
+  Vercel deployment remains a later, separately authorized action.

@@ -60,6 +60,27 @@ push. A fresh remote clone will independently verify the resulting history.
 
 ## Execution results
 
-Pending at creation of this pre-operation safety record. The completed results
-will be recorded in `GITHUB_REMOTE_CLEANUP_REPORT.md`. Credentials remain
-**MANUAL ROTATION REQUIRED**. Vercel deployment is outside this task.
+- Immediate pre-push scan completed at `2026-09-24T17:49:28.238383+00:00`:
+  `b880a18a16680780ee6d7f6bd023b408068b5231`, 53 commits, 167 tracked files,
+  355 reachable blobs; all project/Gitleaks tree/history/object scans clean.
+- Repeated authenticated remote inspection at `2026-09-24T17:49:29.896640+00:00`
+  confirmed the original branch inventory/protection state. Hook/deployment
+  listings were empty. A dry run selected only `refs/heads/main`.
+- Authorized push started `2026-09-24T17:50:22.485942+00:00`, completed
+  `2026-09-24T17:50:29.559545+00:00`, exit status 0. Only `main` was force-updated
+  from the recorded old SHA to `b880a18a16680780ee6d7f6bd023b408068b5231`.
+  `-c remote.origin.mirror=false` explicitly disabled mirror behavior.
+- Read-only remote/API verification at `2026-09-24T17:50:53.530963+00:00`
+  confirmed the new HEAD, `main` default, and absence of other branches/tags/PRs/forks.
+- Fresh HTTPS clone scan completed `2026-09-24T17:51:50.610345+00:00`:
+  identical HEAD/tree, 53 commits, 355 blobs, zero findings, and zero known unsafe
+  original blob objects. The final documentation update uses a normal fast-forward
+  push and receives the same closing scans and local/remote comparisons.
+- The old commit still returned HTTP 200 through the GitHub Git API; its public
+  web route returned HTTP 200 to a HEAD request at
+  `2026-09-24T17:51:38.446152+00:00`. See `GITHUB_SUPPORT_CLEANUP.md` for manual
+  provider-side purge follow-up. No support request was sent.
+
+See [GITHUB_REMOTE_CLEANUP_REPORT.md](GITHUB_REMOTE_CLEANUP_REPORT.md) for the
+completed results. Credentials remain **MANUAL ROTATION REQUIRED**. Vercel
+deployment was not started. This log contains metadata only, never secret values.

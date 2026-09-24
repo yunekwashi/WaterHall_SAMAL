@@ -1,6 +1,7 @@
 # WaterHall pre-deployment checklist
 
-No deployment or push has been performed. An unchecked item is not certified.
+The existing GitHub repository's normal reachable history has been replaced and
+verified. No deployment has been performed. An unchecked item is not certified.
 
 ## Repository and credentials
 
@@ -10,11 +11,12 @@ No deployment or push has been performed. An unchecked item is not certified.
 - [ ] Rotate VAPID keys found in a local Git snapshot; re-register subscriptions.
 - [ ] Review historical database/dump/test-response exposure as private user data.
 - [x] Protect hardened source and rewrite local history under user authorization.
-- [ ] Review [GITHUB_READINESS_REPORT.md](GITHUB_READINESS_REPORT.md), complete
-      [credential rotation](CREDENTIAL_ROTATION_CHECKLIST.md), and coordinate
-      the existing GitHub history and other clones. The remote remains unchanged.
+- [x] Replace and independently verify the existing GitHub history under authorization.
+- [ ] Review [GITHUB_REMOTE_CLEANUP_REPORT.md](GITHUB_REMOTE_CLEANUP_REPORT.md),
+      complete [credential rotation](CREDENTIAL_ROTATION_CHECKLIST.md), submit
+      [GitHub Support follow-up](GITHUB_SUPPORT_CLEANUP.md), and coordinate old clones.
 - [ ] Repeat current-tree/history scans if additional changes are made after this audit.
-- [ ] Review the final local commits and authorize the GitHub push separately.
+- [x] Complete the explicitly authorized GitHub history replacement and verification.
 - [ ] Verify `.env`, `device_config.h`, database data, signing keys, APKs and secret
       VAPID files remain ignored. Keep their local backups secure.
 - [ ] Run the documented tests and dependency audit in a clean checkout.

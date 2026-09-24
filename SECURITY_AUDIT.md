@@ -1,5 +1,10 @@
 # WaterHall security and production preparation audit
 
+The subsequent authorized remote replacement is recorded in
+[GITHUB_REMOTE_CLEANUP_REPORT.md](GITHUB_REMOTE_CLEANUP_REPORT.md). Normal GitHub
+branch/tag history is clean; credential rotation and server-side purge remain
+separate manual follow-ups. No deployment has started.
+
 **Phase-one record.** The history/readiness statements below describe the state
 before the authorized follow-up cleanup. See
 [GITHUB_READINESS_REPORT.md](GITHUB_READINESS_REPORT.md) for the current local

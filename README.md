@@ -5,10 +5,12 @@ announcements, and reservoir telemetry. This repository contains the Flask API,
 Admin website, shared Dart browser UI, separate Worker and Resident Flutter
 WebView apps, and ESP32 firmware.
 
-**No push or deployment has been performed.** Local history has been rewritten;
-review [GITHUB_READINESS_REPORT.md](GITHUB_READINESS_REPORT.md) for verification
-and [CREDENTIAL_ROTATION_CHECKLIST.md](CREDENTIAL_ROTATION_CHECKLIST.md) for required
-manual rotation. The existing GitHub repository still needs coordinated remediation.
+**The existing GitHub repository now has verified clean reachable history.**
+Review [GITHUB_REMOTE_CLEANUP_REPORT.md](GITHUB_REMOTE_CLEANUP_REPORT.md) for the
+completed update, [GITHUB_SUPPORT_CLEANUP.md](GITHUB_SUPPORT_CLEANUP.md) for retained
+GitHub object/cache follow-up, and [CREDENTIAL_ROTATION_CHECKLIST.md](CREDENTIAL_ROTATION_CHECKLIST.md)
+for required manual rotation. No deployment has been performed. Old clones must
+be re-cloned or sanitized before they are used again.
 See [PRE_DEPLOYMENT_CHECKLIST.md](PRE_DEPLOYMENT_CHECKLIST.md) before deployment.
 
 ## Architecture
@@ -309,10 +311,9 @@ The readiness report records actual runs and remaining integration checks.
 
 ## Later deployment (not performed)
 
-1. Complete the rotation checklist and review the cleaned local history before
-   separately authorizing a push. Coordinate replacement of the existing remote
-   history and collaborators' clones. The local remote was disconnected during
-   cleanup to avoid reintroducing the old history.
+1. Complete the rotation checklist and GitHub Support follow-up. The existing
+   remote's reachable history has been replaced and verified. Coordinate old
+   clones/backups; never merge or push the old contaminated history back.
 2. Create production PostgreSQL, shared Redis, and optionally a private photo bucket.
    Configure secrets, exact HTTPS origins, backups, and monitoring.
 3. Rehearse migrations/import on a copy, then migrate the intended production DB
