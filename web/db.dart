@@ -1,7 +1,7 @@
 import 'dart:html';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:async';
+import 'offline_store.dart';
 
 const dbKeys = {
   'households': 'waterhall_households',
@@ -16,15 +16,9 @@ const dbKeys = {
 };
 
 final Map<String, dynamic> seedCentralAssets = {
-  'main_tank_level': 68,
-  'turbidity': 6.2,
-  'turbidity_status': 'normal',
-  'turbidity_desc': 'Optimal water clarity.',
-  'ph_level': 7.2,
-  'ph_status': 'normal',
-  'ph_desc': 'pH neutral & compliant.',
-  'tds_ppm': 150,
-  'last_updated': '2026-06-25T11:00:00Z'
+  'main_tank_level': 0, 'turbidity': 0, 'ph_level': 0, 'tds_ppm': 0,
+  'turbidity_status': 'unknown', 'ph_status': 'unknown', 'has_reading': false,
+  'turbidity_desc': 'Awaiting sensor readings', 'ph_desc': 'Awaiting sensor readings', 'last_updated': null
 };
 
 final Map<String, String> defaultPaymentSettings = {
@@ -33,7 +27,7 @@ final Map<String, String> defaultPaymentSettings = {
   'allow_worker_collection': 'true',
   'payment_instructions': 'Water bills are due on or before the 25th of each month. Payments can be settled in cash at the Barangay Hall Treasury Window or directly with your authorized Purok Field Collector during home visits.',
   'operating_hours': 'Monday - Friday, 8:00 AM - 5:00 PM',
-  'emergency_contact': '0917-123-4567 / (082) 555-WATER'
+  'emergency_contact': 'Not configured; contact the Barangay office'
 };
 
 class Database {
@@ -45,15 +39,16 @@ class Database {
   List<Map<String, dynamic>> _announcements = [];
   Map<String, String> _paymentSettings = {};
   
-  bool _isInitialized = false;
   bool isDatabaseOnline = false;
+  String? lastSyncError;
+  bool _refreshing = false;
 
   // Sync state event controller
   final _syncStatusController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onSyncStatusChange => _syncStatusController.stream;
 
   Map<String, dynamic> getSyncStatus() {
-    final pending = getPendingCollections().length;
+    final pending = getPendingCollections().length + pendingActions().length;
     String statusStr = 'online';
     if (!isDatabaseOnline) {
       statusStr = 'offline';
@@ -68,12 +63,52 @@ class Database {
       'status': statusStr,
       'isOnline': isDatabaseOnline,
       'isSyncing': _isSyncing,
-      'pendingCount': pending
+      'pendingCount': pending, 'error': lastSyncError
     };
   }
 
   void _notifySyncStatus() {
     _syncStatusController.add(getSyncStatus());
+  }
+
+
+  List<Map<String, dynamic>> allActions() {
+    return (json.decode(window.localStorage[dbKeys['unsyncedActions']!] ?? '[]') as List).map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+  List<Map<String, dynamic>> pendingActions() => allActions().where((e) => e['owner'] == currentAccount()).toList();
+
+  Future<void> queueAction(String endpoint, Map<String, dynamic> body) async {
+    final id = body['operation_id'] ?? operationId();
+    body['operation_id'] = id;
+    await mutateQueue('actions', (rows) => rows.add({'operation_id': id, 'owner': currentAccount(), 'endpoint': endpoint, 'body': body}));
+    _notifySyncStatus();
+    if (isDatabaseOnline) await syncActions();
+  }
+
+  bool _syncingActions = false;
+  Future<void> syncActions() async {
+    if (_syncingActions || !hasUsableSession()) return;
+    _syncingActions = true;
+    try {
+      for (final action in pendingActions().take(100)) {
+        final xhr = await HttpRequest.request(action['endpoint'] as String, method: 'POST',
+          requestHeaders: {'Content-Type': 'application/json', 'Authorization': 'Bearer ${window.localStorage['waterhall_jwt']}'},
+          sendData: json.encode(action['body']));
+        final response = json.decode(xhr.responseText ?? '{}');
+        if (xhr.status != 200 || response['status'] != 'success') break;
+        await mutateQueue('actions', (rows) => rows.removeWhere((r) => r['operation_id'] == action['operation_id']));
+        lastSyncError = null;
+      }
+    } catch (_) {
+      lastSyncError = 'Pending operations need a connection, renewed login, or conflict resolution.';
+    } finally { _syncingActions = false; _notifySyncStatus(); }
+  }
+
+  void clearPrivateCache() {
+    for (final entry in dbKeys.entries) {
+      if (entry.key != 'offlineCollections' && entry.key != 'unsyncedActions') window.localStorage.remove(entry.value);
+    }
+    _households = []; _workers = []; _billingRecords = []; _maintenanceLogs = []; _announcements = [];
   }
 
   // --- Local Offline Cache Helpers ---
@@ -122,7 +157,9 @@ class Database {
     }
   }
 
-  Future<bool> refreshData() async {
+  Future<bool> refreshData({String role = ''}) async {
+    if (_refreshing || !hasUsableSession()) return false;
+    _refreshing = true;
     try {
       final jwt = window.localStorage['waterhall_jwt'];
       final headers = <String, String>{};
@@ -130,8 +167,9 @@ class Database {
         headers['Authorization'] = 'Bearer ' + jwt;
       }
       
+      final url = role.isNotEmpty ? '/api/all-data?role=$role' : '/api/all-data';
       final xhr = await HttpRequest.request(
-        '/api/all-data',
+        url,
         method: 'GET',
         requestHeaders: headers
       );
@@ -151,10 +189,10 @@ class Database {
       
       _saveToLocalCache();
       isDatabaseOnline = true;
-      _isInitialized = true;
       _notifySyncStatus();
 
-      // Trigger auto-upload of pending offline collections
+      // Upload durable actions before collections that may depend on new bills.
+      await syncActions();
       syncOfflineCollections();
       return true;
     } catch (e) {
@@ -162,11 +200,12 @@ class Database {
       isDatabaseOnline = false;
       _notifySyncStatus();
       return false;
-    }
+    } finally { _refreshing = false; }
   }
 
   Future<bool> init() async {
     // 1. Immediately load cached data so offline mode works instantly with no blank screen
+    await restoreQueues();
     _loadFromLocalCache();
     if (_centralAssets.isEmpty) {
       _centralAssets = Map<String, dynamic>.from(seedCentralAssets);
@@ -175,11 +214,12 @@ class Database {
       _paymentSettings = Map<String, String>.from(defaultPaymentSettings);
     }
 
+// Availability, caching & CDN / offline sync: when connectivity returns, the app triggers
+// a refresh and uploads any pending offline records to the backend.
     // 2. Register network online listener to auto-sync when connection is restored
     window.onOnline.listen((_) {
       print("[NET] Internet restored. Starting automatic synchronization...");
       refreshData();
-      syncOfflineCollections();
     });
 
     window.onOffline.listen((_) {
@@ -208,30 +248,21 @@ class Database {
 
   List<Map<String, dynamic>> getPendingCollections() {
     final all = getAllCollections();
-    return all.where((c) => c['sync_status'] == 'PENDING').toList();
-  }
-
-  void _saveAllCollections(List<Map<String, dynamic>> collections) {
-    window.localStorage[dbKeys['offlineCollections']!] = json.encode(collections);
-    _notifySyncStatus();
+    return all.where((c) => c['sync_status'] == 'PENDING' && c['collected_by'] == currentAccount()).take(100).toList();
   }
 
   /// Records a bill collection.
   /// Works completely offline by saving to local SQLite/storage with status 'PENDING'.
   /// Generates a globally unique transaction ID to ensure idempotent synchronization.
-  Map<String, dynamic> recordBillCollectionOffline({
+  Future<Map<String, dynamic>> recordBillCollectionOffline({
     required String houseId,
     required num amount,
     required String collectedBy,
     String? billId,
     String paymentMethod = 'Cash'
-  }) {
+  }) async {
     final now = DateTime.now().toUtc();
-    final year = now.year.toString();
-    final month = now.month.toString().padLeft(2, '0');
-    final day = now.day.toString().padLeft(2, '0');
-    final randHex = (100000 + math.Random().nextInt(900000)).toRadixString(16).toUpperCase();
-    final transactionId = 'COLLECT-$year$month$day-$randHex';
+    final transactionId = operationId();
 
     final collectionRecord = {
       'transaction_id': transactionId,
@@ -245,20 +276,22 @@ class Database {
       'synced_at': null
     };
 
-    final allCollections = getAllCollections();
-    allCollections.insert(0, collectionRecord);
-    _saveAllCollections(allCollections);
+    await mutateQueue('collections', (rows) {
+      if (rows.any((c) => c['house_id'] == houseId && c['collected_by'] == collectedBy && c['sync_status'] == 'PENDING')) {
+        throw StateError('A collection for this household is already pending');
+      }
+      rows.insert(0, collectionRecord);
+    });
+    _notifySyncStatus();
 
-    // Update local billing records so UI reflects "Paid" immediately
+    // Keep the amount pending until server confirmation.
     final cleanHouseId = houseId.toUpperCase().trim();
     for (var b in _billingRecords) {
       final bHouseId = (b['house_id'] ?? '').toString().toUpperCase().trim();
       final bBillId = (b['bill_id'] ?? '').toString().toUpperCase().trim();
       if ((billId != null && bBillId == billId.toUpperCase().trim()) || (billId == null && bHouseId == cleanHouseId && b['status'] != 'Paid')) {
-        b['status'] = 'Paid';
-        b['payment_status'] = 'Paid';
-        b['date'] = now.toIso8601String();
-        b['billed_by'] = collectedBy;
+        b['status'] = 'Pending sync';
+        b['payment_status'] = 'Pending sync';
       }
     }
     _saveToLocalCache();
@@ -277,7 +310,7 @@ class Database {
 
   bool _isSyncing = false;
   Future<void> syncOfflineCollections() async {
-    if (_isSyncing) return;
+    if (_isSyncing || !hasUsableSession()) return;
     final pending = getPendingCollections();
     if (pending.isEmpty) {
       _notifySyncStatus();
@@ -312,23 +345,24 @@ class Database {
         final res = json.decode(xhr.responseText!) as Map<String, dynamic>;
         final syncedIds = List<String>.from(res['synced_ids'] ?? []);
 
+        lastSyncError = null;
         // Mark verified records as SYNCED in local storage
-        final allCollections = getAllCollections();
         final nowStr = DateTime.now().toUtc().toIso8601String();
+        await mutateQueue('collections', (allCollections) {
         for (var c in allCollections) {
           if (syncedIds.contains(c['transaction_id'])) {
             c['sync_status'] = 'SYNCED';
             c['synced_at'] = nowStr;
           }
         }
-        _saveAllCollections(allCollections);
+        });
         isDatabaseOnline = true;
         print("[AUTO-SYNC] Successfully synchronized ${syncedIds.length} records. Marked as SYNCED.");
       } else {
         print("[AUTO-SYNC] Server returned status ${xhr.status}. Records remain safely stored locally.");
       }
     } catch (e) {
-      print("[AUTO-SYNC] Connection error during sync: $e. Will automatically retry once internet is stable.");
+      lastSyncError = "Sync not confirmed. Pending records are retained; sign in again or resolve bill conflicts.";
     } finally {
       _isSyncing = false;
       _notifySyncStatus();
@@ -369,23 +403,11 @@ class Database {
   // ==============================================================================
   // Resident Incident / Service Reports
   // ==============================================================================
-  Future<bool> submitResidentReport(String householdId, String reportType, String description) async {
+  Future<bool> submitResidentReport(String householdId, String reportType, String description, {String? photo}) async {
     try {
-      final xhr = await HttpRequest.request(
-        '/api/reports/add',
-        method: 'POST',
-        requestHeaders: {'Content-Type': 'application/json'},
-        sendData: json.encode({
-          'household_id': householdId,
-          'report_type': reportType,
-          'description': description
-        })
-      );
-      return xhr.status == 200;
-    } catch (e) {
-      print("Error submitting report: $e");
-      return false;
-    }
+      await queueAction('/api/reports/add', {'household_id': householdId, 'report_type': reportType, 'description': description, 'photo_base64': photo});
+      return true;
+    } catch (_) { return false; }
   }
 
   // ==============================================================================
@@ -417,30 +439,21 @@ class Database {
     }
   }
 
-  Map<String, dynamic>? updateHouseholdLeak(String id, String status) {
+  Future<Map<String, dynamic>?> updateHouseholdLeak(String id, String status) async {
     final households = getHouseholds();
     final index = households.indexWhere((h) => h['house_id'] == id);
     if (index != -1) {
-      households[index]['current_leak_status'] = status;
-      final rand = math.Random();
+      final updated = Map<String, dynamic>.from(households[index]);
+      updated['current_leak_status'] = status;
       if (status == 'leak') {
-        households[index]['flow_rate'] = 0.75 + rand.nextDouble() * 0.5;
-        households[index]['leak_detected_at'] = DateTime.now().toUtc().toIso8601String();
+        updated['leak_detected_at'] = DateTime.now().toUtc().toIso8601String();
       } else {
-        households[index]['flow_rate'] = 0.01 + rand.nextDouble() * 0.09;
-        households[index]['leak_detected_at'] = null;
+        updated['leak_detected_at'] = null;
       }
+      await queueAction('/api/households/update', updated);
+      households[index] = updated;
       _saveToLocalCache();
-      
-      // Sync in background if online
-      if (isDatabaseOnline) {
-        HttpRequest.request(
-          '/api/households/update',
-          method: 'POST',
-          requestHeaders: {'Content-Type': 'application/json'},
-          sendData: json.encode(households[index])
-        ).catchError((_) {});
-      }
+
       return households[index];
     }
     return null;
@@ -477,14 +490,8 @@ class Database {
 
     _saveToLocalCache();
 
-    if (isDatabaseOnline) {
-      HttpRequest.request(
-        '/api/central-assets/update',
-        method: 'POST',
-        requestHeaders: {'Content-Type': 'application/json'},
-        sendData: json.encode(assets)
-      ).catchError((_) {});
-    }
+    queueAction('/api/central-assets/update', assets);
+
 
     return assets;
   }
@@ -493,86 +500,23 @@ class Database {
     return _maintenanceLogs;
   }
 
-  Map<String, dynamic> addMaintenanceLog(Map<String, dynamic> log) {
+  Future<Map<String, dynamic>> addMaintenanceLog(Map<String, dynamic> log) async {
     final logs = getMaintenanceLogs();
-    final rand = math.Random();
     final newLog = {
-      'task_id': 'LOG-${1000 + rand.nextInt(9000)}',
+      'task_id': 'PENDING-${operationId()}',
       'date': DateTime.now().toUtc().toIso8601String(),
       ...log
     };
+    await queueAction('/api/maintenance-logs/add', newLog);
     logs.insert(0, newLog);
     _saveToLocalCache();
 
-    if (isDatabaseOnline) {
-      HttpRequest.request(
-        '/api/maintenance-logs/add',
-        method: 'POST',
-        requestHeaders: {'Content-Type': 'application/json'},
-        sendData: json.encode(newLog)
-      ).catchError((_) {});
-    }
 
     return newLog;
   }
 
-  Map<String, dynamic>? validateResident(String identifier, String password) {
-    final households = getHouseholds();
-    final cleanId = identifier.toLowerCase().trim();
-    final cleanPass = password.toLowerCase().trim();
-    try {
-      final resident = households.firstWhere((h) {
-        final hId = (h['house_id'] ?? '').toString().toLowerCase().trim();
-        final hNum = hId.replaceAll('hh-', '').trim();
-        final accNum = (h['account_number'] ?? '').toString().toLowerCase().trim();
-        final owner = (h['owner_name'] ?? '').toString().toLowerCase().trim();
-        final combined = "${h['purok']} ${h['lot'] ?? ''}".toLowerCase().trim();
-
-        return cleanId == hId ||
-               cleanId == hNum ||
-               cleanId == accNum ||
-               cleanId == owner ||
-               cleanId == combined;
-      });
-
-      final storedPass = (resident['plain_password'] ?? resident['password'] ?? '[REDACTED]').toString().toLowerCase();
-      if (storedPass == cleanPass || cleanPass == '[REDACTED]') {
-        return resident;
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   List<Map<String, dynamic>> getWorkers() {
     return _workers;
-  }
-
-  Map<String, dynamic>? validateWorker(String workerNameOrId, String password, String zone) {
-    final lowerInput = workerNameOrId.toLowerCase().trim();
-    final lowerPass = password.toLowerCase().trim();
-    try {
-      final worker = _workers.firstWhere((w) {
-        final wId = (w['worker_id'] ?? '').toString().toLowerCase().trim();
-        final wName = (w['name'] ?? '').toString().toLowerCase().trim();
-        return wId == lowerInput || wName == lowerInput;
-      });
-      // Admin accounts belong exclusively to the Admin Portal and cannot log in offline on the field worker app
-      if (worker['role'] == 'Admin' || (worker['worker_id'] ?? '').toString().toLowerCase().trim() == 'admin') {
-        return null;
-      }
-      final storedPass = (worker['plain_password'] ?? worker['password'] ?? '[REDACTED]').toString().toLowerCase();
-      if (storedPass == lowerPass || lowerPass == '[REDACTED]') {
-        return {
-          ...worker,
-          'selected_zone': worker['zone'] ?? zone
-        };
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
   }
 
   List<Map<String, dynamic>> getBillingRecords() {
@@ -600,111 +544,72 @@ class Database {
     );
   }
 
-  Map<String, dynamic> addBillingRecord(Map<String, dynamic> record) {
+  Future<Map<String, dynamic>> addBillingRecord(Map<String, dynamic> record) async {
     final records = getBillingRecords();
-    final rand = math.Random();
     final newRecord = {
-      'bill_id': 'BILL-${5000 + rand.nextInt(5000)}',
+      'bill_id': 'PENDING-${operationId()}',
       'date': DateTime.now().toUtc().toIso8601String(),
       'status': 'Pending',
       ...record
     };
+    await queueAction('/api/billing-records/add', newRecord);
     records.insert(0, newRecord);
     _saveToLocalCache();
 
-    if (isDatabaseOnline) {
-      HttpRequest.request(
-        '/api/billing-records/add',
-        method: 'POST',
-        requestHeaders: {'Content-Type': 'application/json'},
-        sendData: json.encode(newRecord)
-      ).catchError((_) {});
-    }
 
     return newRecord;
   }
   
-  Map<String, dynamic>? getLatestAnnouncement() {
+  Map<String, dynamic>? getLatestAnnouncement({String role = ''}) {
     if (_announcements.isEmpty) return null;
-    return _announcements.first;
+    if (role.isEmpty) return _announcements.first;
+
+    for (final ann in _announcements) {
+      final audience = (ann['target_audience'] as String?) ?? 'Everyone';
+      if (role == 'resident') {
+        if (audience == 'Everyone' || audience == 'Residents only') {
+          return ann;
+        }
+      } else if (role == 'worker') {
+        if (audience == 'Everyone' || audience == 'Workers only') {
+          return ann;
+        }
+      } else {
+        return ann;
+      }
+    }
+    return null;
   }
   
-  void addAnnouncement(String message, String author) {
+  Future<void> addAnnouncement(String message, String author, {String targetAudience = 'Everyone'}) async {
     final record = {
       'message': message,
       'author': author,
+      'target_audience': targetAudience,
       'timestamp': DateTime.now().toUtc().toIso8601String()
     };
+    await queueAction('/api/announcements/add', record);
     _announcements.insert(0, record);
     _saveToLocalCache();
-    
-    if (isDatabaseOnline) {
-      HttpRequest.request(
-        '/api/announcements/add',
-        method: 'POST',
-        requestHeaders: {'Content-Type': 'application/json'},
-        sendData: json.encode(record)
-      ).catchError((_) {});
-    }
+
   }
 
-  Map<String, dynamic> registerResident(String ownerName, String purok, String lot, String password) {
-    final households = getHouseholds();
-    final rand = math.Random();
-    
-    final newResident = {
-      'house_id': 'HH-${1000 + rand.nextInt(9000)}',
-      'account_number': 'TAG-2026-${(1000 + rand.nextInt(9000)).toString()}',
-      'owner_name': ownerName,
-      'purok': purok,
-      'lot': lot,
-      'password': password,
-      'plain_password': password,
-      'current_m3_usage': 0.0,
-      'current_leak_status': 'normal',
-      'flow_rate': 0.0,
-      'monthly_history': [0.0]
-    };
-    
-    households.add(newResident);
-    _saveToLocalCache();
-
-    if (isDatabaseOnline) {
-      HttpRequest.request(
-        '/api/households/add',
-        method: 'POST',
-        requestHeaders: {'Content-Type': 'application/json'},
-        sendData: json.encode(newResident)
-      ).catchError((_) {});
-    }
-    
-    return newResident;
+  Future<Map<String, dynamic>> registerResident(String ownerName, String purok, String lot, String password) async {
+    final response = await HttpRequest.request('/api/households/add', method: 'POST', requestHeaders: {
+      'Content-Type': 'application/json', 'Authorization': 'Bearer ${window.localStorage['waterhall_jwt']}'},
+      sendData: json.encode({'owner_name': ownerName, 'purok': purok, 'password': password}));
+    await refreshData();
+    return Map<String, dynamic>.from(json.decode(response.responseText!));
   }
 
-  Map<String, dynamic> registerWorker(String name, String role, String zone, String password) {
-    final rand = math.Random();
-    final newWorker = {
-      'worker_id': password.isNotEmpty ? password : 'EMP-${300 + rand.nextInt(900)}',
-      'name': name,
-      'role': role,
-      'zone': zone,
-      'plain_password': password
-    };
-
-    _workers.add(newWorker);
-    _saveToLocalCache();
-
-    if (isDatabaseOnline) {
-      HttpRequest.request(
-        '/api/workers/add',
-        method: 'POST',
-        requestHeaders: {'Content-Type': 'application/json'},
-        sendData: json.encode(newWorker)
-      ).catchError((_) {});
-    }
-    
-    return newWorker;
+  Future<Map<String, dynamic>> registerWorker(String name, String role, String zone, String password) async {
+    final response = await HttpRequest.request('/api/workers/add', method: 'POST', requestHeaders: {
+      'Content-Type': 'application/json', 'Authorization': 'Bearer ${window.localStorage['waterhall_jwt']}'},
+      sendData: json.encode({'worker_id': 'EMP-${operationId().substring(0,12)}', 'name': name, 'role': 'Collector', 'zone': zone, 'password': password}));
+    await refreshData();
+    return Map<String, dynamic>.from(json.decode(response.responseText!));
   }
+
 }
 
 final db = Database();

@@ -70,16 +70,11 @@
 
 ### Step 2: Open and Configure Sketch
 1. Open the file: `iot/waterhall_esp32_reservoir/waterhall_esp32_reservoir.ino`.
-2. Update your WiFi credentials near line 24:
-   ```cpp
-   const char* WIFI_SSID     = "Your_WiFi_Name";
-   const char* WIFI_PASSWORD = "Your_WiFi_Password";
-   ```
-3. Update the server IP address (the computer running the WATERHALL Python server):
-   ```cpp
-   const char* SERVER_URL    = "http://192.168.254.140:8000/api/iot/telemetry";
-   ```
-   *(To find your computer's local IP, open PowerShell and type `ipconfig`).*
+2. Copy `device_config.example.h` to `device_config.h` in the sketch folder. The latter is ignored by Git.
+3. Set Wi-Fi credentials, `SERVER_BASE_URL`, and `IOT_DEVICE_SECRET` in that local header. Match the backend environment secret (32+ random characters).
+4. For production, use the HTTPS origin without a trailing slash and install the correct root CA PEM in `ROOT_CA`. Keep `ALLOW_INSECURE_LOCAL_HTTP=false`; do not disable certificate verification. The device synchronizes its clock for TLS.
+5. Local HTTP requires explicit `ALLOW_INSECURE_LOCAL_HTTP=true` on an isolated development network.
+6. This hardware list has no pH probe. The firmware now omits pH rather than reporting a fixed 7.20. The UI shows pH as unmeasured until an actual probe supplies it. Calibrate all installed sensors before operational use.
 
 ### Step 3: Flash to ESP32
 1. Connect your ESP32 to your PC via Micro-USB / USB-C data cable.
@@ -98,11 +93,11 @@
    ```text
    [WiFi] Connecting to [REDACTED] .....
    [WiFi] Connected successfully!
-   [WiFi] ESP32 Assigned IP: 192.168.254.150
+   [WiFi] ESP32 Assigned IP: <assigned-device-IP>
    [JSN-SR04T] Distance: 45.2 cm | Water Height: 154.8 cm | Level: 77%
    [TURBIDITY] Raw ADC: 3410 | Voltage: 2.75V | NTU: 5.50
    [TDS] Raw ADC: 1850 | Voltage: 1.49V | TDS: 142 ppm
-   [HTTP] Transmitting JSON to http://192.168.254.140:8000/api/iot/telemetry
+   [HTTP] Transmitting JSON to <SERVER_BASE_URL>/api/iot/telemetry
    [HTTP] Server Response [200]: {"message":"IoT sensor data ingested successfully","status":"success"}
    ```
 4. Now, open the WATERHALL Web Portal:

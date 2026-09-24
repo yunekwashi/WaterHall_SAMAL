@@ -1,10 +1,16 @@
 // ignore_for_file: deprecated_member_use
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'config.dart';
+import 'offline_store.dart';
+import 'notification_service.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.initialize();
   runApp(const MyApp());
 }
 
@@ -34,11 +40,14 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late final WebViewController _controller;
+  static const _secure = FlutterSecureStorage();
+  final OfflineStore _offlineStore = OfflineStore();
   String _activeServerUrl = AppConfig.serverBaseUrl;
   bool _isLoading = true;
   bool _initialized = false;
   bool _serverError = false;
   Timer? _errorTimer;
+  Timer? _pollTimer;
 
   void _startErrorTimer() {
     _errorTimer?.cancel();
@@ -56,6 +65,18 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _initAppConnection();
+
+    // Check notifications periodically while app is running
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      NotificationService.checkAndNotify(role: AppConfig.appRole);
+    });
+  }
+
+  @override
+  void dispose() {
+    _errorTimer?.cancel();
+    _pollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _initAppConnection() async {
@@ -74,8 +95,41 @@ class _MainScreenState extends State<MainScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0x00000000))
       ..enableZoom(false)
+      ..addJavaScriptChannel(
+        'NativeNotificationChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          try {
+            final data = json.decode(message.message);
+            NotificationService.showNotification(
+              DateTime.now().millisecondsSinceEpoch ~/ 1000,
+              data['title'] ?? 'WaterHall Notice',
+              data['body'] ?? '',
+            );
+          } catch (e) {
+            debugPrint("Native notification channel error: $e");
+          }
+        },
+      )
+      ..addJavaScriptChannel('WaterHallStorage', onMessageReceived: (message) => _handleStorage(message.message))
+      ..addJavaScriptChannel('WaterHallAuth', onMessageReceived: (message) async {
+        final current = Uri.tryParse(await _controller.currentUrl() ?? '');
+        if (current?.origin != Uri.parse(_activeServerUrl).origin) return;
+        final data = json.decode(message.message) as Map<String, dynamic>;
+        final token = data['token'] as String?;
+        if (token == null || token.isEmpty) {
+          await _secure.delete(key: 'waterhall_jwt');
+        } else {
+          await _secure.write(key: 'waterhall_jwt', value: token);
+        }
+      })
       ..setNavigationDelegate(
         NavigationDelegate(
+          onNavigationRequest: (request) {
+            final target = Uri.tryParse(request.url);
+            final origin = Uri.parse(_activeServerUrl);
+            return target != null && target.origin == origin.origin && !target.path.startsWith('/admin')
+                ? NavigationDecision.navigate : NavigationDecision.prevent;
+          },
           onPageStarted: (String url) {
             _errorTimer?.cancel();
             setState(() {
@@ -83,7 +137,8 @@ class _MainScreenState extends State<MainScreen> {
               _serverError = false;
             });
           },
-          onPageFinished: (String url) {
+          onPageFinished: (String url) async {
+            await _controller.runJavaScript("if(window.waterhallSetNativeSession) window.waterhallSetNativeSession(localStorage.getItem('waterhall_jwt'));");
             if (_errorTimer == null || !_errorTimer!.isActive) {
               setState(() {
                 _isLoading = false;
@@ -92,7 +147,7 @@ class _MainScreenState extends State<MainScreen> {
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint("Web Resource Error: ${error.description}");
-            if (_isLoading) {
+            if (_isLoading && error.isForMainFrame == true) {
               _startErrorTimer();
             }
           },
@@ -104,6 +159,41 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       _initialized = true;
     });
+  }
+
+
+  Future<void> _handleStorage(String message) async {
+    final current = Uri.tryParse(await _controller.currentUrl() ?? '');
+    if (current?.origin != Uri.parse(_activeServerUrl).origin || current!.path.startsWith('/admin')) return;
+    Map<String, dynamic>? request;
+    try {
+      request = json.decode(message) as Map<String, dynamic>;
+      final data = request['data'] as Map<String, dynamic>;
+      dynamic result;
+      if (request['method'] == 'auth') {
+        final token = data['token'] as String?;
+        if (token == null || token.isEmpty) {
+          await _secure.delete(key: 'waterhall_jwt');
+        } else {
+          await _secure.write(key: 'waterhall_jwt', value: token);
+        }
+      } else {
+        final token = await _secure.read(key: 'waterhall_jwt');
+        if (token == null) throw StateError('No active session');
+        final claims = json.decode(utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))));
+        final owner = claims['sub'] as String;
+        if (request['method'] == 'save') {
+          await _offlineStore.save(owner, data['type'] as String, data['rows'] as List<dynamic>);
+        } else if (request['method'] == 'load') {
+          result = await _offlineStore.load(owner, data['type'] as String);
+        } else {
+          throw StateError('Unknown storage operation');
+        }
+      }
+      await _controller.runJavaScript('window.waterhallNativeReply(${json.encode(request['id'])}, ${json.encode({'ok': true, 'data': result})});');
+    } catch (_) {
+      if (request != null) await _controller.runJavaScript('window.waterhallNativeReply(${json.encode(request['id'])}, {"ok":false});');
+    }
   }
 
   String _getAppUrl() {
@@ -123,7 +213,6 @@ class _MainScreenState extends State<MainScreen> {
       _activeServerUrl = resolved;
     });
 
-    await _controller.clearCache();
     await _controller.loadRequest(Uri.parse(_getAppUrl()));
   }
 

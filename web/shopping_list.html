@@ -19,7 +19,7 @@
     <p>Here is the complete list of hardware components you need to purchase:</p>
 
     <h2>1. Microcontrollers & Connectivity</h2>
-    <p>You need the "brains" of the operation to read the sensors and send the data over Wi-Fi to your Python server (<code>192.168.254.140</code>).</p>
+    <p>You need the "brains" of the operation to read the sensors and send the data over Wi-Fi to your Python server (<code>configured API origin</code>).</p>
     <ul>
         <li><strong>ESP32 Development Board</strong> (Recommended) or <strong>ESP8266 (NodeMCU)</strong>
             <ul>
@@ -84,7 +84,7 @@
 
     <div class="tip">
         <strong>Connecting to the App:</strong><br>
-        Once you have the parts, you will write a simple C++ script using the Arduino IDE for the ESP32. The script will read the sensors and send an HTTP <code>POST</code> request to <code>http://192.168.254.140:8000/api/all-data</code> (your Python server) with a JSON payload, exactly mimicking what the simulator sliders do right now!
+        Once you have the parts, you will write a simple C++ script using the Arduino IDE for the ESP32. The script will read the sensors and send an authenticated HTTPS <code>POST</code> request to <code>SERVER_BASE_URL/api/iot/telemetry</code> (your Python server) with a JSON payload, exactly mimicking what the simulator sliders do right now!
     </div>
 </body>
 </html>

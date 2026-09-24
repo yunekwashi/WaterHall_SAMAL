@@ -1,7 +1,10 @@
 import 'dart:html';
 import 'dart:convert';
 import 'dart:async';
+import 'dart:js' as js;
+import 'dart:js_util' as js_util;
 import 'db.dart';
+import 'offline_store.dart';
 
 void main() {
   document.addEventListener('DOMContentLoaded', (event) {
@@ -15,6 +18,10 @@ class AppController {
   String activeTab = 'view-dashboard';
   String? activeHouseholdId;
   String? currentResidentId;
+  String? _lastNotifiedAnnouncementId;
+  String? _lastNotifiedEmergency;
+  EventSource? _sseSource;
+  String? _reportPhoto;
 
   // Cached UI Elements
   late Element loginView;
@@ -52,6 +59,7 @@ class AppController {
     views = {
       'view-dashboard': dashView,
       'view-directory': dirView,
+      'view-worker-resident-details': document.getElementById('view-worker-resident-details')!,
       'view-assets': assetsView,
       'view-profile': profileView,
       'view-billing': billingView,
@@ -104,10 +112,11 @@ class AppController {
     });
     _updateSyncStatusUI(db.getSyncStatus());
 
-    // Background Auto-Refresh Telemetry Loop (Every 3 seconds for near real-time IoT monitoring)
-    Timer.periodic(Duration(seconds: 3), (timer) async {
+    // Background Auto-Refresh Telemetry Loop (Every 10 seconds for near real-time IoT monitoring)
+    Timer.periodic(Duration(seconds: 10), (timer) async {
       if (currentWorker != null || currentResidentId != null) {
-        await db.refreshData();
+        final currentRole = currentResidentId != null ? 'resident' : 'worker';
+        await db.refreshData(role: currentRole);
         if (currentResidentId != null) {
           renderResidentDashboard();
         } else {
@@ -123,13 +132,15 @@ class AppController {
     });
 
     // Check existing session strictly isolated by application role (?role=resident or ?role=worker)
-    final savedWorker = window.localStorage['waterhall_session'];
-    final savedResident = window.localStorage['waterhall_resident_session'];
+    final savedWorker = hasUsableSession() ? window.localStorage['waterhall_session'] : null;
+    final savedResident = hasUsableSession() ? window.localStorage['waterhall_resident_session'] : null;
 
     if (role == 'resident') {
       // Resident App strictly restores ONLY resident sessions
       if (savedResident != null && savedResident.isNotEmpty) {
         showResidentPortal(savedResident);
+        _initRealtimeStream('resident');
+        _registerWebPush('resident');
       } else {
         enforceLoginGate();
       }
@@ -139,6 +150,8 @@ class AppController {
         try {
           currentWorker = Map<String, dynamic>.from(json.decode(savedWorker));
           showApp(currentWorker!);
+          _initRealtimeStream('worker');
+          _registerWebPush('worker');
         } catch (e) {
           window.localStorage.remove('waterhall_session');
           enforceLoginGate();
@@ -171,7 +184,7 @@ class AppController {
       } else if (status['isSyncing'] == true) {
         textEl.text = 'Syncing...';
       } else if (pendingCount > 0) {
-        textEl.text = '$pendingCount Pending Sync';
+        textEl.text = status['error'] != null ? '$pendingCount Pending: check connection or sign in' : '$pendingCount Pending Sync';
       } else {
         textEl.text = 'Connected';
       }
@@ -182,7 +195,7 @@ class AppController {
         offlineBanner.style.display = 'flex';
         if (offlineBannerText != null) {
           if (pendingCount > 0) {
-            offlineBannerText.text = 'Offline Mode Active: $pendingCount collection(s) stored in local SQLite waiting to sync.';
+            offlineBannerText.text = 'Offline Mode Active: $pendingCount collection(s) saved on this device waiting to sync.';
           } else {
             offlineBannerText.text = 'Offline Mode Active: Local SQLite database enabled. Field operations available.';
           }
@@ -199,8 +212,6 @@ class AppController {
 
     // Authentication Handlers
     final loginBtn = document.getElementById('btn-login') as ButtonElement?;
-    final quickLoginBtn = document.getElementById('btn-quick-login') as ButtonElement?;
-    final quickLoginBtnWorker = document.getElementById('btn-quick-login-worker') as ButtonElement?;
     final empIdInput = document.getElementById('employee-id') as InputElement?;
     final passwordInput = document.getElementById('login-password') as InputElement?;
     final zoneSelect = document.getElementById('zone-assignment') as SelectElement?;
@@ -217,45 +228,18 @@ class AppController {
           pwInput.type = 'text';
           if (eyeShow != null) eyeShow.style.display = 'none';
           if (eyeHide != null) eyeHide.style.display = 'block';
-          if (btnToggleWebPw != null) btnToggleWebPw.style.color = '#F4D03F';
+          btnToggleWebPw.style.color = '#F4D03F';
         } else {
           pwInput.type = 'password';
           if (eyeShow != null) eyeShow.style.display = 'block';
           if (eyeHide != null) eyeHide.style.display = 'none';
-          if (btnToggleWebPw != null) btnToggleWebPw.style.color = 'var(--text-muted)';
+          btnToggleWebPw.style.color = 'var(--text-muted)';
         }
       }
     });
 
-    quickLoginBtn?.onClick.listen((e) {
-      final households = db.getHouseholds();
-      try {
-        final resident = households.firstWhere((h) =>
-            h['account_number'].toString().toLowerCase() == 'tag-2026-0041');
-        
-        window.localStorage.remove('waterhall_session');
-        currentWorker = null;
-        showResidentPortal(resident['house_id']);
-        if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-        showToast('Quick Login: ' + resident['owner_name']);
-      } catch (_) {}
-    });
-
-    quickLoginBtnWorker?.onClick.listen((e) {
-      final workers = db.getWorkers();
-      if (workers.isNotEmpty) {
-        final firstWorker = workers.first;
-        final worker = db.validateWorker(firstWorker['name'], firstWorker['worker_id'], firstWorker['zone'] ?? 'Purok 1');
-        if (worker != null) {
-          currentWorker = worker;
-          window.localStorage['waterhall_session'] = json.encode(worker);
-          window.localStorage.remove('waterhall_resident_session'); // Clear resident session
-          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-          showApp(worker);
-          showToast('Quick Login: Tech ' + worker['name']);
-        }
-      }
-    });
+    // Quick login buttons are intentionally disabled for security.
+    // All authentication must go through /api/login with server-verified credentials.
 
     loginBtn?.onClick.listen((e) async {
       e.preventDefault();
@@ -279,14 +263,22 @@ class AppController {
           requestHeaders: {'Content-Type': 'application/json'},
           sendData: json.encode({'username': empId, 'password': password}),
         );
-        
+
         final data = json.decode(xhr.responseText!) as Map<String, dynamic>;
         final token = data['access_token'] as String;
         final userRole = data['role'] as String;
         final id = data['id'] as String;
         final name = data['name'] as String;
 
+        if (userRole == 'admin' || (role == 'resident' && userRole != 'resident') || (role != 'resident' && userRole != 'worker')) {
+          showLoginError('Use the portal assigned to your account role.', loginErrorMsg);
+          return;
+        }
+        db.clearPrivateCache();
+      _reportPhoto = null;
         window.localStorage['waterhall_jwt'] = token;
+        await nativeSession(token);
+        await restoreQueues();
 
         // Refresh database with the newly authenticated token
         await db.refreshData();
@@ -300,6 +292,8 @@ class AppController {
           window.localStorage.remove('waterhall_session');
           currentWorker = null;
           showResidentPortal(id);
+          _initRealtimeStream('resident');
+          _registerWebPush('resident');
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
           showToast('Logged in as Resident: ' + name);
           return;
@@ -317,6 +311,8 @@ class AppController {
           };
           window.localStorage['waterhall_session'] = json.encode(currentWorker);
           window.localStorage.remove('waterhall_resident_session');
+          _initRealtimeStream('worker');
+          _registerWebPush('worker');
           if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
           showApp(currentWorker!);
           showToast('Logged in as Tech: ' + name);
@@ -326,45 +322,19 @@ class AppController {
         print("Server login error: $err");
       }
 
-      // 2. Offline Fallback Validation strictly isolated by application role
-      if (empId.toLowerCase().trim() == 'admin') {
-        showLoginError('Admin accounts cannot log in offline. The Admin Portal is only accessible when the online server is running.', loginErrorMsg);
-        return;
-      }
+      showLoginError('Unable to sign in. Check your credentials and connection. Existing offline sessions resume when the app opens.', loginErrorMsg);
 
-      if (role == 'resident') {
-        final resident = db.validateResident(empId, password);
-        if (resident != null) {
-          window.localStorage.remove('waterhall_session');
-          currentWorker = null;
-          showResidentPortal(resident['house_id']);
-          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-          showToast('Logged in as Resident: ' + resident['owner_name']);
-          return;
-        }
-        showLoginError('Resident account not recognized for "' + empId + '".', loginErrorMsg);
-        return;
-      } else {
-        // Field Worker App (?role=worker or default)
-        final worker = db.validateWorker(empId, password, selectedZone);
-        if (worker != null) {
-          currentWorker = worker;
-          window.localStorage['waterhall_session'] = json.encode(worker);
-          window.localStorage.remove('waterhall_resident_session');
-          if (loginErrorMsg != null) loginErrorMsg.style.display = 'none';
-          showApp(worker);
-          showToast('Logged in as Tech: ' + worker['name']);
-          return;
-        }
-        showLoginError('Field worker account not recognized for "' + empId + '".', loginErrorMsg);
-        return;
-      }
     });
 
     final logoutBtn = document.getElementById('btn-logout') as ButtonElement?;
-    logoutBtn?.onClick.listen((e) {
+    logoutBtn?.onClick.listen((e) async {
+      _closeRealtimeStream();
+      await _unregisterWebPush();
       window.localStorage.remove('waterhall_session');
       window.localStorage.remove('waterhall_jwt');
+      await nativeSession(null);
+      db.clearPrivateCache();
+      _reportPhoto = null;
       currentWorker = null;
       enforceLoginGate();
       showToast("Signed out of Tech session");
@@ -372,9 +342,14 @@ class AppController {
 
     // Resident Logout
     final residentLogoutBtn = document.getElementById('btn-resident-logout') as ButtonElement?;
-    residentLogoutBtn?.onClick.listen((e) {
+    residentLogoutBtn?.onClick.listen((e) async {
+      _closeRealtimeStream();
+      await _unregisterWebPush();
       window.localStorage.remove('waterhall_resident_session');
       window.localStorage.remove('waterhall_jwt');
+      await nativeSession(null);
+      db.clearPrivateCache();
+      _reportPhoto = null;
       currentResidentId = null;
       enforceLoginGate();
       showToast("Signed out of Resident Portal");
@@ -417,18 +392,18 @@ class AppController {
 
     // Handle flow leak simulator toggle inside modal
     final modalLeakToggle = document.getElementById('modal-leak-toggle') as CheckboxInputElement?;
-    modalLeakToggle?.onChange.listen((e) {
+    modalLeakToggle?.onChange.listen((e) async {
       if (activeHouseholdId == null) return;
       final newStatus = (modalLeakToggle.checked ?? false) ? 'leak' : 'normal';
 
-      final updated = db.updateHouseholdLeak(activeHouseholdId!, newStatus);
+      final updated = await db.updateHouseholdLeak(activeHouseholdId!, newStatus);
       if (updated != null) {
         final modalFlowRateEl = document.getElementById('modal-flow-rate');
         if (modalFlowRateEl != null) {
           modalFlowRateEl.text = (updated['flow_rate'] as num).toStringAsFixed(2);
         }
         updateLeakToggleLabel(newStatus);
-        showToast(newStatus == 'leak' ? "Simulated Leak ALERT activated!" : "Simulated Normal flow rate restored.");
+        showToast(newStatus == 'leak' ? "Leak status saved for synchronization." : "Resolved status saved for synchronization.");
         renderModalLogs(activeHouseholdId!);
 
         // Auto-set checkout "resolved" status based on toggle
@@ -441,7 +416,7 @@ class AppController {
 
     // Log maintenance report handler
     final submitLogBtn = document.getElementById('btn-submit-log') as ButtonElement?;
-    submitLogBtn?.onClick.listen((e) {
+    submitLogBtn?.onClick.listen((e) async {
       if (activeHouseholdId == null || currentWorker == null) return;
 
       final descInput = document.getElementById('log-desc') as TextAreaElement?;
@@ -464,11 +439,11 @@ class AppController {
         'date': DateTime.now().toUtc().toIso8601String()
       };
 
-      db.addMaintenanceLog(newLog);
+      await db.addMaintenanceLog(newLog);
 
       // If marked resolved, update household status
       if (resolvedChecked) {
-        db.updateHouseholdLeak(activeHouseholdId!, 'normal');
+        await db.updateHouseholdLeak(activeHouseholdId!, 'normal');
         final modalLeakToggle = document.getElementById('modal-leak-toggle') as CheckboxInputElement?;
         if (modalLeakToggle != null) modalLeakToggle.checked = false;
         updateLeakToggleLabel('normal');
@@ -531,56 +506,26 @@ class AppController {
 
     final menuEmergency = document.getElementById('menu-emergency-call');
     menuEmergency?.onClick.listen((e) {
-      showToast("Dispatching radio ping to Barangay Office...", 3500);
-    });
-
-    // Resident Ticket Submit Handler
-    final residentSubmitLogBtn = document.getElementById('btn-resident-submit-log') as ButtonElement?;
-    residentSubmitLogBtn?.onClick.listen((e) {
-      if (currentResidentId == null) return;
-
-      final descInput = document.getElementById('resident-log-desc') as TextAreaElement?;
-      final descText = descInput?.value?.trim() ?? '';
-
-      if (descText.isEmpty) {
-        showToast("Please describe the issue (e.g. low pressure, minor leak).");
-        return;
-      }
-
-      final household = db.getHousehold(currentResidentId!);
-      if (household == null) return;
-
-      final log = {
-        'house_id': currentResidentId,
-        'worker_id': 'unassigned',
-        'purok': household['purok'],
-        'description': '$descText (RESIDENT REPORTED)',
-        'status_resolved': false
-      };
-
-      db.addMaintenanceLog(log);
-
-      if (descInput != null) descInput.value = '';
-      showToast("Alert ticket dispatched to field technicians!");
-
-      renderDashboard();
+      showToast(db.getPaymentSettings()['emergency_contact'] ?? 'Emergency contact is not configured; contact the Barangay office.', 6000);
     });
 
     // Broadcast Announcement (Worker Profile)
     final btnBroadcast = document.getElementById('btn-broadcast-announcement');
-    btnBroadcast?.onClick.listen((e) {
+    btnBroadcast?.onClick.listen((e) async {
       if (currentWorker == null) return;
       final inputEl = document.getElementById('worker-announcement-input') as TextAreaElement?;
+      final audienceEl = document.getElementById('worker-announcement-audience') as SelectElement?;
       final msg = inputEl?.value?.trim() ?? '';
-      
+      final audience = audienceEl?.value ?? 'Everyone';
+
       if (msg.isEmpty) {
         showToast('Message cannot be empty');
         return;
       }
-      
-      db.addAnnouncement(msg, currentWorker!['name']);
+
+      await db.addAnnouncement(msg, currentWorker!['name'], targetAudience: audience);
       if (inputEl != null) inputEl.value = '';
-      showToast('Announcement broadcasted!');
+      showToast('Announcement queued for $audience. Pending items retry when online.');
     });
 
     // --- Forgot Password Events ---
@@ -606,8 +551,8 @@ class AppController {
     btnWebRecoverSubmit?.onClick.listen((e) async {
       e.preventDefault();
       final roleSelect = document.getElementById('web-recover-role') as SelectElement?;
-      final idInput = document.getElementById('web-recover-id') as InputElement?;
-      final phoneInput = document.getElementById('web-recover-phone') as InputElement?;
+      final idInput = document.getElementById('web-recover-username') as InputElement?;
+      final phoneInput = document.getElementById('web-recover-contact') as InputElement?;
       final newPwInput = document.getElementById('web-recover-new-password') as InputElement?;
       final errorEl = document.getElementById('web-recover-error');
       final successEl = document.getElementById('web-recover-success');
@@ -635,7 +580,7 @@ class AppController {
           sendData: json.encode({
             'role': roleVal,
             'username': idVal,
-            'contact_no': phoneVal,
+            'reset_token': phoneVal,
             'new_password': newPwVal
           }),
           requestHeaders: {'Content-Type': 'application/json'}
@@ -650,7 +595,7 @@ class AppController {
           if (idInput != null) idInput.value = '';
           if (phoneInput != null) phoneInput.value = '';
           if (newPwInput != null) newPwInput.value = '';
-          
+
           Future.delayed(Duration(seconds: 2), () {
             if (modalWebForgotPw != null) {
               modalWebForgotPw.style.display = 'none';
@@ -669,8 +614,36 @@ class AppController {
 
   void showLoginError(String msg, Element? errorEl) {
     if (errorEl != null) {
-      errorEl.innerHtml = msg;
+      errorEl.text = msg;
       errorEl.style.display = 'block';
+    }
+  }
+
+  // ==============================================================================
+  // Realtime Telemetry & Announcements (SSE with Automatic Polling Fallback)
+  // ==============================================================================
+  void _initRealtimeStream(String currentRole) {
+    _closeRealtimeStream();
+    // Authenticated 10-second polling works across independent Vercel instances.
+  }
+
+  void _closeRealtimeStream() {
+    if (_sseSource != null) {
+      try {
+        _sseSource!.close();
+      } catch (_) {}
+      _sseSource = null;
+    }
+  }
+
+  void _registerWebPush(String role) {
+    if (js.context.hasProperty('WaterHallPush')) js.context['WaterHallPush'].callMethod('registerSubscription', [role]);
+  }
+
+  Future<void> _unregisterWebPush() async {
+    if (js.context.hasProperty('WaterHallPush')) {
+      // Browser unsubscribe and server deactivation run while the token is still present.
+      await js_util.promiseToFuture(js_util.callMethod(js_util.getProperty(js_util.globalThis, 'WaterHallPush'), 'unregisterSubscription', []));
     }
   }
 
@@ -735,7 +708,7 @@ class AppController {
     loginView.classes.remove('active');
     loginView.style.display = 'none';
     views.values.forEach((v) => v.classes.remove('active'));
-    
+
     currentResidentId = null;
     window.localStorage.remove('waterhall_resident_session');
 
@@ -836,13 +809,26 @@ class AppController {
       dashTitle.text = 'Field Terminal: ${currentWorker!['selected_zone']}';
     }
 
-    final latestAnnouncement = db.getLatestAnnouncement();
+    final latestAnnouncement = db.getLatestAnnouncement(role: 'worker');
     final workerBannerEl = document.getElementById('worker-announcement-banner');
     final workerMsgEl = document.getElementById('worker-announcement-message');
+    final workerTagEl = document.getElementById('worker-announcement-tag');
     if (workerBannerEl != null && workerMsgEl != null) {
       if (latestAnnouncement != null && (latestAnnouncement['message'] as String).isNotEmpty) {
-        workerMsgEl.text = latestAnnouncement['message'];
+        final annMsg = latestAnnouncement['message'] as String;
+        workerMsgEl.text = annMsg;
+        if (workerTagEl != null) {
+          final aud = latestAnnouncement['target_audience'] ?? 'Everyone';
+          final auth = latestAnnouncement['author'] ?? 'Admin';
+          workerTagEl.text = '$auth • $aud';
+        }
         workerBannerEl.style.display = 'flex';
+
+        final annKey = '${latestAnnouncement['timestamp']}_$annMsg';
+        if (_lastNotifiedAnnouncementId != annKey) {
+          _lastNotifiedAnnouncementId = annKey;
+          triggerDeviceNotification('WaterHall Announcement', annMsg, type: 'announcement');
+        }
       } else {
         workerBannerEl.style.display = 'none';
       }
@@ -859,17 +845,17 @@ class AppController {
     final workerTdsVal = document.getElementById('worker-tds-val');
     final workerPhVal = document.getElementById('worker-ph-val');
 
-    if (workerTankVal != null) workerTankVal.text = '${assets['main_tank_level']}%';
-    if (workerTurbVal != null) workerTurbVal.text = (assets['turbidity'] as num).toStringAsFixed(1);
-    if (workerTdsVal != null) workerTdsVal.text = '${assets['tds_ppm'] ?? 150}';
-    if (workerPhVal != null) workerPhVal.text = (assets['ph_level'] as num).toStringAsFixed(1);
+    if (workerTankVal != null) workerTankVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['main_tank_level']}%';
+    if (workerTurbVal != null) workerTurbVal.text = assets['has_reading'] == false ? 'N/A' : (assets['turbidity'] as num).toStringAsFixed(1);
+    if (workerTdsVal != null) workerTdsVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['tds_ppm']}';
+    if (workerPhVal != null) workerPhVal.text = assets['ph_status'] == 'unknown' ? 'N/A' : (assets['ph_level'] as num).toStringAsFixed(1);
 
     if (workerSafetyStatus != null) {
       if (assets['ph_status'] == 'warning' || assets['turbidity_status'] == 'warning') {
         workerSafetyStatus.text = 'ALERT';
         workerSafetyStatus.style.color = 'var(--alert-red)';
       } else {
-        workerSafetyStatus.text = 'SAFE';
+        workerSafetyStatus.text = assets['has_reading'] == false ? 'AWAITING DATA' : 'NO ALERT';
         workerSafetyStatus.style.color = 'var(--alert-green)';
       }
     }
@@ -1043,13 +1029,13 @@ class AppController {
         recentLogs.forEach((log) {
           final hh = households.firstWhere((h) => h['house_id'] == log['house_id'], orElse: () => <String, dynamic>{});
           final ownerName = hh.isNotEmpty ? hh['owner_name'] : 'Unknown Household';
-          
+
           final card = document.createElement('div');
           card.className = 'log-card ${log['status_resolved'] == true ? 'resolved' : 'pending'}';
 
           // Format date
-          final logDate = DateTime.parse(log['date'] as String).toLocal();
-          final formattedDate = _formatDateTime(logDate);
+          final logDate = DateTime.tryParse((log['date'] ?? '').toString())?.toLocal();
+          final formattedDate = logDate == null ? 'Unknown date' : _formatDateTime(logDate);
 
           card.innerHtml = '''
             <div class="log-card-header">
@@ -1076,11 +1062,11 @@ class AppController {
   // --- Directory & Search Controller ---
   void renderDirectory() {
     final households = db.getHouseholds();
-    
+
     final searchInput = document.getElementById('dir-search') as InputElement?;
     final purokFilter = document.getElementById('filter-purok') as SelectElement?;
     final statusFilter = document.getElementById('filter-status') as SelectElement?;
-    
+
     final query = searchInput?.value?.toLowerCase().trim() ?? '';
     final selectedPurok = purokFilter?.value ?? 'all';
     final selectedStatus = statusFilter?.value ?? 'all';
@@ -1095,7 +1081,7 @@ class AppController {
       final matchesSearch = h['owner_name'].toString().toLowerCase().contains(query) ||
           h['account_number'].toString().toLowerCase().contains(query) ||
           h['house_id'].toString().toLowerCase().contains(query);
-      
+
       final matchesPurok = (selectedPurok == 'all' || h['purok'] == selectedPurok);
       final matchesStatus = (selectedStatus == 'all' || h['current_leak_status'] == selectedStatus);
 
@@ -1193,7 +1179,7 @@ class AppController {
 
     // Switch view
     switchTab('view-worker-resident-details');
-    
+
     // Bind back button
     document.getElementById('btn-back-to-dir')?.onClick.listen((e) {
       switchTab('view-directory');
@@ -1209,11 +1195,11 @@ class AppController {
     if (leakTitleEl == null || leakDescEl == null) return;
 
     if (status == 'leak') {
-      leakTitleEl.text = "Leak State Sim: HIGH CONSTANT FLOW";
+      leakTitleEl.text = "Leak status: HIGH CONSTANT FLOW";
       leakTitleEl.style.color = 'var(--alert-red)';
       leakDescEl.text = "Meter detects flow rate exceeds safety coefficient threshold.";
     } else {
-      leakTitleEl.text = "Flow State Sim: NORMAL FLOW";
+      leakTitleEl.text = "Flow status: NORMAL FLOW";
       leakTitleEl.style.color = 'var(--alert-green)';
       leakDescEl.text = "Meter flow matches normal residential consumption metrics.";
     }
@@ -1242,14 +1228,13 @@ class AppController {
     final maxVal = (history.reduce((a, b) => a > b ? a : b) * 1.1).clamp(10.0, 1000.0);
     const minVal = 0.0;
 
-    final months = ['Mar', 'Apr', 'May', 'Jun'];
 
     final points = history.asMap().entries.map((entry) {
       final idx = entry.key;
       final val = entry.value;
-      final x = padding + (idx / (history.length - 1)) * chartW;
+      final x = padding + (history.length == 1 ? 0.5 : idx / (history.length - 1)) * chartW;
       final y = padding + chartH - ((val - minVal) / (maxVal - minVal)) * chartH;
-      return {'x': x, 'y': y, 'val': val, 'label': months[idx]};
+      return {'x': x, 'y': y, 'val': val, 'label': '${idx + 1}'};
     }).toList();
 
     // Line Path
@@ -1272,11 +1257,11 @@ class AppController {
             <stop offset="100%" stop-color="$gradientColor" stop-opacity="0.0"/>
           </linearGradient>
         </defs>
-        
+
         <line x1="$padding" y1="$padding" x2="${width - padding}" y2="$padding" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="3 3"/>
         <line x1="$padding" y1="${padding + (chartH / 2)}" x2="${width - padding}" y2="${padding + (chartH / 2)}" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="3 3"/>
         <line x1="$padding" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#CBD5E1" stroke-width="1.5"/>
-        
+
         <path d="$areaPath" fill="url(#$gradientId)" />
         <polyline points="$linePath" fill="none" stroke="$strokeColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
     ''';
@@ -1309,8 +1294,8 @@ class AppController {
         final item = document.createElement('div');
         item.className = 'log-card ${log['status_resolved'] == true ? 'resolved' : 'pending'}';
 
-        final logDate = DateTime.parse(log['date'] as String).toLocal();
-        final formatted = '${logDate.month}/${logDate.day}/${logDate.year} @ ${_pad(logDate.hour)}:${_pad(logDate.minute)}';
+        final logDate = DateTime.tryParse((log['date'] ?? '').toString())?.toLocal();
+        final formatted = logDate == null ? 'Unknown date' : '${logDate.month}/${logDate.day}/${logDate.year} @ ${_pad(logDate.hour)}:${_pad(logDate.minute)}';
 
         item.innerHtml = '''
           <div class="log-card-header">
@@ -1368,23 +1353,25 @@ class AppController {
 
     final mainTankLevel = assets['main_tank_level'] as int;
 
-    if (tankPercentEl != null) tankPercentEl.text = '$mainTankLevel%';
+    if (tankPercentEl != null) tankPercentEl.text = assets['has_reading'] == false ? 'N/A' : '$mainTankLevel%';
     if (tankFillEl != null) tankFillEl.style.height = '$mainTankLevel%';
 
     if (tankBannerEl != null && tankFillEl != null) {
-      if (mainTankLevel < 30) {
-        tankBannerEl.text = "CRITICAL: Low Water Reserve. High pressure risk in Zone 4 & 5!";
+      if (assets['has_reading'] == false) {
+        tankBannerEl.text = 'Awaiting sensor readings';
+      } else if (mainTankLevel < 30) {
+        tankBannerEl.text = "Low Water Reserve: Check supply status.";
         tankBannerEl.className = "reservoir-status-banner low";
         tankFillEl.style.background = 'linear-gradient(180deg, #F87171 0%, #DC2626 100%)';
       } else if (mainTankLevel < 50) {
-        tankBannerEl.text = "WARNING: Moderate Reserve. Stabilizing flow valves recommended.";
+        tankBannerEl.text = "Moderate Water Reserve: Monitor supply.";
         tankBannerEl.className = "reservoir-status-banner";
         tankBannerEl.style.backgroundColor = 'var(--alert-amber-bg)';
         tankBannerEl.style.borderColor = 'rgba(249, 115, 22, 0.3)';
         tankBannerEl.style.color = 'var(--amber-safety)';
         tankFillEl.style.background = 'linear-gradient(180deg, #FBBF24 0%, #D97706 100%)';
       } else {
-        tankBannerEl.text = "Reservoir Status: Normal Operating Pressure";
+        tankBannerEl.text = "Reservoir Level: Within configured range";
         tankBannerEl.className = "reservoir-status-banner";
         tankBannerEl.style.backgroundColor = 'var(--alert-green-bg)';
         tankBannerEl.style.borderColor = 'rgba(16, 185, 129, 0.2)';
@@ -1401,7 +1388,7 @@ class AppController {
 
     final phLevel = assets['ph_level'] as num;
 
-    if (phValEl != null) phValEl.text = phLevel.toStringAsFixed(1);
+    if (phValEl != null) phValEl.text = assets['ph_status'] == 'unknown' ? 'N/A' : phLevel.toStringAsFixed(1);
 
     if (phPointerEl != null) {
       double phPos = ((phLevel - 4) / 6) * 100;
@@ -1585,18 +1572,18 @@ class AppController {
     final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
 
     final prevVal = double.tryParse(billPrevReading?.text ?? '') ?? 0.0;
-    
+
     final currInputStr = billCurrInput?.value?.trim() ?? '';
     if (currInputStr.isEmpty) {
       final billCalcConsumption = document.getElementById('bill-calc-consumption');
       if (billCalcConsumption != null) billCalcConsumption.text = "0.0";
-      
+
       final billCalcExcess = document.getElementById('bill-calc-excess');
       if (billCalcExcess != null) billCalcExcess.text = "0.00";
-      
+
       final billCalcTotal = document.getElementById('bill-calc-total');
       if (billCalcTotal != null) billCalcTotal.text = "0.00";
-      
+
       final btnSaveBill = document.getElementById('btn-save-bill') as ButtonElement?;
       if (btnSaveBill != null) {
         btnSaveBill.disabled = true;
@@ -1607,7 +1594,7 @@ class AppController {
       }
       return;
     }
-    
+
     final currVal = double.tryParse(currInputStr) ?? 0.0;
 
     double consumption = currVal - prevVal;
@@ -1632,7 +1619,7 @@ class AppController {
     if (billCalcTotal != null) billCalcTotal.text = totalDue.toStringAsFixed(2);
 
     // Double billing safeguard
-    final isBilled = db.hasBeenBilledThisMonth(selectedBillHouseId!, "June 2026");
+    final isBilled = db.hasBeenBilledThisMonth(selectedBillHouseId!, DateTime.now().toIso8601String().substring(0, 7));
     final billingAlertBanner = document.getElementById('billing-alert-banner');
     final btnSaveBill = document.getElementById('btn-save-bill') as ButtonElement?;
 
@@ -1640,7 +1627,7 @@ class AppController {
       if (isBilled) {
         billingAlertBanner.innerHtml = '''
           <svg style="width:18px;height:18px;fill:currentColor" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V8h2v4z"/></svg>
-          <span>DOUBLE-BILLING BLOCKED: Bill already registered for June 2026.</span>
+          <span>DOUBLE-BILLING BLOCKED: Bill already registered for the current month.</span>
         ''';
         billingAlertBanner.className = "reservoir-status-banner low";
         billingAlertBanner.style.backgroundColor = "var(--alert-red-bg)";
@@ -1657,7 +1644,7 @@ class AppController {
       } else {
         billingAlertBanner.innerHtml = '''
           <svg style="width:18px;height:18px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-          <span>CLEAR: Safe to bill June 2026. No duplicates found.</span>
+          <span>CLEAR: Safe to bill the current month. No duplicates found.</span>
         ''';
         billingAlertBanner.className = "reservoir-status-banner";
         billingAlertBanner.style.backgroundColor = "var(--alert-green-bg)";
@@ -1675,10 +1662,10 @@ class AppController {
     }
   }
 
-  void saveWaterBill() {
+  Future<void> saveWaterBill() async {
     if (selectedBillHouseId == null || currentWorker == null) return;
 
-    final isBilled = db.hasBeenBilledThisMonth(selectedBillHouseId!, "June 2026");
+    final isBilled = db.hasBeenBilledThisMonth(selectedBillHouseId!, DateTime.now().toIso8601String().substring(0, 7));
     if (isBilled) {
       showToast("Operation blocked to prevent double-billing!");
       return;
@@ -1701,7 +1688,7 @@ class AppController {
     final record = {
       'house_id': selectedBillHouseId,
       'account_number': household['account_number'],
-      'billing_month': 'June 2026',
+      'billing_month': DateTime.now().toIso8601String().substring(0, 7),
       'previous_reading': prevVal,
       'current_reading': currVal,
       'consumption': consumption,
@@ -1711,9 +1698,9 @@ class AppController {
       'billed_by': currentWorker!['worker_id']
     };
 
-    db.addBillingRecord(record);
+    await db.addBillingRecord(record);
 
-    showToast("June 2026 bill registered for ${household['owner_name']}!");
+    showToast("Bill saved locally; awaiting sync for ${household['owner_name']}!");
     updateBillCalculations();
     renderBillingHistoryList(selectedBillHouseId!);
     renderProfile();
@@ -1733,8 +1720,8 @@ class AppController {
         final item = document.createElement('div');
         item.className = 'bill-record-card ${bill['status']}';
 
-        final billDate = DateTime.parse(bill['date'] as String).toLocal();
-        final formattedDate = '${billDate.month}/${billDate.day}/${billDate.year} ${_pad(billDate.hour)}:${_pad(billDate.minute)}';
+        final billDate = DateTime.tryParse((bill['date'] ?? '').toString())?.toLocal();
+        final formattedDate = billDate == null ? 'Unknown date' : '${billDate.month}/${billDate.day}/${billDate.year} ${_pad(billDate.hour)}:${_pad(billDate.minute)}';
 
         item.innerHtml = '''
           <div class="bill-record-header">
@@ -1753,6 +1740,38 @@ class AppController {
         billingHistoryList.append(item);
       });
     }
+  }
+
+  // --- Native Device Notification Helper ---
+  void triggerDeviceNotification(String title, String body, {String type = 'info'}) {
+    if (body.isEmpty) return;
+    try {
+      final jsObj = js.context['NativeNotificationChannel'];
+      if (jsObj != null) {
+        jsObj.callMethod('postMessage', [
+          json.encode({
+            'title': title,
+            'body': body,
+            'type': type,
+            'timestamp': DateTime.now().toIso8601String()
+          })
+        ]);
+      }
+    } catch (e) {
+      print("Native notification channel error: $e");
+    }
+
+    try {
+      if (Notification.supported && Notification.permission == 'granted') {
+        Notification(title, body: body, icon: 'logo.png');
+      } else if (Notification.supported && Notification.permission != 'denied') {
+        Notification.requestPermission().then((perm) {
+          if (perm == 'granted') {
+            Notification(title, body: body, icon: 'logo.png');
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   // --- UI Toast Notification Helper ---
@@ -1792,7 +1811,7 @@ class AppController {
     loginView.classes.remove('active');
     loginView.style.display = 'none';
     views.values.forEach((v) => v.classes.remove('active'));
-    
+
     // EXPLICITLY hide worker nav and show resident nav
     bottomNav.setAttribute('style', 'display: none !important');
     residentBottomNav.setAttribute('style', 'display: flex !important');
@@ -1830,13 +1849,26 @@ class AppController {
     final household = db.getHousehold(currentResidentId!);
     if (household == null) return;
 
-    final latestAnnouncement = db.getLatestAnnouncement();
+    final latestAnnouncement = db.getLatestAnnouncement(role: 'resident');
     final bannerEl = document.getElementById('resident-announcement-banner');
     final messageEl = document.getElementById('resident-announcement-message');
+    final tagEl = document.getElementById('resident-announcement-tag');
     if (bannerEl != null && messageEl != null) {
-      if (latestAnnouncement != null) {
-        messageEl.text = latestAnnouncement['message'];
+      if (latestAnnouncement != null && (latestAnnouncement['message'] as String).isNotEmpty) {
+        final annMsg = latestAnnouncement['message'] as String;
+        messageEl.text = annMsg;
+        if (tagEl != null) {
+          final aud = latestAnnouncement['target_audience'] ?? 'Everyone';
+          final auth = latestAnnouncement['author'] ?? 'Admin';
+          tagEl.text = '$auth • $aud';
+        }
         bannerEl.style.display = 'flex';
+
+        final annKey = '${latestAnnouncement['timestamp']}_$annMsg';
+        if (_lastNotifiedAnnouncementId != annKey) {
+          _lastNotifiedAnnouncementId = annKey;
+          triggerDeviceNotification('WaterHall Announcement', annMsg, type: 'announcement');
+        }
       } else {
         bannerEl.style.display = 'none';
       }
@@ -1849,18 +1881,43 @@ class AppController {
     final resTdsVal = document.getElementById('resident-tds-val');
     final resSafetyStatus = document.getElementById('resident-safety-status');
 
-    if (resTankVal != null) resTankVal.text = '${assets['main_tank_level']}%';
-    if (resPHVal != null) resPHVal.text = (assets['ph_level'] as num).toStringAsFixed(1);
-    if (resTurbVal != null) resTurbVal.text = (assets['turbidity'] as num).toStringAsFixed(1);
-    if (resTdsVal != null) resTdsVal.text = '${assets['tds_ppm'] ?? 150}';
+    if (resTankVal != null) resTankVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['main_tank_level']}%';
+    if (resPHVal != null) resPHVal.text = assets['ph_status'] == 'unknown' ? 'N/A' : (assets['ph_level'] as num).toStringAsFixed(1);
+    if (resTurbVal != null) resTurbVal.text = assets['has_reading'] == false ? 'N/A' : (assets['turbidity'] as num).toStringAsFixed(1);
+    if (resTdsVal != null) resTdsVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['tds_ppm']}';
 
     if (resSafetyStatus != null) {
       if (assets['ph_status'] == 'warning' || assets['turbidity_status'] == 'warning') {
         resSafetyStatus.text = 'ALERT';
         resSafetyStatus.style.color = 'var(--alert-red)';
+
+        final turbVal = (assets['turbidity'] as num).toStringAsFixed(1);
+        final phVal = assets['ph_status'] == 'unknown' ? 'unmeasured' : (assets['ph_level'] as num).toStringAsFixed(1);
+        final emergencyKey = 'contaminated_${turbVal}_$phVal';
+        if (_lastNotifiedEmergency != emergencyKey) {
+          _lastNotifiedEmergency = emergencyKey;
+          triggerDeviceNotification(
+            '⚠️ WATER CONTAMINATION ALERT',
+            'Water quality abnormal (Turbidity: $turbVal NTU, pH: $phVal). Follow local water authority guidance before using this supply.',
+            type: 'critical'
+          );
+        }
       } else {
-        resSafetyStatus.text = 'SAFE';
+        resSafetyStatus.text = assets['has_reading'] == false ? 'AWAITING DATA' : 'NO ALERT';
         resSafetyStatus.style.color = 'var(--alert-green)';
+      }
+    }
+
+    final tankLvl = assets['main_tank_level'] as num? ?? 0;
+    if (assets['has_reading'] != false && tankLvl <= 20) {
+      final emergencyKey = 'low_water_$tankLvl';
+      if (_lastNotifiedEmergency != emergencyKey) {
+        _lastNotifiedEmergency = emergencyKey;
+        triggerDeviceNotification(
+          '⚠️ LOW WATER LEVEL ALERT',
+          'Reservoir is critically low ($tankLvl% remaining). Please conserve water.',
+          type: 'warning'
+        );
       }
     }
 
@@ -1917,7 +1974,7 @@ class AppController {
     final bills = db.getBillingHistoryForHousehold(currentResidentId!);
     Map<String, dynamic>? juneBill;
     try {
-      juneBill = bills.firstWhere((b) => b['billing_month'] == 'June 2026');
+      juneBill = bills.firstWhere((b) => b['billing_month'] == DateTime.now().toIso8601String().substring(0, 7));
     } catch (_) {}
 
     double prevReading = 0.0;
@@ -2006,8 +2063,8 @@ class AppController {
       final item = document.createElement('div');
       item.className = 'bill-record-card ${bill['status']}';
 
-      final billDate = DateTime.parse(bill['date'] as String).toLocal();
-      final formatted = '${billDate.month}/${billDate.day}/${billDate.year} ${_pad(billDate.hour)}:${_pad(billDate.minute)}';
+      final billDate = DateTime.tryParse((bill['date'] ?? '').toString())?.toLocal();
+      final formatted = billDate == null ? 'Unknown date' : '${billDate.month}/${billDate.day}/${billDate.year} ${_pad(billDate.hour)}:${_pad(billDate.minute)}';
 
       item.innerHtml = '''
         <div class="bill-record-header">
@@ -2031,11 +2088,11 @@ class AppController {
     final modal = document.getElementById('register-user-modal');
     final btnClose = document.getElementById('btn-close-register-modal');
     final btnSubmit = document.getElementById('btn-submit-register');
-    
+
     final roleSelect = document.getElementById('reg-role') as SelectElement?;
     final resFields = document.getElementById('reg-resident-fields');
     final workFields = document.getElementById('reg-worker-fields');
-    
+
     // Toggle fields based on role
     roleSelect?.onChange.listen((e) {
       if (roleSelect.value == 'resident') {
@@ -2056,7 +2113,7 @@ class AppController {
     });
 
     // Submit
-    btnSubmit?.onClick.listen((e) {
+    btnSubmit?.onClick.listen((e) async {
       try {
         final passwordInput = document.getElementById('reg-password') as InputElement?;
         final password = passwordInput?.value?.trim() ?? '';
@@ -2069,44 +2126,44 @@ class AppController {
           final nameInput = document.getElementById('reg-res-name') as InputElement?;
           final purokSelect = document.getElementById('reg-res-purok') as SelectElement?;
           final lotInput = document.getElementById('reg-res-lot') as InputElement?;
-          
+
           final name = nameInput?.value?.trim() ?? '';
           final purok = purokSelect?.value ?? 'Purok 1';
           final lot = lotInput?.value?.trim() ?? '';
-          
+
           if (name.isEmpty || lot.isEmpty) {
             showToast('Name and Lot are required!');
             return;
           }
-          
-          final res = db.registerResident(name, purok, lot, password);
+
+          final res = await db.registerResident(name, purok, lot, password);
           showToast('Resident Registered: ' + (res['account_number'] ?? ''));
-          
+
         } else {
           final nameInput = document.getElementById('reg-work-name') as InputElement?;
           final roleInput = document.getElementById('reg-work-role') as SelectElement?;
           final zoneSelect = document.getElementById('reg-work-zone') as SelectElement?;
-          
+
           final name = nameInput?.value?.trim() ?? '';
           final role = roleInput?.value ?? 'Field Technician';
           final zone = zoneSelect?.value ?? 'Purok 1';
-          
+
           if (name.isEmpty) {
             showToast('Worker Name is required!');
             return;
           }
-          
-          final worker = db.registerWorker(name, role, zone, password);
+
+          final worker = await db.registerWorker(name, role, zone, password);
           showToast('Worker Registered: ' + (worker['worker_id'] ?? ''));
         }
-        
+
         modal?.classes.remove('active');
-        
+
         // Refresh directory if we are on it
         if (activeTab == 'view-directory') {
           renderDirectory();
         }
-        
+
       } catch (err) {
         showToast('Error: $err');
       }
@@ -2117,7 +2174,7 @@ class AppController {
     final btnOpen = document.getElementById('btn-open-collect-modal');
     final modal = document.getElementById('modal-collect-payment');
     final btnCancel = document.getElementById('btn-collect-cancel');
-    final btnConfirm = document.getElementById('btn-collect-confirm');
+    final btnConfirm = document.getElementById('btn-collect-confirm') as ButtonElement?;
     final hhNameInput = document.getElementById('collect-hh-name') as InputElement?;
     final amountInput = document.getElementById('collect-amount-input') as InputElement?;
     final methodSelect = document.getElementById('collect-payment-method') as SelectElement?;
@@ -2133,10 +2190,7 @@ class AppController {
 
       // Find latest unpaid bill or calculate total
       final bills = db.getBillingHistoryForHousehold(activeHouseholdId!);
-      num due = 170.00;
-      if (bills.isNotEmpty) {
-        due = (bills.first['total_due'] as num?) ?? 170.00;
-      }
+      final due = bills.where((b) => b['status'] == 'Unpaid' || b['status'] == 'Pending').fold<num>(0, (sum, b) => sum + (b['total_due'] as num));
       if (amountInput != null) {
         amountInput.value = due.toStringAsFixed(2);
       }
@@ -2148,7 +2202,7 @@ class AppController {
       modal?.style.display = 'none';
     });
 
-    btnConfirm?.onClick.listen((e) {
+    btnConfirm?.onClick.listen((e) async {
       if (activeHouseholdId == null || currentWorker == null) return;
       final amount = double.tryParse(amountInput?.value ?? '') ?? 0.0;
       if (amount <= 0) {
@@ -2159,8 +2213,10 @@ class AppController {
       final method = methodSelect?.value ?? 'Cash';
       final workerId = (currentWorker!['worker_id'] ?? currentWorker!['name'] ?? 'Collector').toString();
 
-      // Record collection offline (idempotent, generates unique transaction ID)
-      final record = db.recordBillCollectionOffline(
+      btnConfirm.disabled = true;
+      try {
+      // Confirm only after durable local commit.
+      final record = await db.recordBillCollectionOffline(
         houseId: activeHouseholdId!,
         amount: amount,
         collectedBy: workerId,
@@ -2170,9 +2226,31 @@ class AppController {
       modal?.style.display = 'none';
       showToast("Collection recorded! TxID: ${record['transaction_id']}");
       openWorkerResidentDetails(activeHouseholdId!);
+      } catch (_) {
+        showToast('Collection not saved. Check device storage and existing pending payments.');
+      } finally { btnConfirm.disabled = false; }
     });
 
     // Resident Service / Incident Report Submission Handler
+    final photoInput = document.getElementById('resident-photo-input') as FileUploadInputElement?;
+    document.getElementById('btn-resident-photo-trigger')?.onClick.listen((_) => photoInput?.click());
+    photoInput?.onChange.listen((_) async {
+      final files = photoInput.files;
+      if (files == null || files.isEmpty) return;
+      final file = files.first;
+      if (file.size > 2 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].contains(file.type)) {
+        showToast('Use a JPEG, PNG or WebP photo of at most 2 MiB.');
+        photoInput.value = ''; _reportPhoto = null; return;
+      }
+      final reader = FileReader()..readAsDataUrl(file);
+      await reader.onLoad.first;
+      _reportPhoto = reader.result as String;
+      document.getElementById('resident-photo-name')?.text = file.name;
+      final preview = document.getElementById('resident-photo-preview');
+      preview?.children.clear();
+      preview?.append(ImageElement(src: _reportPhoto));
+      preview?.style.display = 'block';
+    });
     final btnSubmitReport = document.getElementById('btn-resident-submit-log');
     btnSubmitReport?.onClick.listen((e) async {
       if (currentResidentId == null) return;
@@ -2186,12 +2264,12 @@ class AppController {
         return;
       }
 
-      final success = await db.submitResidentReport(currentResidentId!, cat, desc);
+      final success = await db.submitResidentReport(currentResidentId!, cat, desc, photo: _reportPhoto);
       if (success) {
-        showToast("Report submitted to Barangay Technicians!");
+        showToast("Report saved. Pending reports sync when online.");
         if (descText != null) descText.value = '';
       } else {
-        showToast("Report saved locally (will sync when online).");
+        showToast("Report was not saved. Please retry; keep your description.");
       }
     });
 
@@ -2207,4 +2285,4 @@ class AppController {
       }
     });
   }
-}
+}

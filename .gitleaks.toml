@@ -1,0 +1,40 @@
+title = "WaterHall credential checks"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "waterhall-device-credential"
+description = "Embedded Wi-Fi identity/password or IoT credential"
+regex = '''(?i)\b(?:WIFI_SSID|WIFI_PASSWORD|IOT_DEVICE_SECRET)\s*=\s*["']([^"'\r\n]+)["']'''
+secretGroup = 1
+
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^\[REDACTED\]$''', '''^(?:YOUR_|your_|REPLACE_|replace_).*$''']
+
+[[rules]]
+id = "waterhall-signing-fallback"
+description = "Literal signing key or default account credential"
+regex = '''(?i)(?:JWT_SECRET_KEY|SECRET_KEY|DEFAULT_PASSWORD)[^\r\n=]{0,8}=\s*(?:os\.(?:environ\.get|getenv)\([^,\r\n]+,\s*)?["']([^"'\r\n]+)["']'''
+secretGroup = 1
+
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^\[REDACTED\]$''']
+
+[[rules]]
+id = "waterhall-default-password-env"
+description = "Default account password provided as an environment fallback"
+regex = '''(?i)(?:environ\.get|getenv)\(\s*["']DEFAULT_PASSWORD["']\s*,\s*["']([^"'\r\n]+)["']'''
+secretGroup = 1
+
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^\[REDACTED\]$''']
+
+[[rules]]
+id = "waterhall-vapid-private-key"
+description = "Serialized VAPID private key"
+regex = '''["']private_key["']\s*:\s*["']([A-Za-z0-9_+/=-]{32,})["']'''
+secretGroup = 1

@@ -12,5 +12,5 @@ echo [2/2] Starting Python backend server (waterhall.db)...
 echo Press Ctrl+C in this window to stop the server at any time.
 echo.
 cd /d "%~dp0\.."
-python backend\server.py
+python -m backend.server
 pause

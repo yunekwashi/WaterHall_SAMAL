@@ -1,0 +1,10 @@
+[project]
+name = "waterhall"
+version = "1.0.0"
+requires-python = ">=3.12,<3.15"
+
+[tool.vercel]
+entrypoint = "backend.server:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

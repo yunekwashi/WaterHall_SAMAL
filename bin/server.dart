@@ -1,8 +1,8 @@
 import 'dart:io';
 
 void main() async {
-  // Port to listen on
-  const port = 8000;
+  // Local static preview only. Run the Flask server for the complete system.
+  final port = int.parse(Platform.environment['PORT'] ?? '8000');
   
   // Base path of the static files (web directory next to bin)
   final scriptDir = File(Platform.script.toFilePath()).parent;
@@ -26,8 +26,14 @@ void main() async {
   
   await for (HttpRequest request in server) {
     try {
-      // Prevent directory traversal attacks
+      // Reject decoded path traversal and Windows separator/drive variants.
       String path = request.uri.path;
+      if (!['GET', 'HEAD'].contains(request.method) || request.uri.pathSegments.any((part) =>
+          part == '..' || part.contains('\\') || part.contains(':') || part.contains('\u0000'))) {
+        request.response.statusCode = HttpStatus.forbidden;
+        await request.response.close();
+        continue;
+      }
       if (path == '/' || path.isEmpty) {
         path = '/index.html';
       }
@@ -38,10 +44,15 @@ void main() async {
       final file = File('${webDir.path}$path');
       
       // Verify the file path is within the web directory (prevent traversal)
-      final canonicalFilePath = file.absolute.path;
-      final canonicalWebPath = webDir.absolute.path;
+      if (!await file.exists()) {
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+        continue;
+      }
+      final canonicalFilePath = (await file.resolveSymbolicLinks()).toLowerCase();
+      final canonicalWebPath = (await webDir.resolveSymbolicLinks()).toLowerCase();
       
-      if (!canonicalFilePath.startsWith(canonicalWebPath)) {
+      if (!canonicalFilePath.startsWith('$canonicalWebPath${Platform.pathSeparator}')) {
         request.response
           ..statusCode = HttpStatus.forbidden
           ..headers.contentType = ContentType.text
@@ -53,10 +64,16 @@ void main() async {
       if (await file.exists()) {
         final lastDot = file.path.lastIndexOf('.');
         final ext = lastDot != -1 ? file.path.substring(lastDot).toLowerCase() : '';
-        final contentType = mimeTypes[ext] ?? 'application/octet-stream';
+        final contentType = mimeTypes[ext];
+        if (contentType == null) {
+          request.response.statusCode = HttpStatus.notFound;
+          await request.response.close();
+          continue;
+        }
         
         request.response.headers
           ..set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+          ..set('X-Content-Type-Options', 'nosniff')
           ..set('Content-Type', '$contentType; charset=utf-8');
           
         await file.openRead().pipe(request.response);
@@ -68,7 +85,7 @@ void main() async {
           ..close();
       }
     } catch (e) {
-      print('Error processing request: $e');
+      print('Static preview request failed: ${e.runtimeType}');
       try {
         request.response
           ..statusCode = HttpStatus.internalServerError

@@ -66,7 +66,7 @@ def verify_codebase():
         print(f"  [WARN] Could not fetch /admin: {e}")
 
     print("==================================================")
-    print("ALL ADMIN OFFLINE LOCKDOWN CHECKS PASSED (100%)")
+    print("STATIC ADMIN CHECKS PASSED; see live checks above for warnings/skips.")
     print("==================================================")
 
 if __name__ == '__main__':

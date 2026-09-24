@@ -9,12 +9,8 @@
   <link rel="stylesheet" href="styles.css?v=3.0.6">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#070B13">
+  <script src="/native-store.js"></script>
   <script>
-    window.onerror = function(msg, url, line, col, error) {
-      document.body.innerHTML = '<div style="color:red; background:white; font-size: 20px; z-index:99999; position:absolute; top:10%; left:5%; right:5%; padding:20px; border-radius:10px;">JS ERROR: ' + msg + '<br>Line: ' + line + '</div>';
-      return false;
-    };
-
     if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
       document.documentElement.classList.add('is-native-mobile');
     }
@@ -92,11 +88,31 @@
         </button>
       </div>
 
+      <!-- PUSH NOTIFICATION OPT-IN BANNER -->
+      <div id="push-permission-banner" class="offline-banner-notice" style="display: none; background: linear-gradient(135deg, #0284c7, #0369a1); justify-content: space-between; align-items: center;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24">
+            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+          </svg>
+          <span style="font-size:11px; font-weight:600;">Enable instant water alerts & announcements?</span>
+        </div>
+        <button id="btn-enable-push" type="button" style="background:rgba(255,255,255,0.25); border:none; color:white; padding:3px 10px; border-radius:4px; font-size:10px; cursor:pointer; font-weight:700;">
+          Enable
+        </button>
+      </div>
+
       <!-- Views Container -->
       <div class="view-container">
 
-        <!-- Compatibility Placeholders for Dart controller -->
-        <div id="view-directory" style="display:none;"></div>
+        <!-- Worker operational views -->
+        <div id="view-directory" class="app-view">
+          <div class="view-header"><h2>Collections</h2><p>Select a household to record a payment.</p></div>
+          <div style="padding:16px;overflow-y:auto;flex:1">
+            <input id="dir-search" class="form-input" type="search" placeholder="Search household or meter" aria-label="Search household or meter">
+            <div id="dir-empty-state" style="display:none;padding:16px">No matching households.</div>
+            <div id="dir-household-list"></div>
+          </div>
+        </div>
         <div id="view-assets" style="display:none;"></div>
 
         <!-- 1. LOGIN SCREEN -->
@@ -181,7 +197,10 @@
             <div id="worker-announcement-banner" class="announcement-banner" style="display: none; margin: 16px 16px 0 16px;">
               <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
               <div style="flex:1;">
-                <div class="announcement-title">Barangay Announcement</div>
+                <div class="announcement-title" style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>Barangay Announcement</span>
+                  <span id="worker-announcement-tag" style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(0,0,0,0.08); font-weight:600;"></span>
+                </div>
                 <div class="announcement-message" id="worker-announcement-message"></div>
               </div>
             </div>
@@ -252,7 +271,7 @@
         </div>
 
 
-        <!-- Directory removed and migrated to Admin Panel -->
+        <!-- Household management remains in the Admin Panel. -->
 
 
         <!-- 3b. WORKER: RESIDENT DETAILS SCREEN -->
@@ -291,7 +310,6 @@
               <svg style="width:18px;height:18px;fill:currentColor" viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
               <span>Record Offline / Online Collection</span>
             </button>
-            <button type="button" class="submit-log-btn" style="background:var(--blue-primary); color:white; margin-top:8px;">Send Payment Reminder</button>
           </div>
         </div>
         <!-- Assets view removed and migrated to Admin Panel -->
@@ -338,7 +356,15 @@
               <div class="log-form-field">
                 <textarea id="worker-announcement-input" class="log-textarea" placeholder="Type a message to broadcast to all residents (e.g., Maintenance schedule)..."></textarea>
               </div>
-              <button type="button" class="submit-log-btn" id="btn-broadcast-announcement" style="background-color: var(--navy-primary);">Broadcast Message</button>
+              <div class="log-form-field" style="margin-top: 8px;">
+                <label for="worker-announcement-audience" style="font-size: 12px; font-weight: 600; color: var(--navy-secondary); display: block; margin-bottom: 4px;">Target Audience:</label>
+                <select id="worker-announcement-audience" class="log-input" style="width: 100%; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 12px; font-family: inherit; font-size: 13px; background: #fff;">
+                  <option value="Everyone" selected>Everyone (Residents & Workers)</option>
+                  <option value="Residents only">Residents only</option>
+                  <option value="Workers only">Workers only</option>
+                </select>
+              </div>
+              <button type="button" class="submit-log-btn" id="btn-broadcast-announcement" style="background-color: var(--navy-primary); margin-top: 12px;">Broadcast Message</button>
             </div>
 
             <!-- Profile Menu Options -->
@@ -439,7 +465,7 @@
               <div style="display:flex; flex-direction:column; gap:8px; font-size:13px; color:#000000;">
                 <div style="display:flex; justify-content:space-between">
                   <span>Billing Cycle:</span>
-                  <strong>June 2026</strong>
+                  <strong>Current billing month</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
                   <span>Total Consumption:</span>
@@ -496,7 +522,10 @@
           <div id="resident-announcement-banner" class="announcement-banner" style="display: none;">
             <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
             <div style="flex:1;">
-              <div class="announcement-title">Barangay Announcement</div>
+              <div class="announcement-title" style="display:flex; justify-content:space-between; align-items:center;">
+                <span>Barangay Announcement</span>
+                <span id="resident-announcement-tag" style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(0,0,0,0.08); font-weight:600;"></span>
+              </div>
               <div class="announcement-message" id="resident-announcement-message"></div>
             </div>
           </div>
@@ -540,7 +569,7 @@
               <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; color:#000000;">
                 <div style="display:flex; justify-content:space-between">
                   <span>Billing Cycle:</span>
-                  <strong>June 2026</strong>
+                  <strong>Current billing month</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
                   <span>Payment Status:</span>
@@ -702,7 +731,10 @@
           </svg>
           <span>Dashboard</span>
         </a>
-        <!-- Directory and Assets tabs removed -->
+        <a href="#" class="nav-tab" data-target="view-directory">
+          <svg viewBox="0 0 24 24"><path d="M3 3h18v18H3V3zm2 2v4h14V5H5zm0 6v8h14v-8H5z"/></svg>
+          <span>Collections</span>
+        </a>
         <a href="#" class="nav-tab" data-target="view-billing">
           <svg viewBox="0 0 24 24">
             <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 4h2v2h-2V7zm0 4h2v2h-2v-2zm-4-4h2v2H7V7zm0 4h2v2H7v-2zm0 4h2v2H7v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm0-4h2v2h-2v-2zm0-4h2v2h-2V7z"/>
@@ -824,7 +856,7 @@
       <!-- Account Recovery Modal -->
       <div class="modal-overlay" id="web-modal-forgot-pw" style="display: none; z-index: 1000; align-items: center; justify-content: center;">
         <div class="offline-card" style="max-width: 380px; width: 90%; padding: 24px; border-radius: 12px; background: #0c1524; border: 1px solid #1f3044; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); text-align: left;">
-          <h3 style="margin-bottom:18px; font-size:18px; font-weight:700; color: #fff; text-align: center;">Account Password Recovery</h3>
+          <h3 style="margin-bottom:18px; font-size:18px; font-weight:700; color: #fff; text-align: center;">Account Password Recovery</h3><p>Contact the administrator to verify your identity and receive a recovery code. Codes expire after 30 minutes.</p>
           <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
             <label for="web-recover-role" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Role</label>
             <select id="web-recover-role" name="web-recover-role" aria-label="Role" class="form-input" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
@@ -837,8 +869,8 @@
             <input type="text" id="web-recover-username" name="web-recover-username" aria-label="Username or Account ID" class="form-input" placeholder="e.g. HH-117 or EMP-301" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
           </div>
           <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
-            <label for="web-recover-contact" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Registered Contact Number</label>
-            <input type="text" id="web-recover-contact" name="web-recover-contact" aria-label="Registered Contact Number" class="form-input" placeholder="e.g. 09171234567" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
+            <label for="web-recover-contact" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">One-use Recovery Code</label>
+            <input type="text" id="web-recover-contact" name="web-recover-contact" aria-label="One-use Recovery Code" class="form-input" placeholder="Request a recovery code from the administrator" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
           </div>
           <div class="form-group" style="margin-bottom: 20px; display: flex; flex-direction: column;">
             <label for="web-recover-new-password" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">New Password</label>
@@ -900,6 +932,137 @@
       </div>
     </div> <!-- Close app-screen -->
     </div> <!-- Close device-container -->
-  <script src="app.js?v=3.0.7"></script>
+  <script>
+    // Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/service-worker.js').then(function(reg) {
+          console.log('[SW] Service Worker registered with scope:', reg.scope);
+        }).catch(function(err) {
+          console.warn('[SW] Service Worker registration failed:', err);
+        });
+      });
+    }
+
+    // Helper: Convert URL-safe base64 string to Uint8Array for PushManager
+    function urlBase64ToUint8Array(base64String) {
+      var padding = '='.repeat((4 - base64String.length % 4) % 4);
+      var base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+      var rawData = window.atob(base64);
+      var outputArray = new Uint8Array(rawData.length);
+      for (var i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    // Web Push Subscription API bridge for WaterHall Client
+    window.WaterHallPush = {
+      async registerSubscription(role) {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+          console.log('[PUSH] Web Push not supported on this browser/environment');
+          return { success: false, reason: 'unsupported' };
+        }
+
+        try {
+          var permission = Notification.permission;
+          if (permission === 'default') {
+            permission = await Notification.requestPermission();
+          }
+          if (permission !== 'granted') {
+            console.log('[PUSH] Notification permission status:', permission);
+            return { success: false, reason: 'denied' };
+          }
+
+          var keyRes = await fetch('/api/push/vapid-public-key');
+          if (!keyRes.ok) throw new Error('Failed to fetch VAPID key');
+          var keyData = await keyRes.json();
+          var vapidKey = keyData.public_key;
+          if (!vapidKey) throw new Error('VAPID public key is empty');
+
+          var swReg = await navigator.serviceWorker.ready;
+          var sub = await swReg.pushManager.getSubscription();
+          if (!sub) {
+            sub = await swReg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(vapidKey)
+            });
+          }
+
+          var rawSub = sub.toJSON();
+          var jwt = window.localStorage.getItem('waterhall_jwt') || '';
+
+          var postRes = await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + jwt
+            },
+            body: JSON.stringify({
+              endpoint: sub.endpoint,
+              keys: rawSub.keys || {},
+              role: role || 'resident'
+            })
+          });
+
+          if (postRes.ok) {
+            console.log('[PUSH] Successfully registered Web Push subscription');
+            var banner = document.getElementById('push-permission-banner');
+            if (banner) banner.style.display = 'none';
+            return { success: true };
+          } else {
+            console.warn('[PUSH] Subscription registration failed on server');
+            return { success: false, reason: 'server_error' };
+          }
+        } catch (err) {
+          console.error('[PUSH] Subscription error:', err);
+          return { success: false, error: err.message };
+        }
+      },
+
+      async unregisterSubscription() {
+        try {
+          if ('serviceWorker' in navigator && 'PushManager' in window) {
+            var swReg = await navigator.serviceWorker.ready;
+            var sub = await swReg.pushManager.getSubscription();
+            if (sub) {
+              var jwt = window.localStorage.getItem('waterhall_jwt') || '';
+              await fetch('/api/push/unsubscribe', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer ' + jwt
+                },
+                body: JSON.stringify({ endpoint: sub.endpoint })
+              }).catch(function() {});
+              await sub.unsubscribe();
+              console.log('[PUSH] Unsubscribed from Web Push');
+            }
+          }
+        } catch (err) {
+          console.warn('[PUSH] Unsubscribe error:', err);
+        }
+      },
+
+      checkPermissionBanner() {
+        if ('Notification' in window && Notification.permission === 'default') {
+          var banner = document.getElementById('push-permission-banner');
+          if (banner) banner.style.display = 'flex';
+        }
+      }
+    };
+
+    // Attach click handler for Enable Push button
+    document.addEventListener('DOMContentLoaded', function() {
+      var btn = document.getElementById('btn-enable-push');
+      if (btn) {
+        btn.addEventListener('click', function() {
+          var role = window.location.search.includes('role=worker') ? 'worker' : 'resident';
+          window.WaterHallPush.registerSubscription(role);
+        });
+      }
+    });
+  </script>
+  <script src="app.js?v=3.0.8"></script>
 </body>
 </html>

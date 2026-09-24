@@ -1,3 +1,6 @@
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
+}
 let jwtToken = localStorage.getItem('admin_jwt');
 let isServerOnline = false;
 let globalData = {
@@ -264,6 +267,11 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     });
     if (res.ok) {
       const data = await res.json();
+      if (data.role !== 'admin') {
+        errEl.textContent = 'An administrator account is required.';
+        errEl.style.display = 'block';
+        return;
+      }
       jwtToken = data.access_token;
       localStorage.setItem('admin_jwt', jwtToken);
       isServerOnline = true;
@@ -341,7 +349,7 @@ async function fetchData(silent = false) {
     return;
   }
   try {
-    const res = await fetch('/api/all-data', {
+    const res = await fetch('/api/all-data?role=admin', {
       headers: { 'Authorization': 'Bearer ' + jwtToken }
     });
 
@@ -415,15 +423,15 @@ function renderDashboard(data) {
       const d = log.date ? new Date(log.date).toLocaleDateString() : 'N/A';
       
       const photoHtml = log.photo_base64
-        ? `<br><div style="margin-top:6px;"><img src="${log.photo_base64}" style="max-width:140px; max-height:90px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:zoom-in;" onclick="const w=window.open(); w.document.write('<img src=\x22'+this.src+'\x22 style=\x22max-width:100%; max-height:100vh; display:block; margin:auto;\x22 />')" title="Click to view full image" /></div>`
+        ? `<br><div style="margin-top:6px;"><img src="${escapeHtml(log.photo_base64)}" style="max-width:140px; max-height:90px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:zoom-in;" data-report-photo="true" title="Click to view full image" /></div>`
         : '';
 
-      tr.innerHTML =
-        '<td>' + log.task_id + '</td>' +
-        '<td>' + log.purok + '</td>' +
-        '<td>' + log.description + photoHtml + '</td>' +
+      tr.innerHTML = DOMPurify.sanitize(
+        '<td>' + escapeHtml(log.task_id) + '</td>' +
+        '<td>' + escapeHtml(log.purok) + '</td>' +
+        '<td>' + escapeHtml(log.description) + photoHtml + '</td>' +
         '<td>' + d + '</td>' +
-        '<td>' + statusBadge + '</td>';
+        '<td>' + statusBadge + '</td>');
       tbody.appendChild(tr);
     });
   }
@@ -476,13 +484,13 @@ function renderCharts(data) {
   const ctxQual = document.getElementById('qualityChart').getContext('2d');
   if (charts.quality) charts.quality.destroy();
 
-  const ca = data.centralAssets || { main_tank_level: 68, turbidity: 6.2, ph_level: 7.2 };
+  const ca = data.centralAssets || { has_reading: false };
   charts.quality = new Chart(ctxQual, {
     type: 'doughnut',
     data: {
       labels: ['Water Level %', 'Turbidity NTU', 'pH Level'],
       datasets: [{
-        data: [ca.main_tank_level, ca.turbidity, ca.ph_level],
+        data: ca.has_reading === false ? [] : [ca.main_tank_level, ca.turbidity, ca.ph_status === 'unknown' ? null : ca.ph_level],
         backgroundColor: ['#3498DB', '#10B981', '#F4D03F'],
         borderWidth: 0,
         hoverOffset: 6
@@ -508,12 +516,12 @@ function renderDirectory(data) {
   } else {
     data.households.forEach(h => {
       const tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td><span class="badge" style="background:rgba(255,255,255,0.08);color:#fff;">' + h.house_id + '</span></td>' +
-        '<td style="font-weight:600;">' + h.owner_name + '</td>' +
-        '<td style="font-family:monospace;color:var(--text-muted);">' + h.account_number + '</td>' +
-        '<td style="font-family:monospace;color:var(--text-muted);"><span class="pw-display">••••••••</span><button onclick="toggleRowPassword(this, \'' + (h.plain_password || '').replace(/'/g, "\\'") + '\')" style="background:none; border:none; color:var(--text-muted); cursor:pointer; margin-left:8px;" title="Toggle Password">👁</button></td>' +
-        '<td style="text-align:center;"><button onclick="deleteHousehold(\'' + h.house_id + '\')" style="background:none; border:none; color:var(--danger); cursor:pointer;" title="Remove Resident"><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></td>';
+      tr.innerHTML = DOMPurify.sanitize(
+        '<td><span class="badge" style="background:rgba(255,255,255,0.08);color:#fff;">' + escapeHtml(h.house_id) + '</span></td>' +
+        '<td style="font-weight:600;">' + escapeHtml(h.owner_name) + '</td>' +
+        '<td style="font-family:monospace;color:var(--text-muted);">' + escapeHtml(h.account_number) + '</td>' +
+        '<td style="color:var(--text-muted);">' + (h.purok || '—') + '</td>' +
+        '<td style="text-align:center;"><button data-delete-household="' + escapeHtml(h.house_id) + '" style="background:none; border:none; color:var(--danger); cursor:pointer;" title="Remove Resident"><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></td>');
       resTbody.appendChild(tr);
     });
   }
@@ -526,28 +534,19 @@ function renderDirectory(data) {
   } else {
     data.workers.forEach(w => {
       const tr = document.createElement('tr');
-      const deleteBtn = w.role === 'Admin' ? '' : '<button onclick="deleteWorker(\'' + w.worker_id + '\')" style="background:none; border:none; color:var(--danger); cursor:pointer;" title="Remove Worker"><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
-      tr.innerHTML =
-        '<td><span class="badge worker">' + w.worker_id + '</span></td>' +
-        '<td style="font-weight:600;">' + w.name + '</td>' +
-        '<td>' + w.role + '</td>' +
-        '<td style="font-family:monospace;color:var(--text-muted);"><span class="pw-display">••••••••</span><button onclick="toggleRowPassword(this, \'' + (w.plain_password || '').replace(/'/g, "\\'") + '\')" style="background:none; border:none; color:var(--text-muted); cursor:pointer; margin-left:8px;" title="Toggle Password">👁</button></td>' +
-        '<td style="text-align:center;">' + deleteBtn + '</td>';
+      const deleteBtn = w.role === 'Admin' ? '' : '<button data-delete-worker="' + escapeHtml(w.worker_id) + '" style="background:none; border:none; color:var(--danger); cursor:pointer;" title="Remove Worker"><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
+      tr.innerHTML = DOMPurify.sanitize(
+        '<td><span class="badge worker">' + escapeHtml(w.worker_id) + '</span></td>' +
+        '<td style="font-weight:600;">' + escapeHtml(w.name) + '</td>' +
+        '<td>' + escapeHtml(w.role) + '</td>' +
+        '<td style="color:var(--text-muted);">' + (w.zone || '—') + '</td>' +
+        '<td style="text-align:center;">' + deleteBtn + '</td>');
       workTbody.appendChild(tr);
     });
   }
 }
 
-window.toggleRowPassword = function(btn, pw) {
-  const span = btn.previousElementSibling;
-  if (span.textContent === '••••••••') {
-    span.textContent = pw;
-    span.style.color = '#fff';
-  } else {
-    span.textContent = '••••••••';
-    span.style.color = 'var(--text-muted)';
-  }
-};
+
 
 window.deleteHousehold = async function(id) {
   if (confirm("Are you sure you want to remove this resident? This action cannot be undone.")) {
@@ -775,7 +774,7 @@ document.getElementById('btn-recover-submit').addEventListener('click', async ()
       body: JSON.stringify({
         role: role,
         username: username,
-        contact_no: contact,
+        reset_token: contact,
         new_password: newPassword
       })
     });
@@ -805,7 +804,7 @@ function renderAnnouncements(announcements) {
   if (!tbody) return;
   tbody.innerHTML = '';
   if (!announcements || announcements.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:32px;">No announcements broadcasted yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:32px;">No announcements broadcasted yet.</td></tr>';
     return;
   }
   announcements.forEach(item => {
@@ -813,10 +812,25 @@ function renderAnnouncements(announcements) {
     const d = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Just now';
     const auth = item.author || 'Barangay Admin';
     const msg = item.message || '';
-    tr.innerHTML =
+    const audience = item.target_audience || 'Everyone';
+
+    let audienceBadge = '<span class="badge" style="background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">Everyone</span>';
+    if (audience === 'Workers only') {
+      audienceBadge = '<span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.3); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">Workers only</span>';
+    } else if (audience === 'Residents only') {
+      audienceBadge = '<span class="badge" style="background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">Residents only</span>';
+    }
+
+    let authBadge = '<span class="badge info" style="background:rgba(14,165,233,0.15); color:#38bdf8; border:1px solid rgba(14,165,233,0.3); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">' + escapeHtml(auth) + '</span>';
+    if (auth.toLowerCase().includes('sensor') || auth.toLowerCase().includes('alert')) {
+      authBadge = '<span class="badge alert" style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">' + escapeHtml(auth) + '</span>';
+    }
+
+    tr.innerHTML = DOMPurify.sanitize(
       '<td style="color:var(--text-muted); font-size:13px;">' + d + '</td>' +
-      '<td><span class="badge info" style="background:rgba(14,165,233,0.15); color:#38bdf8; border:1px solid rgba(14,165,233,0.3); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">' + auth + '</span></td>' +
-      '<td style="font-weight:500; line-height:1.5;">' + msg + '</td>';
+      '<td>' + authBadge + '</td>' +
+      '<td>' + audienceBadge + '</td>' +
+      '<td style="font-weight:500; line-height:1.5;">' + escapeHtml(msg) + '</td>');
     tbody.appendChild(tr);
   });
 }
@@ -830,6 +844,9 @@ document.getElementById('btn-admin-broadcast')?.addEventListener('click', async 
     return;
   }
 
+  const audienceSelect = document.getElementById('admin-announcement-audience');
+  const audience = audienceSelect ? audienceSelect.value : 'Everyone';
+
   const btn = document.getElementById('btn-admin-broadcast');
   btn.textContent = 'Broadcasting...';
   btn.disabled = true;
@@ -842,14 +859,16 @@ document.getElementById('btn-admin-broadcast')?.addEventListener('click', async 
         'Authorization': 'Bearer ' + jwtToken
       },
       body: JSON.stringify({
+        operation_id: crypto.randomUUID(),
         message: msg,
-        author: 'Barangay Admin'
+        author: 'Barangay Admin',
+        target_audience: audience
       })
     });
 
     if (res.ok) {
       input.value = '';
-      alert('Announcement successfully broadcasted to all Worker and Resident apps!');
+      alert(`Announcement successfully broadcasted to ${audience}!`);
       fetchData(true);
     } else {
       const errData = await res.json().catch(() => ({}));
@@ -878,15 +897,15 @@ function renderBilling(records) {
   }
   records.forEach(b => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${b.bill_id}</strong></td>
-      <td>${b.house_id}</td>
-      <td><code>${b.account_number}</code></td>
-      <td>${b.billing_month}</td>
+    tr.innerHTML = DOMPurify.sanitize( `
+      <td><strong>${escapeHtml(b.bill_id)}</strong></td>
+      <td>${escapeHtml(b.house_id)}</td>
+      <td><code>${escapeHtml(b.account_number)}</code></td>
+      <td>${escapeHtml(b.billing_month)}</td>
       <td>${b.consumption} m³</td>
       <td><strong>₱${b.total_due.toFixed(2)}</strong></td>
-      <td><span class="badge ${b.status === 'Paid' ? 'badge-success' : 'badge-warning'}">${b.status}</span></td>
-    `;
+      <td><span class="badge ${b.status === 'Paid' ? 'badge-success' : 'badge-warning'}">${escapeHtml(b.status)}</span></td>
+    `);
     tbody.appendChild(tr);
   });
 }
@@ -902,15 +921,15 @@ function renderCollectionsHistory(collections) {
   collections.forEach(c => {
     const tr = document.createElement('tr');
     const amt = parseFloat(c.amount_collected || 0).toFixed(2);
-    tr.innerHTML = `
-      <td><code style="color:var(--accent-color);font-weight:700;">${c.transaction_id}</code></td>
-      <td>${c.family_head_name || 'HH-' + c.household_id}</td>
-      <td>${c.purok_name || 'Purok 1'}</td>
+    tr.innerHTML = DOMPurify.sanitize( `
+      <td><code style="color:var(--accent-color);font-weight:700;">${escapeHtml(c.transaction_id)}</code></td>
+      <td>${escapeHtml(c.family_head_name || 'HH-' + c.household_id)}</td>
+      <td>${escapeHtml(c.purok_name || 'Purok 1')}</td>
       <td><strong style="color:var(--success)">₱${amt}</strong></td>
-      <td>${c.payment_method || 'Cash'}</td>
-      <td>${c.collected_by}</td>
-      <td><small style="color:var(--text-muted)">${c.collection_date}</small></td>
-    `;
+      <td>${escapeHtml(c.payment_method || 'Cash')}</td>
+      <td>${escapeHtml(c.collected_by)}</td>
+      <td><small style="color:var(--text-muted)">${escapeHtml(c.collection_date)}</small></td>
+    `);
     tbody.appendChild(tr);
   });
 }
@@ -1004,17 +1023,17 @@ function renderReports(reports) {
   }
   reports.forEach(r => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
+    tr.innerHTML = DOMPurify.sanitize( `
       <td><strong>REP-${r.report_id}</strong></td>
-      <td>${r.family_head_name || r.household_id} (${r.purok_name || 'Purok 1'})</td>
-      <td><span class="badge badge-warning">${r.report_type}</span></td>
-      <td>${r.description}</td>
-      <td><small style="color:var(--text-muted)">${r.created_at}</small></td>
-      <td><span class="badge ${r.status === 'Resolved' ? 'badge-success' : 'badge-danger'}">${r.status}</span></td>
+      <td>${escapeHtml(r.family_head_name || r.household_id)} (${escapeHtml(r.purok_name || 'Purok 1')})</td>
+      <td><span class="badge badge-warning">${escapeHtml(r.report_type)}</span></td>
+      <td>${escapeHtml(r.description)}${r.photo_base64 ? `<br><img data-report-photo="true" src="${escapeHtml(r.photo_base64)}" style="max-width:140px;max-height:100px" alt="Report evidence">` : ''}</td>
+      <td><small style="color:var(--text-muted)">${escapeHtml(r.created_at)}</small></td>
+      <td><span class="badge ${r.status === 'Resolved' ? 'badge-success' : 'badge-danger'}">${escapeHtml(r.status)}</span></td>
       <td>
-        ${r.status !== 'Resolved' ? `<button class="btn" style="background:#10B981;color:white;padding:4px 10px;font-size:11px;" onclick="resolveReport(${r.report_id})">Mark Resolved</button>` : '<span style="color:var(--text-muted);font-size:11px;">Resolved</span>'}
+        ${r.status !== 'Resolved' ? `<button class="btn" style="background:#10B981;color:white;padding:4px 10px;font-size:11px;" data-resolve-report="${r.report_id}">Mark Resolved</button>` : '<span style="color:var(--text-muted);font-size:11px;">Resolved</span>'}
       </td>
-    `;
+    `);
     tbody.appendChild(tr);
   });
 }
@@ -1041,3 +1060,24 @@ window.resolveReport = async function(reportId) {
   }
 };
 
+
+// Only trusted code handles actions; never execute handlers from stored report text.
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-delete-household], [data-delete-worker], [data-resolve-report]');
+  if (!button) return;
+  if (button.dataset.deleteHousehold) window.deleteHousehold(button.dataset.deleteHousehold);
+  if (button.dataset.deleteWorker) window.deleteWorker(button.dataset.deleteWorker);
+  if (button.dataset.resolveReport) window.resolveReport(Number(button.dataset.resolveReport));
+});
+
+document.addEventListener('click', event => {
+  if (!event.target.matches('img[data-report-photo]')) return;
+  const popup = window.open('', '_blank');
+  if (popup) {
+    popup.opener = null;
+    const photo = popup.document.createElement('img');
+    photo.src = event.target.src;
+    photo.style.maxWidth = '100%';
+    popup.document.body.appendChild(photo);
+  }
+});

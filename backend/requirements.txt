@@ -1,9 +1,1 @@
-Flask
-Flask-JWT-Extended
-Flask-Limiter
-Flask-CORS
-Flask-WTF
-Werkzeug
-psycopg2-binary
-pg8000
-gunicorn
+-r ../requirements.txt

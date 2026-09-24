@@ -1,3 +1,5 @@
+> Historical UI walkthrough. For current authentication, database, offline storage, and deployment instructions, use the root README.md. Development credentials have been removed.
+
 # WATERHALL Mobile Wrapper & Web App Overhaul Walkthrough
 
 We have successfully split the water management client into two independent, role-segregated apps and implemented a brand new **Flutter Wrapper App** with customizable IP connections!
@@ -28,7 +30,7 @@ We have successfully split the water management client into two independent, rol
 ---
 
 ### 4. Admin Website Autofill Removal & Recovery Flow
-*   **Autofill Removal:** Cleaned up `admin_web/index.html` by removing default `value="admin"` and `value="[REDACTED]"` attributes from login inputs, forcing manual credential entry like a standard website.
+*   **Autofill Removal:** Cleaned up `admin_web/index.html` by removing default `value="admin"` and `value="[removed insecure development password]"` attributes from login inputs, forcing manual credential entry like a standard website.
 *   **Registered Recovery Contact Info:** Modified registration modals (Resident & Worker) to collect the user's **Contact Number** on creation, mapping them to `contact_no` columns.
 *   **Interactive Recovery Flow:** Created an **Account Recovery Modal** on both the Admin Website and the mobile client portal.
 *   **Security Recovery Backend:** Added the `/api/recover-account` endpoint in `server.py` to match the role, username, and contact number (verifying it by normalizing formatting) before securely updating the user's hashed password.
@@ -36,7 +38,7 @@ We have successfully split the water management client into two independent, rol
 ---
 
 ### 5. Robust Account & Password Security
-*   **Disabled Global Default Password Fallback:** Removed the insecure `or password == '[REDACTED]'` override from the server backend (`server.py`). The system no longer permits accessing any account via this fallback.
+*   **Disabled Global Default Password Fallback:** Removed the insecure `or password == '[removed insecure development password]'` override from the server backend (`server.py`). The system no longer permits accessing any account via this fallback.
 *   **Enforced Unique Password Verification:** Both worker logins (`users` table) and resident logins (`households` table) now strictly authenticate using Werkzeug's `check_password_hash` against the account's assigned unique password.
 *   **Strict Client-Side Cleanups:** Cleaned up the mock credential bypasses inside `web/db.dart` (`validateWorker` and `validateResident`) to match exact passwords, eliminating mock vulnerabilities.
 

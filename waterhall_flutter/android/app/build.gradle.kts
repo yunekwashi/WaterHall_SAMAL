@@ -1,15 +1,36 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val signingFile = rootProject.file("key.properties")
+val releaseKeys = Properties()
+if (signingFile.exists()) signingFile.inputStream().use { releaseKeys.load(it) }
+if (gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) } && !signingFile.exists()) {
+    throw GradleException("Release signing requires ignored android/key.properties. See README.md.")
+}
+
 android {
+    signingConfigs {
+        if (signingFile.exists()) {
+            create("production") {
+                storeFile = file(releaseKeys.getProperty("storeFile"))
+                storePassword = releaseKeys.getProperty("storePassword")
+                keyAlias = releaseKeys.getProperty("keyAlias")
+                keyPassword = releaseKeys.getProperty("keyPassword")
+            }
+        }
+    }
+
     namespace = "com.example.waterhall_flutter"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -33,9 +54,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (signingFile.exists()) signingConfig = signingConfigs.getByName("production")
         }
     }
 }
@@ -48,4 +67,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }

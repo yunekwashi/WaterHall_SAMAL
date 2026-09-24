@@ -9,24 +9,21 @@
  *   3. Analog TDS Meter Sensor (Total Dissolved Solids ppm)
  *
  * Backend Endpoint:
- *   POST http://<SERVER_IP>:8000/api/iot/telemetry
+ *   POST <configured HTTPS origin>/api/iot/telemetry
  * ==============================================================================
  */
 
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <time.h>
 
 // ==============================================================================
 // 1. NETWORK & SERVER CONFIGURATION
 // ==============================================================================
-const char* WIFI_SSID     = "[REDACTED]";      // Replace with your WiFi SSID
-const char* WIFI_PASSWORD = "[REDACTED]";     // Replace with your WiFi Password
-
-// Server Endpoint URL
-// - For local network test: "http://192.168.254.140:8000/api/iot/telemetry"
-// - For Vercel cloud deployment: "https://<your-project>.vercel.app/api/iot/telemetry"
-const char* SERVER_URL    = "http://192.168.254.140:8000/api/iot/telemetry";
+// Copy device_config.example.h to the ignored device_config.h and configure it.
+#include "device_config.h"
+const String SERVER_URL = String(SERVER_BASE_URL) + "/api/iot/telemetry";
 
 // Telemetry transmit interval (in milliseconds)
 const unsigned long SEND_INTERVAL_MS = 5000; // Send every 5 seconds
@@ -160,6 +157,7 @@ int readTDSppm() {
 // 5. SETUP & WIFI INITIALIZATION
 // ==============================================================================
 void setup() {
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n==================================================");
@@ -227,13 +225,11 @@ void loop() {
     int waterLevelPct = readWaterLevelPercentage();
     float turbidityNTU = readTurbidityNTU();
     int tdsPPM         = readTDSppm();
-    float phLevel      = 7.20; // Default or connect pH probe to GPIO 36 (VP)
 
     // 2. Format JSON Payload matching server schema
     String jsonPayload = "{";
     jsonPayload += "\"water_level_percentage\":" + String(waterLevelPct) + ",";
     jsonPayload += "\"turbidity_ntu\":" + String(turbidityNTU, 2) + ",";
-    jsonPayload += "\"ph_level\":" + String(phLevel, 2) + ",";
     jsonPayload += "\"tds_ppm\":" + String(tdsPPM);
     jsonPayload += "}";
 
@@ -244,12 +240,16 @@ void loop() {
     HTTPClient http;
     bool beginOk = false;
 
+    WiFiClientSecure secureClient; // Must outlive the HTTP request.
+    WiFiClient standardClient;
     if (String(SERVER_URL).startsWith("https://")) {
-      WiFiClientSecure secureClient;
-      secureClient.setInsecure(); // Skip certificate verification for serverless endpoints
+      if (strlen(ROOT_CA) == 0 || strlen(IOT_DEVICE_SECRET) < 32) {
+        Serial.println("Configure CA certificate and device credential before sending.");
+        return;
+      }
+      secureClient.setCACert(ROOT_CA);
       beginOk = http.begin(secureClient, SERVER_URL);
-    } else {
-      WiFiClient standardClient;
+    } else if (ALLOW_INSECURE_LOCAL_HTTP && String(SERVER_URL).startsWith("http://")) {
       beginOk = http.begin(standardClient, SERVER_URL);
     }
 
@@ -259,6 +259,9 @@ void loop() {
     }
 
     http.addHeader("Content-Type", "application/json");
+    if (strlen(IOT_DEVICE_SECRET) > 0) {
+      http.addHeader("X-IoT-Secret", IOT_DEVICE_SECRET);
+    }
     http.setTimeout(8000); // 8 second timeout for cloud / edge requests
 
     // Quick visual blink on transmit

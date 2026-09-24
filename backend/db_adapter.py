@@ -1,97 +1,74 @@
-import os
+"""Small, parameterized PostgreSQL / SQLite adapter with explicit migrations."""
+import re
+from decimal import Decimal
 import sqlite3
-import datetime
-from werkzeug.security import generate_password_hash
+from pathlib import Path
+from backend import config
 
-# Try to import psycopg2 for PostgreSQL (when deployed to Vercel with Vercel Postgres / Neon / Supabase)
-try:
-    import psycopg2
-    from psycopg2 import pool as pg_pool
-    from psycopg2.extras import RealDictCursor
-    HAS_PSYCOPG2 = True
-except ImportError:
-    HAS_PSYCOPG2 = False
+DB_FILE = config.DATABASE_PATH
+POSTGRES_URL = config.DATABASE_URL
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_FILE = os.path.join(BASE_DIR, 'database', 'waterhall.db')
-
-# Ensure database directory exists
-os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
-
-# PostgreSQL connection string from environment
-POSTGRES_URL = os.environ.get('POSTGRES_URL') or os.environ.get('DATABASE_URL')
-# Vercel Postgres URLs often use postgres:// which psycopg2 prefers as postgresql://
-if POSTGRES_URL and POSTGRES_URL.startswith('postgres://'):
-    POSTGRES_URL = POSTGRES_URL.replace('postgres://', 'postgresql://', 1)
-
-_pg_connection_pool = None
 
 def is_postgres():
-    return bool(POSTGRES_URL and HAS_PSYCOPG2)
+    return bool(POSTGRES_URL)
 
-def get_pg_pool():
-    global _pg_connection_pool
-    if _pg_connection_pool is None and is_postgres():
-        _pg_connection_pool = pg_pool.SimpleConnectionPool(1, 10, POSTGRES_URL)
-    return _pg_connection_pool
 
 class DBConnection:
-    """Wrapper that normalizes SQLite and PostgreSQL connections and queries."""
     def __init__(self):
         self.is_pg = is_postgres()
+        self._lastrowid = None
         if self.is_pg:
-            pool = get_pg_pool()
-            if pool:
-                self.conn = pool.getconn()
-            else:
-                self.conn = psycopg2.connect(POSTGRES_URL)
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+            from urllib.parse import urlparse, parse_qs
+            if config.PRODUCTION and parse_qs(urlparse(POSTGRES_URL).query).get('sslmode') != ['verify-full']:
+                raise RuntimeError('Production DATABASE_URL must use sslmode=verify-full')
+            self.conn = psycopg2.connect(POSTGRES_URL, connect_timeout=10)
             self.cursor_obj = self.conn.cursor(cursor_factory=RealDictCursor)
         else:
-            self.conn = sqlite3.connect(DB_FILE)
+            if config.PRODUCTION:
+                raise RuntimeError('SQLite is not allowed in production')
+            Path(DB_FILE).parent.mkdir(parents=True, exist_ok=True)
+            self.conn = sqlite3.connect(DB_FILE, timeout=15)
             self.conn.row_factory = sqlite3.Row
             self.cursor_obj = self.conn.cursor()
-            self.cursor_obj.execute("PRAGMA foreign_keys = ON;")
-
-    def _convert_query(self, query):
-        if self.is_pg:
-            # Convert SQLite placeholders '?' to PostgreSQL '%s'
-            # Be careful not to replace ? inside strings if any, but our queries use standard parameterized ?
-            return query.replace('?', '%s')
-        else:
-            return query
+            self.cursor_obj.execute('PRAGMA foreign_keys = ON')
 
     def execute(self, query, params=None):
-        q = self._convert_query(query)
-        if params is None:
-            return self.cursor_obj.execute(q)
-        return self.cursor_obj.execute(q, params)
+        self._lastrowid = None
+        returning = False
+        if self.is_pg:
+            ids = {'users': 'user_id', 'puroks': 'purok_id', 'households': 'household_id',
+                   'water_meters': 'meter_id', 'billing_records': 'bill_id',
+                   'resident_reports': 'report_id', 'announcements': 'id',
+                   'maintenance_logs': 'task_id', 'payment_collections': 'collection_id',
+                   'push_subscriptions': 'sub_id', 'push_outbox': 'id'}
+            match = re.match(r'\s*INSERT INTO (\w+)', query, re.I)
+            if match and match[1].lower() in ids and 'RETURNING' not in query.upper():
+                query = query.rstrip().rstrip(';') + ' RETURNING ' + ids[match[1].lower()]
+                returning = True
+            if params is not None:
+                query = query.replace('%', '%%').replace('?', '%s')
+        result = self.cursor_obj.execute(query, params) if params is not None else self.cursor_obj.execute(query)
+        if returning:
+            row = self.cursor_obj.fetchone()
+            self._lastrowid = next(iter(row.values())) if row else None
+        return result
 
     def executemany(self, query, params_list):
-        q = self._convert_query(query)
-        return self.cursor_obj.executemany(q, params_list)
+        for params in params_list:
+            self.execute(query, params)
 
     def fetchone(self):
         row = self.cursor_obj.fetchone()
-        if row is None:
-            return None
-        if self.is_pg:
-            return dict(row)
-        return dict(row)
+        return {k: float(v) if isinstance(v, Decimal) else v for k, v in dict(row).items()} if row is not None else None
 
     def fetchall(self):
-        rows = self.cursor_obj.fetchall()
-        if not rows:
-            return []
-        if self.is_pg:
-            return [dict(r) for r in rows]
-        return [dict(r) for r in rows]
+        return [{k: float(v) if isinstance(v, Decimal) else v for k, v in dict(row).items()} for row in self.cursor_obj.fetchall()]
 
     @property
     def lastrowid(self):
-        if self.is_pg:
-            # Handled via RETURNING in Postgres if needed, or cursor_obj.lastrowid
-            return getattr(self.cursor_obj, 'lastrowid', None)
-        return self.cursor_obj.lastrowid
+        return self._lastrowid if self.is_pg else self.cursor_obj.lastrowid
 
     @property
     def rowcount(self):
@@ -101,56 +78,54 @@ class DBConnection:
         self.conn.commit()
 
     def rollback(self):
-        try:
-            self.conn.rollback()
-        except Exception:
-            pass
+        self.conn.rollback()
 
     def close(self):
-        try:
-            self.cursor_obj.close()
-        except Exception:
-            pass
-        if self.is_pg and _pg_connection_pool:
-            try:
-                _pg_connection_pool.putconn(self.conn)
-            except Exception:
-                self.conn.close()
-        else:
-            self.conn.close()
+        self.cursor_obj.close()
+        self.conn.close()
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            self.rollback()
-        else:
-            self.commit()
-        self.close()
+        try:
+            if exc_type:
+                self.rollback()
+            else:
+                self.commit()
+        finally:
+            self.close()
+
 
 def get_db():
     return DBConnection()
 
+
+def columns(db, table):
+    if db.is_pg:
+        db.execute('SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?', (table,))
+        return {r['column_name'] for r in db.fetchall()}
+    db.execute(f'PRAGMA table_info({table})')
+    return {r['name'] for r in db.fetchall()}
+
+
 def init_db():
-    """Initializes schema on both PostgreSQL and SQLite."""
+    """Explicit, repeatable non-destructive migration; never seeds users or telemetry."""
     use_pg = is_postgres()
-    print(f"[DB ADAPTER] Initializing database (Mode: {'PostgreSQL' if use_pg else 'SQLite'})...")
-
     with get_db() as db:
-        pk_auto = "SERIAL PRIMARY KEY" if use_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
-        text_type = "TEXT"
-        int_type = "INTEGER"
-        real_type = "REAL"
-        bool_type = "BOOLEAN" if use_pg else "INTEGER"
-
+        if use_pg:
+            db.execute('SELECT pg_advisory_xact_lock(84210421)')
+        else:
+            db.execute('BEGIN IMMEDIATE')
+        pk_auto = 'SERIAL PRIMARY KEY' if use_pg else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        text_type, int_type, real_type, bool_type = 'TEXT', 'INTEGER', 'DOUBLE PRECISION' if use_pg else 'REAL', 'INTEGER'
+        money_type = 'NUMERIC(14,2)' if use_pg else 'REAL'
         # 1. Users table
         db.execute(f'''
             CREATE TABLE IF NOT EXISTS users (
                 user_id {pk_auto},
                 username {text_type} NOT NULL UNIQUE,
                 password_hash {text_type} NOT NULL,
-                plain_password {text_type} DEFAULT NULL,
                 full_name {text_type} NOT NULL,
                 role {text_type} NOT NULL CHECK (role IN ('Admin', 'Collector')),
                 contact_no {text_type} DEFAULT NULL,
@@ -177,7 +152,6 @@ def init_db():
                 contact_no {text_type} DEFAULT NULL,
                 registration_date {text_type} NOT NULL,
                 password_hash {text_type} NOT NULL,
-                plain_password {text_type} DEFAULT NULL,
                 current_leak_status {text_type} DEFAULT 'normal',
                 flow_rate {real_type} DEFAULT 0.0,
                 leak_detected_at {text_type} DEFAULT NULL,
@@ -209,7 +183,7 @@ def init_db():
                 previous_reading {real_type} NOT NULL,
                 present_reading {real_type} NOT NULL,
                 consumption_m3 {real_type} NOT NULL,
-                total_amount {real_type} NOT NULL,
+                total_amount {money_type} NOT NULL,
                 payment_status {text_type} NOT NULL DEFAULT 'Unpaid' CHECK (payment_status IN ('Paid', 'Unpaid')),
                 payment_date {text_type} DEFAULT NULL,
                 collected_by {int_type} DEFAULT NULL,
@@ -229,7 +203,7 @@ def init_db():
                 reading_id {pk_auto},
                 water_level_percentage {int_type} NOT NULL CHECK (water_level_percentage BETWEEN 0 AND 100),
                 turbidity_ntu {real_type} NOT NULL,
-                ph_level {real_type} DEFAULT 7.20,
+                ph_level {real_type} DEFAULT NULL,
                 tds_ppm {int_type} NOT NULL,
                 recorded_at {text_type} DEFAULT CURRENT_TIMESTAMP
             );
@@ -254,6 +228,7 @@ def init_db():
                 id {pk_auto},
                 message {text_type} NOT NULL,
                 author {text_type} NOT NULL,
+                target_audience {text_type} NOT NULL DEFAULT 'Everyone',
                 timestamp {text_type} DEFAULT CURRENT_TIMESTAMP
             );
         ''')
@@ -279,7 +254,7 @@ def init_db():
                 transaction_id {text_type} NOT NULL UNIQUE,
                 bill_id {int_type} DEFAULT NULL,
                 household_id {int_type} NOT NULL,
-                amount_collected {real_type} NOT NULL,
+                amount_collected {money_type} NOT NULL,
                 collection_date {text_type} NOT NULL,
                 collected_by {text_type} NOT NULL,
                 payment_method {text_type} DEFAULT 'Cash',
@@ -309,55 +284,57 @@ def init_db():
             );
         ''')
 
-        # Seed Admin User if missing
-        default_pw_hash = generate_password_hash(os.environ.get('DEFAULT_PASSWORD', '[REDACTED]'))
-        db.execute("SELECT COUNT(*) AS cnt FROM users WHERE username = 'admin';")
-        res = db.fetchone()
-        count = res['cnt'] if res and 'cnt' in res else (list(res.values())[0] if res else 0)
-        if count == 0:
-            db.execute('''
-                INSERT INTO users (username, password_hash, plain_password, full_name, role, contact_no, assigned_zone)
-                VALUES ('admin', ?, '[REDACTED]', 'Barangay Admin', 'Admin', '09171234567', 'Purok 1');
-            ''', (default_pw_hash,))
+        # 13. Push Subscriptions (Web Push / VAPID for browser & PWA notifications)
+        db.execute(f'''
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                sub_id {pk_auto},
+                household_id {int_type} DEFAULT NULL,
+                username {text_type} NOT NULL,
+                role {text_type} NOT NULL,
+                endpoint {text_type} NOT NULL UNIQUE,
+                p256dh {text_type} NOT NULL,
+                auth {text_type} NOT NULL,
+                is_active {bool_type} NOT NULL DEFAULT 1,
+                created_at {text_type} DEFAULT CURRENT_TIMESTAMP,
+                updated_at {text_type} DEFAULT CURRENT_TIMESTAMP
+            );
+        ''')
+        db.execute("CREATE INDEX IF NOT EXISTS idx_push_sub_role ON push_subscriptions (role, is_active)")
 
-        # Seed Puroks
-        db.execute("SELECT COUNT(*) AS cnt FROM puroks;")
-        res = db.fetchone()
-        count = res['cnt'] if res and 'cnt' in res else (list(res.values())[0] if res else 0)
-        if count == 0:
-            puroks_data = [
-                ('Purok 1', '00:1A:2B:3C:4D:5E'), ('Purok 2', '00:1A:2B:3C:4D:5F'),
-                ('Purok 3', '00:1A:2B:3C:4D:60'), ('Purok 4', '00:1A:2B:3C:4D:61'),
-                ('Purok 5', '00:1A:2B:3C:4D:62'), ('Purok 6', '00:1A:2B:3C:4D:63'),
-                ('Purok 7', '00:1A:2B:3C:4D:64'), ('Purok 8', '00:1A:2B:3C:4D:65')
-            ]
-            for p_name, p_mac in puroks_data:
-                db.execute("INSERT INTO puroks (purok_name, main_hose_sensor_mac) VALUES (?, ?);", (p_name, p_mac))
+        if use_pg:
+            for table, field in [('maintenance_logs', 'status_resolved'), ('push_subscriptions', 'is_active')]:
+                db.execute('SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?', (table, field))
+                if db.fetchone()['data_type'] == 'boolean':
+                    db.execute(f'ALTER TABLE {table} ALTER COLUMN {field} DROP DEFAULT')
+                    db.execute(f'ALTER TABLE {table} ALTER COLUMN {field} TYPE INTEGER USING ({field}::int)')
+                    db.execute(f'ALTER TABLE {table} ALTER COLUMN {field} SET DEFAULT 1')
+            for table, field in [('billing_records', 'total_amount'), ('payment_collections', 'amount_collected')]:
+                db.execute('SELECT data_type, numeric_precision, numeric_scale FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?', (table, field))
+                column = db.fetchone()
+                if (column['data_type'], column['numeric_precision'], column['numeric_scale']) != ('numeric', 14, 2):
+                    db.execute(f'ALTER TABLE {table} ALTER COLUMN {field} TYPE NUMERIC(14,2) USING ROUND({field}::numeric, 2)')
+            db.execute('ALTER TABLE reservoir_quality_readings ALTER COLUMN ph_level DROP DEFAULT')
 
-        # Seed Initial Telemetry if empty
-        db.execute("SELECT COUNT(*) AS cnt FROM reservoir_quality_readings;")
-        res = db.fetchone()
-        count = res['cnt'] if res and 'cnt' in res else (list(res.values())[0] if res else 0)
-        if count == 0:
-            db.execute('''
-                INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, ph_level, tds_ppm, recorded_at)
-                VALUES (68, 6.20, 7.20, 150, CURRENT_TIMESTAMP);
-            ''')
-
-        # Seed Default Payment Configuration if empty
-        default_settings = [
-            ('payment_location', 'Barangay Tagpopongan Hall - Treasury Office'),
-            ('payment_method', 'In-Person Payment at Barangay Hall / Field Worker Collection'),
-            ('allow_worker_collection', 'true'),
-            ('payment_instructions', 'Water bills are due on or before the 25th of each month. Payments can be settled in cash at the Barangay Hall Treasury Window or directly with your authorized Purok Field Collector during visits.'),
-            ('operating_hours', 'Monday - Friday, 8:00 AM - 5:00 PM'),
-            ('emergency_contact', '0917-123-4567 / (082) 555-WATER')
-        ]
-        for key, val in default_settings:
-            db.execute("SELECT COUNT(*) AS cnt FROM payment_settings WHERE setting_key = ?;", (key,))
-            res = db.fetchone()
-            c = res['cnt'] if res and 'cnt' in res else (list(res.values())[0] if res else 0)
-            if c == 0:
-                db.execute("INSERT INTO payment_settings (setting_key, setting_value) VALUES (?, ?);", (key, val))
-
-        print("[DB ADAPTER] Database schema and initial seeds ready.")
+        additions = {
+            'billing_records': {'billed_at': 'TEXT', 'billed_by': 'INTEGER'},
+            'announcements': {'target_audience': "TEXT NOT NULL DEFAULT 'Everyone'"},
+            'resident_reports': {'photo_base64': 'TEXT'},
+            'payment_collections': {'request_hash': 'TEXT'},
+        }
+        for table, fields in additions.items():
+            existing = columns(db, table)
+            for field, declaration in fields.items():
+                if field not in existing:
+                    db.execute(f'ALTER TABLE {table} ADD COLUMN {field} {declaration}')
+        db.execute(f"""CREATE TABLE IF NOT EXISTS password_resets (
+            token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL, kind TEXT NOT NULL,
+            expires_at TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0)""")
+        db.execute(f"""CREATE TABLE IF NOT EXISTS sync_operations (
+            operation_id TEXT PRIMARY KEY, actor TEXT NOT NULL, request_hash TEXT NOT NULL,
+            response_json TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute(f"""CREATE TABLE IF NOT EXISTS push_outbox (
+            id {pk_auto}, payload TEXT NOT NULL, target_audience TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+            lease_until TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT DEFAULT CURRENT_TIMESTAMP)')
+        db.execute('INSERT INTO schema_migrations (version) VALUES (1) ON CONFLICT (version) DO NOTHING')
