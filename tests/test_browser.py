@@ -33,16 +33,21 @@ def browser_page(system):
 
 def test_admin_login_and_stored_xss(browser_page):
     page, origin, (_, _, password), errors = browser_page
+    payload = '<img src=x onerror="window.xssExecuted=true">'
+    # Exercise the stored payload through the real data load. Injecting a row
+    # after login races fetchData(), which can overwrite the synthetic row.
+    with get_db() as db:
+        db.execute('INSERT INTO resident_reports (household_id, report_type, description) VALUES (?, ?, ?)',
+                   ('HH-1', 'Leak', payload))
     page.goto(origin + '/admin/')
     page.locator('#login-username').fill('admin')
     page.locator('#login-password').fill(password)
     page.locator('#btn-login').click()
     expect(page.locator('#login-screen')).to_be_hidden()
-    page.evaluate("""() => renderReports([{report_id:1, household_id:'HH-1', report_type:'Leak',
-        description:'<img src=x onerror="window.xssExecuted=true">', status:'Pending', created_at:'2026-09-01'}])""")
+    expect(page.locator('#reports-tbody [data-resolve-report]')).to_have_count(1)
+    expect(page.locator('#reports-tbody')).to_contain_text(payload)
     assert page.evaluate('window.xssExecuted === undefined')
     assert page.locator('#reports-tbody [onerror]').count() == 0
-    assert page.locator('#reports-tbody [data-resolve-report]').count() == 1
     assert errors == []
 
 

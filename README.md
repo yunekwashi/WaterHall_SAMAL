@@ -5,9 +5,10 @@ announcements, and reservoir telemetry. This repository contains the Flask API,
 Admin website, shared Dart browser UI, separate Worker and Resident Flutter
 WebView apps, and ESP32 firmware.
 
-**No deployment has been performed. Do not push the existing Git history yet.**
-Historical Wi-Fi credentials, insecure credential defaults, and private database
-data need the remediation described in [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
+**No push or deployment has been performed.** Local history has been rewritten;
+review [GITHUB_READINESS_REPORT.md](GITHUB_READINESS_REPORT.md) for verification
+and [CREDENTIAL_ROTATION_CHECKLIST.md](CREDENTIAL_ROTATION_CHECKLIST.md) for required
+manual rotation. The existing GitHub repository still needs coordinated remediation.
 See [PRE_DEPLOYMENT_CHECKLIST.md](PRE_DEPLOYMENT_CHECKLIST.md) before deployment.
 
 ## Architecture
@@ -294,19 +295,24 @@ $env:RUN_BROWSER_TESTS = '1'
 python -m pytest -q
 python -m pip_audit -r requirements.txt --progress-spinner off
 python scripts/audit_repository.py
+python scripts/audit_git_history.py
 ```
 
 Chrome is required for the opt-in browser tests (`channel='chrome'`). Tests use
 temporary SQLite files or fresh PostgreSQL schemas, never the normal local data
 file. Legacy test entrypoints delegate to this isolated suite. The current-tree
-scanner checks the proposed Git index and unignored files; it is not proof that
-Git history or all secret formats are clean. The final audit records actual runs,
-native build results, and remaining device/service integration checks.
+scanner checks the proposed Git index and unignored files. The history scanner
+checks every reachable blob/path, including IDE tree refs. Also run Gitleaks with
+`.gitleaks.toml` and `--log-opts=--all` on a full checkout; scan a source-only export
+for the current tree. Scanners cannot prove all possible secret formats absent.
+The readiness report records actual runs and remaining integration checks.
 
 ## Later deployment (not performed)
 
-1. Rotate exposed credentials and separately approve/remediate historical private
-   data before any push. Review the full diff, including pre-existing local changes.
+1. Complete the rotation checklist and review the cleaned local history before
+   separately authorizing a push. Coordinate replacement of the existing remote
+   history and collaborators' clones. The local remote was disconnected during
+   cleanup to avoid reintroducing the old history.
 2. Create production PostgreSQL, shared Redis, and optionally a private photo bucket.
    Configure secrets, exact HTTPS origins, backups, and monitoring.
 3. Rehearse migrations/import on a copy, then migrate the intended production DB

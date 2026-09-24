@@ -7,12 +7,14 @@ No deployment or push has been performed. An unchecked item is not certified.
 - [ ] Rotate the Wi-Fi password exposed in Git history; update affected devices.
 - [ ] Replace any deployed JWT/Flask key or account password based on old defaults.
 - [ ] Rotate the previous IoT credential and update both service and ESP32 config.
-- [ ] Review local VAPID keys and rotate if exposed; plan subscription re-registration.
+- [ ] Rotate VAPID keys found in a local Git snapshot; re-register subscriptions.
 - [ ] Review historical database/dump/test-response exposure as private user data.
-- [ ] Explicitly approve and perform an appropriate history-remediation strategy
-      (or create a separately reviewed clean repository); coordinate existing clones.
-- [ ] Re-scan all reachable Git history, the intended commit, and build artifacts.
-- [ ] Review the diff with existing local changes; authorize commit/push separately.
+- [x] Protect hardened source and rewrite local history under user authorization.
+- [ ] Review [GITHUB_READINESS_REPORT.md](GITHUB_READINESS_REPORT.md), complete
+      [credential rotation](CREDENTIAL_ROTATION_CHECKLIST.md), and coordinate
+      the existing GitHub history and other clones. The remote remains unchanged.
+- [ ] Repeat current-tree/history scans if additional changes are made after this audit.
+- [ ] Review the final local commits and authorize the GitHub push separately.
 - [ ] Verify `.env`, `device_config.h`, database data, signing keys, APKs and secret
       VAPID files remain ignored. Keep their local backups secure.
 - [ ] Run the documented tests and dependency audit in a clean checkout.

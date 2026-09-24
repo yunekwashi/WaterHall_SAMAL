@@ -1,5 +1,13 @@
 # WaterHall security and production preparation audit
 
+**Phase-one record.** The history/readiness statements below describe the state
+before the authorized follow-up cleanup. See
+[GITHUB_READINESS_REPORT.md](GITHUB_READINESS_REPORT.md) for the current local
+history verification and [CREDENTIAL_ROTATION_CHECKLIST.md](CREDENTIAL_ROTATION_CHECKLIST.md)
+for confirmed exposures and manual rotation. This follow-up found private VAPID
+material and the previous IoT credential in a local IDE tree snapshot ref;
+ordinary commit-history inspection in this phase did not include that ref.
+
 Completed locally on 25 September 2026. No commit, push, deployment, external
 credential rotation, or destructive history rewrite was performed. The existing
 working tree already had changes and untracked files; these were preserved and

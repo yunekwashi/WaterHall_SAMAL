@@ -11,7 +11,7 @@ secretGroup = 1
 
 [[rules.allowlists]]
 regexTarget = "secret"
-regexes = ['''^\[REDACTED\]$''', '''^(?:YOUR_|your_|REPLACE_|replace_).*$''']
+regexes = ['''^\[REDACTED\]$''', '''(?i)^(?:your[_-]|replace[_-]).*$''']
 
 [[rules]]
 id = "waterhall-signing-fallback"
