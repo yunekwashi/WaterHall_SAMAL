@@ -20,10 +20,19 @@ class DBConnection:
         if self.is_pg:
             import psycopg2
             from psycopg2.extras import RealDictCursor
-            from urllib.parse import urlparse, parse_qs
-            if config.PRODUCTION and parse_qs(urlparse(POSTGRES_URL).query).get('sslmode') != ['verify-full']:
-                raise RuntimeError('Production DATABASE_URL must use sslmode=verify-full')
-            self.conn = psycopg2.connect(POSTGRES_URL, connect_timeout=10)
+            connection_options = {'connect_timeout': 10}
+            if config.PRODUCTION:
+                import certifi
+                # Explicit options override integration-managed URL parameters.
+                connection_options.update(
+                    sslmode='verify-full', sslrootcert=certifi.where(),
+                    channel_binding='require',
+                )
+            try:
+                self.conn = psycopg2.connect(POSTGRES_URL, **connection_options)
+            except (psycopg2.Error, ValueError):
+                # Driver errors may contain credentials, including in CLI tracebacks.
+                raise RuntimeError('Unable to establish PostgreSQL connection') from None
             self.cursor_obj = self.conn.cursor(cursor_factory=RealDictCursor)
         else:
             if config.PRODUCTION:

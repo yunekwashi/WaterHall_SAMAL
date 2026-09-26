@@ -4,8 +4,14 @@ import secrets
 import sqlite3
 import subprocess
 import sys
+import traceback
+from unittest.mock import Mock
+from urllib.parse import urlunsplit
 
+import certifi
+import psycopg2
 import pytest
+from psycopg2.extensions import parse_dsn
 from backend import db_adapter, notifications
 from backend.db_adapter import get_db, init_db
 from backend.manage import import_sqlite
@@ -16,6 +22,93 @@ def test_production_requires_external_configuration():
     result = subprocess.run([sys.executable, '-c', 'import backend.config'], env=env, capture_output=True, text=True)
     assert result.returncode != 0
     assert 'Production requires DATABASE_URL' in result.stderr
+
+
+@pytest.mark.parametrize('sslmode', ['require', 'disable', 'allow', 'prefer', 'verify-ca', 'verify-full', None])
+def test_production_postgres_enforces_tls_over_url_and_environment(monkeypatch, sslmode):
+    url = 'postgresql://test-user@database.example.invalid/waterhall?channel_binding=disable&sslrootcert=untrusted.crt'
+    if sslmode is not None:
+        url += '&sslmode=' + sslmode
+    monkeypatch.setattr(db_adapter, 'POSTGRES_URL', url)
+    monkeypatch.setattr(db_adapter.config, 'PRODUCTION', True)
+    monkeypatch.setenv('PGSSLMODE', 'disable')
+    monkeypatch.setenv('PGSSLROOTCERT', 'untrusted-environment.crt')
+    monkeypatch.setenv('PGCHANNELBINDING', 'disable')
+    native_connect = Mock(return_value=Mock())
+    monkeypatch.setattr(psycopg2, '_connect', native_connect)
+    connect = Mock(wraps=psycopg2.connect)
+    monkeypatch.setattr(psycopg2, 'connect', connect)
+
+    with get_db():
+        pass
+
+    connect.assert_called_once_with(
+        url, connect_timeout=10, sslmode='verify-full',
+        sslrootcert=certifi.where(), channel_binding='require',
+    )
+    # Exercise psycopg2's real DSN merge, stopping before the native network call.
+    native_connect.assert_called_once()
+    effective = parse_dsn(native_connect.call_args.args[0])
+    assert effective['sslmode'] == 'verify-full'
+    assert effective['sslrootcert'] == certifi.where()
+    assert effective['channel_binding'] == 'require'
+    assert db_adapter.POSTGRES_URL == url
+
+
+def test_development_postgres_preserves_local_connection_options(monkeypatch):
+    url = 'postgresql://test-user@localhost/waterhall?sslmode=disable'
+    monkeypatch.setattr(db_adapter, 'POSTGRES_URL', url)
+    monkeypatch.setattr(db_adapter.config, 'PRODUCTION', False)
+    native_connect = Mock(return_value=Mock())
+    monkeypatch.setattr(psycopg2, '_connect', native_connect)
+    connect = Mock(wraps=psycopg2.connect)
+    monkeypatch.setattr(psycopg2, 'connect', connect)
+
+    with get_db():
+        pass
+
+    connect.assert_called_once_with(url, connect_timeout=10)
+    effective = parse_dsn(native_connect.call_args.args[0])
+    assert effective['sslmode'] == 'disable'
+    assert 'sslrootcert' not in effective
+    assert 'channel_binding' not in effective
+
+
+@pytest.mark.parametrize('driver_error', [psycopg2.OperationalError, psycopg2.ProgrammingError, ValueError])
+def test_postgres_connection_failure_is_closed_and_redacted(monkeypatch, caplog, capsys, driver_error):
+    from backend.server import app
+    private_value = secrets.token_urlsafe(32)
+    url = urlunsplit(('postgresql', 'test-user:' + private_value + '@database.example.invalid',
+                     '/waterhall', 'sslmode=require', ''))
+    monkeypatch.setattr(db_adapter, 'POSTGRES_URL', url)
+    monkeypatch.setattr(db_adapter.config, 'PRODUCTION', True)
+    native_connect = Mock(side_effect=driver_error(f'TLS connection failed: {url} {private_value}'))
+    monkeypatch.setattr(psycopg2, '_connect', native_connect)
+
+    with pytest.raises(RuntimeError, match='^Unable to establish PostgreSQL connection$') as failure:
+        get_db()
+    native_connect.assert_called_once()  # No retry with weaker TLS.
+    cli_traceback = ''.join(traceback.format_exception(failure.value))
+
+    client = app.test_client()
+    unavailable = client.get('/api/ready')
+    assert unavailable.status_code == 503
+    rejected = client.post('/api/login', json={'username': 'test-user', 'password': private_value})
+    assert rejected.status_code == 500
+    assert rejected.get_json() == {'msg': 'Unable to complete request'}
+    assert native_connect.call_count == 3
+    for call in native_connect.call_args_list:
+        effective = parse_dsn(call.args[0])
+        assert effective['sslmode'] == 'verify-full'
+        assert effective['sslrootcert'] == certifi.where()
+        assert effective['channel_binding'] == 'require'
+
+    output = capsys.readouterr()
+    visible = cli_traceback + caplog.text + output.out + output.err
+    visible += unavailable.get_data(as_text=True) + rejected.get_data(as_text=True)
+    assert private_value not in visible
+    assert url not in visible
+    assert 'database.example.invalid' not in visible
 
 
 def test_absent_ph_is_not_fabricated(system):
