@@ -3,6 +3,17 @@ import 'dart:convert';
 import 'dart:async';
 import 'offline_store.dart';
 
+const sessionExpiredMessage = 'Session expired. Please sign in again.';
+
+class ApiFailure implements Exception {
+  final int? status;
+  final bool sessionChanged;
+  const ApiFailure({this.status, this.sessionChanged = false});
+  bool get unavailable => status == null || status == 429 || status! >= 500;
+  @override
+  String toString() => 'API request was not completed.';
+}
+
 const dbKeys = {
   'households': 'waterhall_households',
   'centralAssets': 'waterhall_central_assets',
@@ -42,6 +53,113 @@ class Database {
   bool isDatabaseOnline = false;
   String? lastSyncError;
   bool _refreshing = false;
+  int _sessionVersion = 0;
+  Future<void> _nativeAuthWrites = Future<void>.value();
+  void Function(bool expired)? onSessionEnded;
+  static const requestTimeout = Duration(seconds: 15);
+
+  Future<void> _writeNativeAuth(String? token) {
+    final write = _nativeAuthWrites.catchError((_) {}).then((_) => nativeSession(token));
+    _nativeAuthWrites = write;
+    return write;
+  }
+
+  Future<void> startSession(String token) async {
+    final version = ++_sessionVersion;
+    window.localStorage['waterhall_jwt'] = token;
+    lastSyncError = null;
+    try {
+      await _writeNativeAuth(token);
+      if (version != _sessionVersion || !checkSession()) throw const ApiFailure(sessionChanged: true);
+    } catch (_) {
+      if (version == _sessionVersion) await endSession(expired: true);
+      throw const ApiFailure(sessionChanged: true);
+    }
+  }
+
+  Future<void> endSession({bool expired = false}) async {
+    ++_sessionVersion;
+    isDatabaseOnline = false;
+    window.localStorage.remove('waterhall_jwt');
+    window.localStorage.remove('waterhall_session');
+    window.localStorage.remove('waterhall_resident_session');
+    clearPrivateCache(); // Deliberately retains both account-owned queues.
+    lastSyncError = expired ? sessionExpiredMessage : null;
+    onSessionEnded?.call(expired);
+    _notifySyncStatus();
+    try {
+      await _writeNativeAuth(null);
+    } catch (_) {
+      // Local authorization is already cleared. Never log tokens/bridge payloads.
+      lastSyncError = 'Unable to clear native session storage. Please restart the app.';
+      _notifySyncStatus();
+    }
+  }
+
+  bool checkSession() {
+    if (hasUsableSession()) return true;
+    if (window.localStorage.containsKey('waterhall_jwt') ||
+        window.localStorage.containsKey('waterhall_session') ||
+        window.localStorage.containsKey('waterhall_resident_session')) {
+      unawaited(endSession(expired: true));
+    }
+    return false;
+  }
+
+  void _markOffline() {
+    isDatabaseOnline = false;
+    lastSyncError = 'Server unavailable. Pending operations remain saved and will retry.';
+    _notifySyncStatus();
+  }
+
+  /// Abort the actual request on timeout; ignore responses from an ended session.
+  Future<HttpRequest> apiRequest(String url, {String method = 'GET',
+      Map<String, String>? requestHeaders, String? sendData, bool authenticated = true}) async {
+    final uri = Uri.base.resolve(url);
+    if (uri.origin != Uri.base.origin || !uri.path.startsWith('/api/')) throw const ApiFailure();
+    if (authenticated && !checkSession()) throw const ApiFailure(sessionChanged: true);
+    final version = _sessionVersion;
+    final token = window.localStorage['waterhall_jwt'];
+    final xhr = HttpRequest();
+    final complete = Completer<HttpRequest>();
+    final listeners = <StreamSubscription>[];
+    Timer? deadline;
+    void fail() {
+      if (!complete.isCompleted) complete.completeError(const ApiFailure());
+    }
+    try {
+      xhr.open(method, url);
+      (requestHeaders ?? {}).forEach(xhr.setRequestHeader);
+      if (authenticated) xhr.setRequestHeader('Authorization', 'Bearer $token');
+      listeners.add(xhr.onLoad.listen((_) {
+        if (!complete.isCompleted) complete.complete(xhr);
+      }));
+      listeners.add(xhr.onError.listen((_) => fail()));
+      listeners.add(xhr.onAbort.listen((_) => fail()));
+      deadline = Timer(requestTimeout, () { fail(); xhr.abort(); });
+      xhr.send(sendData);
+      final response = await complete.future;
+      if (authenticated && (version != _sessionVersion || !checkSession())) {
+        throw const ApiFailure(sessionChanged: true);
+      }
+      if (response.status == 401 && authenticated) {
+        unawaited(endSession(expired: true));
+        throw const ApiFailure(status: 401, sessionChanged: true);
+      }
+      if (response.status == null || response.status! < 200 || response.status! >= 300) {
+        throw ApiFailure(status: response.status == 0 ? null : response.status);
+      }
+      return response;
+    } catch (error) {
+      if (version != _sessionVersion) throw const ApiFailure(sessionChanged: true);
+      final failure = error is ApiFailure ? error : const ApiFailure();
+      if (!failure.sessionChanged && failure.unavailable) _markOffline();
+      throw failure;
+    } finally {
+      deadline?.cancel();
+      for (final listener in listeners) { await listener.cancel(); }
+    }
+  }
 
   // Sync state event controller
   final _syncStatusController = StreamController<Map<String, dynamic>>.broadcast();
@@ -62,7 +180,9 @@ class Database {
     return {
       'status': statusStr,
       'isOnline': isDatabaseOnline,
-      'isSyncing': _isSyncing,
+      'isSyncing': _isSyncing || _syncingActions,
+      'authenticated': hasUsableSession(),
+      'reviewCount': getPendingCollections().where((c) => c['sync_error'] != null).length,
       'pendingCount': pending, 'error': lastSyncError
     };
   }
@@ -78,6 +198,7 @@ class Database {
   List<Map<String, dynamic>> pendingActions() => allActions().where((e) => e['owner'] == currentAccount()).toList();
 
   Future<void> queueAction(String endpoint, Map<String, dynamic> body) async {
+    if (!checkSession()) throw const ApiFailure(sessionChanged: true);
     final id = body['operation_id'] ?? operationId();
     body['operation_id'] = id;
     await mutateQueue('actions', (rows) => rows.add({'operation_id': id, 'owner': currentAccount(), 'endpoint': endpoint, 'body': body}));
@@ -87,20 +208,23 @@ class Database {
 
   bool _syncingActions = false;
   Future<void> syncActions() async {
-    if (_syncingActions || !hasUsableSession()) return;
+    if (_syncingActions || !checkSession()) return;
     _syncingActions = true;
+    final version = _sessionVersion;
     try {
       for (final action in pendingActions().take(100)) {
-        final xhr = await HttpRequest.request(action['endpoint'] as String, method: 'POST',
-          requestHeaders: {'Content-Type': 'application/json', 'Authorization': 'Bearer ${window.localStorage['waterhall_jwt']}'},
+        if (version != _sessionVersion || !checkSession()) break;
+        final xhr = await apiRequest(action['endpoint'] as String, method: 'POST',
+          requestHeaders: {'Content-Type': 'application/json'},
           sendData: json.encode(action['body']));
         final response = json.decode(xhr.responseText ?? '{}');
+        if (version != _sessionVersion || !checkSession()) break;
         if (xhr.status != 200 || response['status'] != 'success') break;
         await mutateQueue('actions', (rows) => rows.removeWhere((r) => r['operation_id'] == action['operation_id']));
         lastSyncError = null;
       }
     } catch (_) {
-      lastSyncError = 'Pending operations need a connection, renewed login, or conflict resolution.';
+      if (version == _sessionVersion && hasUsableSession() && isDatabaseOnline) lastSyncError = 'Pending operations need review before they can sync.';
     } finally { _syncingActions = false; _notifySyncStatus(); }
   }
 
@@ -109,6 +233,7 @@ class Database {
       if (entry.key != 'offlineCollections' && entry.key != 'unsyncedActions') window.localStorage.remove(entry.value);
     }
     _households = []; _workers = []; _billingRecords = []; _maintenanceLogs = []; _announcements = [];
+    _centralAssets = {}; _paymentSettings = {};
   }
 
   // --- Local Offline Cache Helpers ---
@@ -158,21 +283,11 @@ class Database {
   }
 
   Future<bool> refreshData({String role = ''}) async {
-    if (_refreshing || !hasUsableSession()) return false;
+    if (_refreshing || !checkSession()) return false;
     _refreshing = true;
     try {
-      final jwt = window.localStorage['waterhall_jwt'];
-      final headers = <String, String>{};
-      if (jwt != null && jwt.isNotEmpty) {
-        headers['Authorization'] = 'Bearer ' + jwt;
-      }
-      
       final url = role.isNotEmpty ? '/api/all-data?role=$role' : '/api/all-data';
-      final xhr = await HttpRequest.request(
-        url,
-        method: 'GET',
-        requestHeaders: headers
-      );
+      final xhr = await apiRequest(url);
       final data = json.decode(xhr.responseText!) as Map<String, dynamic>;
       
       _households = List<Map<String, dynamic>>.from(data['households']);
@@ -193,17 +308,18 @@ class Database {
 
       // Upload durable actions before collections that may depend on new bills.
       await syncActions();
-      syncOfflineCollections();
-      return true;
+      if (isDatabaseOnline && checkSession()) unawaited(syncOfflineCollections());
+      return isDatabaseOnline && hasUsableSession();
     } catch (e) {
-      print("refreshData failed (server offline): $e");
-      isDatabaseOnline = false;
-      _notifySyncStatus();
+      if (e is! ApiFailure || !e.sessionChanged) _markOffline();
       return false;
     } finally { _refreshing = false; }
   }
 
   Future<bool> init() async {
+    checkSession();
+    Timer.periodic(const Duration(seconds: 1), (_) => checkSession());
+    window.onFocus.listen((_) => checkSession());
     // 1. Immediately load cached data so offline mode works instantly with no blank screen
     await restoreQueues();
     _loadFromLocalCache();
@@ -248,7 +364,7 @@ class Database {
 
   List<Map<String, dynamic>> getPendingCollections() {
     final all = getAllCollections();
-    return all.where((c) => c['sync_status'] == 'PENDING' && c['collected_by'] == currentAccount()).take(100).toList();
+    return all.where((c) => c['sync_status'] == 'PENDING' && c['collected_by'] == currentAccount()).toList();
   }
 
   /// Records a bill collection.
@@ -261,6 +377,7 @@ class Database {
     String? billId,
     String paymentMethod = 'Cash'
   }) async {
+    if (!checkSession()) throw const ApiFailure(sessionChanged: true);
     final now = DateTime.now().toUtc();
     final transactionId = operationId();
 
@@ -310,8 +427,11 @@ class Database {
 
   bool _isSyncing = false;
   Future<void> syncOfflineCollections() async {
-    if (_isSyncing || !hasUsableSession()) return;
-    final pending = getPendingCollections();
+    if (_isSyncing || !checkSession()) return;
+    // Rotate attempted records so even 100 conflicts cannot starve newer work.
+    final waiting = getPendingCollections()..sort((a, b) =>
+      (a['last_sync_attempt'] ?? '').toString().compareTo((b['last_sync_attempt'] ?? '').toString()));
+    final pending = waiting.take(100).toList();
     if (pending.isEmpty) {
       _notifySyncStatus();
       return;
@@ -319,54 +439,78 @@ class Database {
 
     _isSyncing = true;
     _notifySyncStatus();
-    print("[AUTO-SYNC] Found ${pending.length} pending collections. Initiating idempotent upload to Vercel API...");
-
+    final version = _sessionVersion;
     try {
-      final jwt = window.localStorage['waterhall_jwt'];
-      final headers = <String, String>{
-        'Content-Type': 'application/json'
-      };
-      if (jwt != null && jwt.isNotEmpty) {
-        headers['Authorization'] = 'Bearer ' + jwt;
-      }
-
-      final payload = {
-        'collections': pending
-      };
-
-      final xhr = await HttpRequest.request(
-        '/api/collections/sync',
-        method: 'POST',
-        requestHeaders: headers,
-        sendData: json.encode(payload)
-      );
-
-      if (xhr.status == 200) {
-        final res = json.decode(xhr.responseText!) as Map<String, dynamic>;
-        final syncedIds = List<String>.from(res['synced_ids'] ?? []);
-
-        lastSyncError = null;
-        // Mark verified records as SYNCED in local storage
-        final nowStr = DateTime.now().toUtc().toIso8601String();
-        await mutateQueue('collections', (allCollections) {
-        for (var c in allCollections) {
-          if (syncedIds.contains(c['transaction_id'])) {
-            c['sync_status'] = 'SYNCED';
-            c['synced_at'] = nowStr;
+      final attempted = pending.map((c) => c['transaction_id']).toSet();
+      await mutateQueue('collections', (rows) {
+        for (final row in rows) {
+          if (row['collected_by'] == currentAccount() && attempted.contains(row['transaction_id'])) {
+            row['last_sync_attempt'] = DateTime.now().toUtc().toIso8601String();
           }
         }
-        });
-        isDatabaseOnline = true;
-        print("[AUTO-SYNC] Successfully synchronized ${syncedIds.length} records. Marked as SYNCED.");
-      } else {
-        print("[AUTO-SYNC] Server returned status ${xhr.status}. Records remain safely stored locally.");
+      });
+      await _syncCollectionBatch(pending, version);
+      if (version == _sessionVersion && checkSession()) {
+        lastSyncError = getPendingCollections().any((c) => c['sync_error'] != null)
+            ? 'Some collections need review. Unacknowledged payments remain saved.' : null;
       }
-    } catch (e) {
-      lastSyncError = "Sync not confirmed. Pending records are retained; sign in again or resolve bill conflicts.";
+    } catch (_) {
+      if (version == _sessionVersion && hasUsableSession() && isDatabaseOnline) {
+        lastSyncError = 'Sync not confirmed. Pending records remain saved for retry.';
+      }
     } finally {
       _isSyncing = false;
       _notifySyncStatus();
     }
+  }
+
+  Future<void> _syncCollectionBatch(List<Map<String, dynamic>> records, int version) async {
+    if (version != _sessionVersion || !checkSession()) throw const ApiFailure(sessionChanged: true);
+    Set<String> acknowledged;
+    try {
+      final xhr = await apiRequest('/api/collections/sync', method: 'POST',
+        requestHeaders: {'Content-Type': 'application/json'},
+        sendData: json.encode({'collections': records}));
+      final response = json.decode(xhr.responseText ?? '{}') as Map<String, dynamic>;
+      final ids = response['synced_ids'];
+      acknowledged = response['status'] == 'success' && ids is List
+          ? ids.whereType<String>().toSet() : <String>{};
+    } on ApiFailure catch (failure) {
+      // Network/server failures may have committed: stop and retry the SAME IDs later.
+      // Only deterministic record rejections are split, never 401/429/5xx/timeouts.
+      if (failure.sessionChanged || ![400, 403, 404, 409, 422].contains(failure.status)) rethrow;
+      if (records.length > 1) {
+        final middle = records.length ~/ 2;
+        await _syncCollectionBatch(records.sublist(0, middle), version);
+        await _syncCollectionBatch(records.sublist(middle), version);
+        return;
+      }
+      if (version != _sessionVersion || !checkSession()) throw const ApiFailure(sessionChanged: true);
+      await _saveCollectionResult(records, <String>{},
+          failure.status == 409 ? 'Bill or transaction conflict. Review before retrying.'
+          : 'Collection rejected (HTTP ${failure.status}). Review before retrying.');
+      return;
+    }
+    if (version != _sessionVersion || !checkSession()) throw const ApiFailure(sessionChanged: true);
+    await _saveCollectionResult(records, acknowledged, 'Server did not acknowledge this collection. Retry required.');
+    isDatabaseOnline = true;
+  }
+
+  Future<void> _saveCollectionResult(List<Map<String, dynamic>> sent, Set<String> acknowledged, String error) async {
+    final sentIds = sent.map((c) => c['transaction_id']).toSet();
+    await mutateQueue('collections', (rows) {
+      for (final row in rows) {
+        if (row['collected_by'] != currentAccount() || !sentIds.contains(row['transaction_id']) || row['sync_status'] != 'PENDING') continue;
+        if (acknowledged.contains(row['transaction_id'])) {
+          row['sync_status'] = 'SYNCED';
+          row['synced_at'] = DateTime.now().toUtc().toIso8601String();
+          row.remove('sync_error');
+        } else {
+          row['sync_error'] = error;
+        }
+      }
+    });
+    _notifySyncStatus();
   }
 
   // ==============================================================================
@@ -381,13 +525,9 @@ class Database {
     _saveToLocalCache();
 
     try {
-      final jwt = window.localStorage['waterhall_jwt'];
       final headers = <String, String>{'Content-Type': 'application/json'};
-      if (jwt != null && jwt.isNotEmpty) {
-        headers['Authorization'] = 'Bearer ' + jwt;
-      }
 
-      final xhr = await HttpRequest.request(
+      final xhr = await apiRequest(
         '/api/settings/payment',
         method: 'POST',
         requestHeaders: headers,
@@ -595,16 +735,16 @@ class Database {
   }
 
   Future<Map<String, dynamic>> registerResident(String ownerName, String purok, String lot, String password) async {
-    final response = await HttpRequest.request('/api/households/add', method: 'POST', requestHeaders: {
-      'Content-Type': 'application/json', 'Authorization': 'Bearer ${window.localStorage['waterhall_jwt']}'},
+    final response = await apiRequest('/api/households/add', method: 'POST', requestHeaders: {
+      'Content-Type': 'application/json'},
       sendData: json.encode({'owner_name': ownerName, 'purok': purok, 'password': password}));
     await refreshData();
     return Map<String, dynamic>.from(json.decode(response.responseText!));
   }
 
   Future<Map<String, dynamic>> registerWorker(String name, String role, String zone, String password) async {
-    final response = await HttpRequest.request('/api/workers/add', method: 'POST', requestHeaders: {
-      'Content-Type': 'application/json', 'Authorization': 'Bearer ${window.localStorage['waterhall_jwt']}'},
+    final response = await apiRequest('/api/workers/add', method: 'POST', requestHeaders: {
+      'Content-Type': 'application/json'},
       sendData: json.encode({'worker_id': 'EMP-${operationId().substring(0,12)}', 'name': name, 'role': 'Collector', 'zone': zone, 'password': password}));
     await refreshData();
     return Map<String, dynamic>.from(json.decode(response.responseText!));

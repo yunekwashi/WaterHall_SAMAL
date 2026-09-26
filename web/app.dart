@@ -103,13 +103,22 @@ class AppController {
     updateClock();
     Timer.periodic(Duration(seconds: 10), (timer) => updateClock());
 
-    // Initialize DB seed
-    await db.init();
-
-    // Listen to sync state changes and update worker/resident UI
+    // Subscribe before initialization, including expiry of a restored session.
+    db.onSessionEnded = (expired) {
+      _closeRealtimeStream();
+      currentWorker = null;
+      currentResidentId = null;
+      activeHouseholdId = null;
+      _reportPhoto = null;
+      document.getElementById('collection-review-modal')?.remove();
+      document.getElementById('modal-collect-payment')?.style.display = 'none';
+      enforceLoginGate();
+      if (expired) showLoginError(sessionExpiredMessage, document.getElementById('login-error-msg'));
+    };
     db.onSyncStatusChange.listen((status) {
       _updateSyncStatusUI(status);
     });
+    await db.init();
     _updateSyncStatusUI(db.getSyncStatus());
 
     // Background Auto-Refresh Telemetry Loop (Every 10 seconds for near real-time IoT monitoring)
@@ -117,6 +126,7 @@ class AppController {
       if (currentWorker != null || currentResidentId != null) {
         final currentRole = currentResidentId != null ? 'resident' : 'worker';
         await db.refreshData(role: currentRole);
+        if (!db.checkSession()) return;
         if (currentResidentId != null) {
           renderResidentDashboard();
         } else {
@@ -163,6 +173,9 @@ class AppController {
 
     // Bind Event Listeners
     bindEvents();
+    if (db.lastSyncError == sessionExpiredMessage) {
+      showLoginError(sessionExpiredMessage, document.getElementById('login-error-msg'));
+    }
   }
 
   void _updateSyncStatusUI(Map<String, dynamic> status) {
@@ -174,24 +187,29 @@ class AppController {
     final String st = status['status'] ?? 'online';
     final int pendingCount = (status['pendingCount'] as int?) ?? 0;
     final bool isOnline = (status['isOnline'] as bool?) ?? true;
+    final bool authenticated = status['authenticated'] == true;
+    final int reviewCount = status['reviewCount'] as int? ?? 0;
 
     if (pill != null && textEl != null) {
       pill.classes.removeAll(['online', 'offline', 'pending_sync', 'syncing', 'synced']);
       pill.classes.add(st);
 
-      if (!isOnline) {
+      if (!authenticated) {
+        textEl.text = 'Sign in required';
+      } else if (!isOnline) {
         textEl.text = 'Offline Mode';
       } else if (status['isSyncing'] == true) {
         textEl.text = 'Syncing...';
       } else if (pendingCount > 0) {
-        textEl.text = status['error'] != null ? '$pendingCount Pending: check connection or sign in' : '$pendingCount Pending Sync';
+        textEl.text = reviewCount > 0 ? '$pendingCount Pending ($reviewCount need review)'
+            : status['error'] != null ? '$pendingCount Pending: retry needed' : '$pendingCount Pending Sync';
       } else {
         textEl.text = 'Connected';
       }
     }
 
     if (offlineBanner != null) {
-      if (!isOnline) {
+      if (authenticated && !isOnline) {
         offlineBanner.style.display = 'flex';
         if (offlineBannerText != null) {
           if (pendingCount > 0) {
@@ -204,6 +222,38 @@ class AppController {
         offlineBanner.style.display = 'none';
       }
     }
+    var reviewButton = document.getElementById('btn-review-collections');
+    if (reviewButton == null && pill?.parent != null) {
+      final button = ButtonElement()..id = 'btn-review-collections'..text = 'Review pending collections';
+      button.onClick.listen((_) => _showCollectionReview());
+      pill!.parent!.append(button);
+      reviewButton = button;
+    }
+    reviewButton?.style.display = authenticated && reviewCount > 0 ? 'inline-block' : 'none';
+  }
+
+  void _showCollectionReview() {
+    if (!db.checkSession()) return;
+    document.getElementById('collection-review-modal')?.remove();
+    final modal = DivElement()..id = 'collection-review-modal'..className = 'modal-overlay';
+    modal.style.display = 'flex';
+    final card = DivElement()..className = 'offline-card';
+    card.style..maxHeight = '80vh'..overflowY = 'auto';
+    card.append(HeadingElement.h2()..text = 'Pending collection review');
+    card.append(ParagraphElement()..text = 'These payments remain saved. Resolve bill conflicts with the administrator, then retry. Transaction IDs are preserved.');
+    for (final row in db.getPendingCollections().where((c) => c['sync_error'] != null)) {
+      card.append(ParagraphElement()..text = '${row['house_id']} | ${row['amount_collected']} | ${row['transaction_id']}\n${row['sync_error']}');
+    }
+    final retry = ButtonElement()..text = 'Retry pending collections';
+    retry.onClick.listen((_) async {
+      retry.disabled = true;
+      await db.syncOfflineCollections();
+      if (db.checkSession()) _showCollectionReview();
+    });
+    card.append(retry);
+    card.append(ButtonElement()..text = 'Close'..onClick.listen((_) => modal.remove()));
+    modal.append(card);
+    document.body!.append(modal);
   }
 
   void bindEvents() {
@@ -256,9 +306,11 @@ class AppController {
       }
 
       // 1. Authenticate with Server API /api/login
+      loginBtn.disabled = true;
       try {
-        final xhr = await HttpRequest.request(
+        final xhr = await db.apiRequest(
           '/api/login',
+          authenticated: false,
           method: 'POST',
           requestHeaders: {'Content-Type': 'application/json'},
           sendData: json.encode({'username': empId, 'password': password}),
@@ -276,12 +328,12 @@ class AppController {
         }
         db.clearPrivateCache();
       _reportPhoto = null;
-        window.localStorage['waterhall_jwt'] = token;
-        await nativeSession(token);
+        await db.startSession(token);
         await restoreQueues();
 
         // Refresh database with the newly authenticated token
         await db.refreshData();
+        if (!db.checkSession() || window.localStorage['waterhall_jwt'] != token) return;
 
         if (userRole == 'resident') {
           // Guard: Worker App MUST NEVER authenticate or display the Resident Portal
@@ -318,25 +370,22 @@ class AppController {
           showToast('Logged in as Tech: ' + name);
           return;
         }
-      } catch (err) {
-        print("Server login error: $err");
+      } catch (_) {
+        // Never expose an HTTP response, credentials, or JWT in an error/log.
+      } finally {
+        loginBtn.disabled = false;
       }
 
-      showLoginError('Unable to sign in. Check your credentials and connection. Existing offline sessions resume when the app opens.', loginErrorMsg);
+      showLoginError(db.lastSyncError == sessionExpiredMessage ? sessionExpiredMessage
+          : 'Unable to sign in. Check your credentials and connection. Existing offline sessions resume when the app opens.', loginErrorMsg);
 
     });
 
     final logoutBtn = document.getElementById('btn-logout') as ButtonElement?;
     logoutBtn?.onClick.listen((e) async {
       _closeRealtimeStream();
-      await _unregisterWebPush();
-      window.localStorage.remove('waterhall_session');
-      window.localStorage.remove('waterhall_jwt');
-      await nativeSession(null);
-      db.clearPrivateCache();
-      _reportPhoto = null;
-      currentWorker = null;
-      enforceLoginGate();
+      unawaited(_unregisterWebPush());
+      await db.endSession();
       showToast("Signed out of Tech session");
     });
 
@@ -344,14 +393,8 @@ class AppController {
     final residentLogoutBtn = document.getElementById('btn-resident-logout') as ButtonElement?;
     residentLogoutBtn?.onClick.listen((e) async {
       _closeRealtimeStream();
-      await _unregisterWebPush();
-      window.localStorage.remove('waterhall_resident_session');
-      window.localStorage.remove('waterhall_jwt');
-      await nativeSession(null);
-      db.clearPrivateCache();
-      _reportPhoto = null;
-      currentResidentId = null;
-      enforceLoginGate();
+      unawaited(_unregisterWebPush());
+      await db.endSession();
       showToast("Signed out of Resident Portal");
     });
 
@@ -574,8 +617,9 @@ class AppController {
       }
 
       try {
-        final xhr = await HttpRequest.request(
+        final xhr = await db.apiRequest(
           '/api/recover-account',
+          authenticated: false,
           method: 'POST',
           sendData: json.encode({
             'role': roleVal,
