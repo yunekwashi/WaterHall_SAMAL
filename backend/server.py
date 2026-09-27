@@ -106,7 +106,7 @@ STAFF = {'sync_offline_collections', 'get_collections_history', 'update_report_s
          'update_household_status', 'add_maintenance_log', 'add_billing_record', 'add_announcement'}
 ADMIN = {'update_payment_settings', 'update_central_assets', 'add_household', 'add_worker',
          'delete_household', 'delete_worker'}
-AUTHENTICATED = {'get_all_data', 'get_latest_iot', 'get_payment_settings', 'handle_reports',
+AUTHENTICATED = {'get_all_data', 'get_puroks', 'get_latest_iot', 'get_payment_settings', 'handle_reports',
                  'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events'}
 
 @app.before_request
@@ -433,8 +433,11 @@ def get_all_data():
             collections_history = [c for c in collections_history if c['collected_by'] == who['id']]
         for report in resident_reports:
             report['photo_base64'] = photo_for_client(report.get('photo_base64'))
+        db.execute("SELECT purok_id, purok_name FROM puroks ORDER BY purok_id ASC;")
+        puroks = [p['purok_name'] for p in db.fetchall()]
         return jsonify({
             'households': households,
+            'puroks': puroks,
             'centralAssets': central_assets,
             'maintenanceLogs': maintenance_logs,
             'workers': workers,
@@ -444,6 +447,13 @@ def get_all_data():
             'collectionsHistory': collections_history,
             'residentReports': resident_reports
         })
+
+@app.route('/api/puroks', methods=['GET'])
+@jwt_required()
+def get_puroks():
+    with get_db() as db:
+        db.execute("SELECT purok_id, purok_name FROM puroks ORDER BY purok_id ASC;")
+        return jsonify({'status': 'success', 'puroks': [p['purok_name'] for p in db.fetchall()]})
 
 # ==============================================================================
 # IoT Real-time Telemetry Endpoints (ESP32 Integration)
@@ -856,66 +866,115 @@ def unsubscribe_push():
 @limiter.limit("20 per minute")
 def add_household():
     data = request.get_json() or {}
-    if data.get('contact') is not None:
-        text(data['contact'], 'contact number', 30, 0)
-    if data.get('account_number') is not None:
-        text(data['account_number'], 'account number', 80)
+    owner_name = text(data.get('owner_name') or data.get('name'), 'full name', 100, 1)
+
+    raw_contact = data.get('contact') or data.get('contact_no')
+    if not raw_contact:
+        abort(400, description='Contact number is required')
+    contact = text(str(raw_contact), 'contact number', 30, 7)
+    if not re.fullmatch(r'^\+?[0-9\s\-()]{7,25}$', contact):
+        abort(400, description='Invalid contact number format')
+
+    if not data.get('purok'):
+        abort(400, description='Assigned Purok is required')
+    purok_name = text(data['purok'], 'purok', 50, 1)
+
+    plain_pw = data.get('password')
+    verify_pw = data.get('verify_password')
+    if not plain_pw:
+        abort(400, description='Password is required')
+    if verify_pw is not None and plain_pw != verify_pw:
+        abort(400, description='Passwords do not match.')
+    password(plain_pw)
+    pass_hash = generate_password_hash(plain_pw)
+
     with get_db() as db:
-        try:
-            purok_name = data.get('purok', 'Purok 1')
-            db.execute("SELECT purok_id FROM puroks WHERE LOWER(purok_name) = LOWER(?);", (purok_name,))
-            row = db.fetchone()
-            if not row:
-                abort(400, description='Unknown purok')
-            purok_id = row['purok_id']
+        if not db.is_pg:
+            db.execute('BEGIN IMMEDIATE')
+        db.execute("SELECT purok_id FROM puroks WHERE LOWER(purok_name) = LOWER(?);", (purok_name,))
+        row = db.fetchone()
+        if not row:
+            abort(400, description='Unknown purok')
+        purok_id = row['purok_id']
 
-            plain_pw = password(data.get('password'))
-            pass_hash = generate_password_hash(plain_pw)
+        db.execute('''
+            INSERT INTO households (purok_id, family_head_name, registration_date, password_hash, contact_no)
+            VALUES (?, ?, ?, ?, ?);
+        ''', (purok_id, owner_name, datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'), pass_hash, contact))
 
-            db.execute('''
-                INSERT INTO households (purok_id, family_head_name, registration_date, password_hash, contact_no)
-                VALUES (?, ?, ?, ?, ?);
-            ''', (purok_id, text(data.get('owner_name'), 'owner name'), datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'), pass_hash, data.get('contact')))
+        hh_id = db.lastrowid
+        if not hh_id:
+            abort(500, description='Failed to generate household record')
 
-            hh_id = db.lastrowid
-            serial_number = data.get('account_number') or f'TAG-2026-{hh_id:04d}'
-            db.execute('''
-                INSERT INTO water_meters (household_id, serial_number, last_reading)
-                VALUES (?, ?, ?);
-            ''', (hh_id, serial_number, 0.0))
-        except Exception as e:
-            raise
+        # Sequential unique meter serial number using project convention: TAG-2026-XXXX
+        candidate_num = hh_id
+        while True:
+            serial_number = f'TAG-2026-{candidate_num:04d}'
+            db.execute("SELECT meter_id FROM water_meters WHERE serial_number = ?;", (serial_number,))
+            if not db.fetchone():
+                break
+            candidate_num += 1
 
-    return jsonify({'status': 'success', 'house_id': f'HH-{hh_id}', 'account_number': serial_number})
+        db.execute('''
+            INSERT INTO water_meters (household_id, serial_number, last_reading)
+            VALUES (?, ?, 0.0);
+        ''', (hh_id, serial_number))
+
+    return jsonify({'status': 'success', 'house_id': f'HH-{hh_id}', 'account_number': serial_number, 'resident_id': serial_number})
 
 @app.route('/api/workers/add', methods=['POST'])
 @jwt_required()
 @limiter.limit("10 per minute")
 def add_worker():
     data = request.get_json() or {}
-    if data.get('contact') is not None:
-        text(data['contact'], 'contact number', 30, 0)
-    if data.get('account_number') is not None:
-        text(data['account_number'], 'account number', 80)
+    worker_name = text(data.get('name') or data.get('full_name'), 'full name', 100, 1)
+
+    raw_contact = data.get('contact') or data.get('contact_no')
+    if not raw_contact:
+        abort(400, description='Contact number is required')
+    contact = text(str(raw_contact), 'contact number', 30, 7)
+    if not re.fullmatch(r'^\+?[0-9\s\-()]{7,25}$', contact):
+        abort(400, description='Invalid contact number format')
+
+    role = text(data.get('role', 'Collector'), 'role', 30, 1)
+    if role != 'Collector':
+        abort(400, description='Create administrators with the secure CLI')
+
+    assigned_zone = text(data.get('zone') or data.get('assigned_zone') or 'Purok 1', 'assigned zone', 80)
+
+    plain_pw = data.get('password')
+    verify_pw = data.get('verify_password')
+    if not plain_pw:
+        abort(400, description='Password is required')
+    if verify_pw is not None and plain_pw != verify_pw:
+        abort(400, description='Passwords do not match.')
+    password(plain_pw)
+    pass_hash = generate_password_hash(plain_pw)
+
     with get_db() as db:
-        try:
-            plain_pw = password(data.get('password'))
-            pass_hash = generate_password_hash(plain_pw)
-            assigned_zone = text(data.get('zone') or data.get('assigned_zone') or 'Purok 1', 'assigned zone', 80)
-            role = data.get('role', 'Collector')
-            if role != 'Collector':
-                abort(400, description='Create administrators with the secure CLI')
-            if not re.fullmatch(r'[A-Za-z0-9_-]{1,60}', str(data.get('worker_id', ''))) or str(data.get('worker_id', '')).upper().startswith('HH-'):
-                abort(400, description='Invalid worker ID')
+        if not db.is_pg:
+            db.execute('BEGIN IMMEDIATE')
 
-            db.execute('''
-                INSERT INTO users (username, password_hash, full_name, role, assigned_zone, contact_no)
-                VALUES (?, ?, ?, ?, ?, ?);
-            ''', (text(data.get('worker_id'), 'worker ID', 60), pass_hash, text(data.get('name'), 'name'), role, assigned_zone, data.get('contact')))
-        except Exception as e:
-            raise
+        # Generate unique sequential Worker Employee ID: EMP-001, EMP-002, EMP-003...
+        db.execute("SELECT username FROM users WHERE LOWER(username) LIKE 'emp-%';")
+        existing_usernames = {row['username'].upper() for row in db.fetchall()}
 
-    return jsonify({'status': 'success'})
+        seq = 1
+        while True:
+            candidate_id = f'EMP-{seq:03d}'
+            if candidate_id not in existing_usernames:
+                db.execute("SELECT user_id FROM users WHERE LOWER(username) = LOWER(?);", (candidate_id,))
+                if not db.fetchone():
+                    worker_id = candidate_id
+                    break
+            seq += 1
+
+        db.execute('''
+            INSERT INTO users (username, password_hash, full_name, role, assigned_zone, contact_no)
+            VALUES (?, ?, ?, ?, ?, ?);
+        ''', (worker_id, pass_hash, worker_name, role, assigned_zone, contact))
+
+    return jsonify({'status': 'success', 'worker_id': worker_id, 'employee_id': worker_id, 'role': role})
 
 @app.route('/api/households/<hh_id>', methods=['DELETE'])
 @jwt_required()

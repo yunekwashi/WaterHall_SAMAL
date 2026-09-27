@@ -508,6 +508,9 @@ function renderCharts(data) {
 }
 
 function renderDirectory(data) {
+  if (data.puroks && Array.isArray(data.puroks)) {
+    populatePurokDropdown(data.puroks);
+  }
   // Households
   const resTbody = document.getElementById('resident-tbody');
   resTbody.innerHTML = '';
@@ -598,8 +601,26 @@ window.deleteWorker = async function(id) {
   }
 };
 
+function populatePurokDropdown(puroks) {
+  const select = document.getElementById('res-purok');
+  if (!select) return;
+  const currentVal = select.value;
+  select.innerHTML = '';
+  const list = (puroks && puroks.length > 0) ? puroks : ['Purok 1', 'Purok 2', 'Purok 3', 'Purok 4', 'Purok 5', 'Purok 6', 'Purok 7', 'Purok 8'];
+  list.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    if (p === currentVal) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
 // Register Resident Modal
 document.getElementById('btn-add-resident').addEventListener('click', () => {
+  if (globalData && globalData.puroks) {
+    populatePurokDropdown(globalData.puroks);
+  }
   document.getElementById('modal-resident').classList.add('active');
 });
 document.getElementById('btn-res-cancel').addEventListener('click', () => {
@@ -608,11 +629,35 @@ document.getElementById('btn-res-cancel').addEventListener('click', () => {
 document.getElementById('btn-res-save').addEventListener('click', async () => {
   const name = document.getElementById('res-name').value.trim();
   const contact = document.getElementById('res-contact').value.trim();
-  const password = document.getElementById('res-password').value.trim();
-  if (!name || !password) {
-    alert('Both Name and Password are required.');
+  const purok = document.getElementById('res-purok').value.trim();
+  const password = document.getElementById('res-password').value;
+  const verifyPassword = document.getElementById('res-verify-password').value;
+
+  if (!name) {
+    alert('Full Name is required.');
     return;
   }
+  if (!contact) {
+    alert('Contact Number is required.');
+    return;
+  }
+  if (!purok) {
+    alert('Assigned Purok is required.');
+    return;
+  }
+  if (!password || !verifyPassword) {
+    alert('Both Password and Verify Password are required.');
+    return;
+  }
+  if (password !== verifyPassword) {
+    alert('Passwords do not match.');
+    return;
+  }
+  if (password.length < 12 || password.length > 128) {
+    alert('Password must contain 12 to 128 characters.');
+    return;
+  }
+
   const btn = document.getElementById('btn-res-save');
   btn.textContent = 'Saving...';
   btn.disabled = true;
@@ -621,14 +666,17 @@ document.getElementById('btn-res-save').addEventListener('click', async () => {
     const res = await fetch('/api/households/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
-      body: JSON.stringify({ owner_name: name, contact: contact, password: password })
+      body: JSON.stringify({ owner_name: name, contact: contact, purok: purok, password: password, verify_password: verifyPassword })
     });
     if (res.ok) {
+      const data = await res.json().catch(() => ({}));
       document.getElementById('modal-resident').classList.remove('active');
       document.getElementById('res-name').value = '';
       document.getElementById('res-contact').value = '';
       document.getElementById('res-password').value = '';
+      document.getElementById('res-verify-password').value = '';
       fetchData(false);
+      alert(`Household registered successfully!\nResident ID: ${data.account_number || data.house_id}`);
     } else {
       const err = await res.json().catch(() => ({}));
       alert(err.msg || 'Failed to add household');
@@ -656,13 +704,36 @@ document.getElementById('btn-work-cancel').addEventListener('click', () => {
 });
 document.getElementById('btn-work-save').addEventListener('click', async () => {
   const name = document.getElementById('work-name').value.trim();
-  const wid = document.getElementById('work-id').value.trim();
   const contact = document.getElementById('work-contact').value.trim();
-  const password = document.getElementById('work-password').value.trim();
-  if (!name || !wid || !password) {
-    alert('Name, Employee ID, and Password are required.');
+  const role = document.getElementById('work-role').value.trim();
+  const password = document.getElementById('work-password').value;
+  const verifyPassword = document.getElementById('work-verify-password').value;
+
+  if (!name) {
+    alert('Full Name is required.');
     return;
   }
+  if (!contact) {
+    alert('Contact Number is required.');
+    return;
+  }
+  if (!role) {
+    alert('Role is required.');
+    return;
+  }
+  if (!password || !verifyPassword) {
+    alert('Both Password and Verify Password are required.');
+    return;
+  }
+  if (password !== verifyPassword) {
+    alert('Passwords do not match.');
+    return;
+  }
+  if (password.length < 12 || password.length > 128) {
+    alert('Password must contain 12 to 128 characters.');
+    return;
+  }
+
   const btn = document.getElementById('btn-work-save');
   btn.textContent = 'Saving...';
   btn.disabled = true;
@@ -671,15 +742,17 @@ document.getElementById('btn-work-save').addEventListener('click', async () => {
     const res = await fetch('/api/workers/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
-      body: JSON.stringify({ name: name, worker_id: wid, contact: contact, password: password })
+      body: JSON.stringify({ name: name, contact: contact, role: role, password: password, verify_password: verifyPassword })
     });
     if (res.ok) {
+      const data = await res.json().catch(() => ({}));
       document.getElementById('modal-worker').classList.remove('active');
       document.getElementById('work-name').value = '';
-      document.getElementById('work-id').value = '';
       document.getElementById('work-contact').value = '';
       document.getElementById('work-password').value = '';
+      document.getElementById('work-verify-password').value = '';
       fetchData(false);
+      alert(`Field worker registered successfully!\nEmployee ID: ${data.worker_id || data.employee_id}`);
     } else {
       const err = await res.json().catch(() => ({}));
       alert(err.msg || 'Failed to add worker');

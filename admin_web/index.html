@@ -476,16 +476,34 @@
     <div class="modal">
       <h3 style="margin-bottom:24px; font-size:24px; font-weight:700;">Register New Household</h3>
       <div class="form-group">
-        <label for="res-name">Family Head Name</label>
-        <input type="text" id="res-name" name="res-name" aria-label="Family Head Name" placeholder="Juan Dela Cruz">
+        <label for="res-name">Full Name</label>
+        <input type="text" id="res-name" name="res-name" aria-label="Full Name" placeholder="Juan Dela Cruz">
       </div>
       <div class="form-group">
-        <label for="res-contact">Contact Number (For Password Recovery)</label>
+        <label for="res-contact">Contact Number</label>
         <input type="text" id="res-contact" name="res-contact" aria-label="Contact Number" placeholder="09171234567">
       </div>
       <div class="form-group">
-        <label for="res-password">Assigned Password</label>
-        <input type="password" id="res-password" name="res-password" aria-label="Assigned Password" placeholder="Enter secure password">
+        <label for="res-purok">Assigned Purok</label>
+        <select id="res-purok" name="res-purok" aria-label="Assigned Purok">
+          <!-- Populated dynamically via JS from DB puroks -->
+          <option value="Purok 1">Purok 1</option>
+          <option value="Purok 2">Purok 2</option>
+          <option value="Purok 3">Purok 3</option>
+          <option value="Purok 4">Purok 4</option>
+          <option value="Purok 5">Purok 5</option>
+          <option value="Purok 6">Purok 6</option>
+          <option value="Purok 7">Purok 7</option>
+          <option value="Purok 8">Purok 8</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="res-password">Password</label>
+        <input type="password" id="res-password" name="res-password" aria-label="Password" placeholder="Enter secure password (12-128 chars)">
+      </div>
+      <div class="form-group">
+        <label for="res-verify-password">Verify Password</label>
+        <input type="password" id="res-verify-password" name="res-verify-password" aria-label="Verify Password" placeholder="Verify password">
       </div>
       <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:32px;">
         <button class="btn btn-secondary" id="btn-res-cancel">Cancel</button>
@@ -498,20 +516,26 @@
     <div class="modal">
       <h3 style="margin-bottom:24px; font-size:24px; font-weight:700;">Register New Field Worker</h3>
       <div class="form-group">
-        <label for="work-name">Worker Full Name</label>
-        <input type="text" id="work-name" name="work-name" aria-label="Worker Full Name" placeholder="Andres Bonifacio">
+        <label for="work-name">Full Name</label>
+        <input type="text" id="work-name" name="work-name" aria-label="Full Name" placeholder="Andres Bonifacio">
       </div>
       <div class="form-group">
-        <label for="work-id">Employee ID (Username)</label>
-        <input type="text" id="work-id" name="work-id" aria-label="Employee ID" placeholder="EMP-401">
-      </div>
-      <div class="form-group">
-        <label for="work-contact">Contact Number (For Password Recovery)</label>
+        <label for="work-contact">Contact Number</label>
         <input type="text" id="work-contact" name="work-contact" aria-label="Contact Number" placeholder="09171234567">
       </div>
       <div class="form-group">
-        <label for="work-password">Assigned Password</label>
-        <input type="password" id="work-password" name="work-password" aria-label="Assigned Password" placeholder="Enter secure password">
+        <label for="work-role">Role</label>
+        <select id="work-role" name="work-role" aria-label="Role">
+          <option value="Collector" selected>Field Worker / Collector</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="work-password">Password</label>
+        <input type="password" id="work-password" name="work-password" aria-label="Password" placeholder="Enter secure password (12-128 chars)">
+      </div>
+      <div class="form-group">
+        <label for="work-verify-password">Verify Password</label>
+        <input type="password" id="work-verify-password" name="work-verify-password" aria-label="Verify Password" placeholder="Verify password">
       </div>
       <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:32px;">
         <button class="btn btn-secondary" id="btn-work-cancel">Cancel</button>
