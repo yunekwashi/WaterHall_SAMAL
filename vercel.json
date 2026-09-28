@@ -4,6 +4,10 @@
   "buildCommand": "python scripts/build_static.py",
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/landing.html"
+    },
+    {
       "source": "/admin",
       "destination": "/admin/index.html"
     },

@@ -60,10 +60,13 @@ Future<void> _persistQueue(String type, List<Map<String, dynamic>> rows) async {
 }
 
 Future<void> restoreQueues() async {
+  final token = window.localStorage['waterhall_jwt'];
   if (currentAccount() == null) return;
   await nativeSession(window.localStorage['waterhall_jwt']);
   for (final type in ['collections', 'actions']) {
+    if (window.localStorage['waterhall_jwt'] != token) return;
     final result = await nativeCall('load', {'type': type});
+    if (window.localStorage['waterhall_jwt'] != token) return;
     if (result == null) continue;
     final rows = json.decode(result as String) as List;
     final key = type == 'collections' ? 'waterhall_offline_collections' : 'waterhall_unsynced_actions';

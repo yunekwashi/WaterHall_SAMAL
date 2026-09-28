@@ -393,12 +393,9 @@ body {
   }
 }
 #view-login:focus-within .login-footer-branding {
+  /* Keep its layout space: collapsing on focus moves buttons between press/release. */
   opacity: 0;
   pointer-events: none;
-  max-height: 0;
-  padding: 0;
-  margin: 0;
-  overflow: hidden;
 }
 .login-header {
   text-align: center;
@@ -1758,7 +1755,7 @@ select.form-input {
   display: none;
   justify-content: flex-end;
   flex-direction: column;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.3s ease;
 }
 .modal-overlay.active {
@@ -2526,3 +2523,11 @@ body, .app-screen, .app-view {
   justify-content: space-between;
 }
 
+
+/* Registration uses the same responsive portal shell. */
+.registration-card {width:min(94vw,440px);max-height:90dvh;overflow:auto;padding:24px;border-radius:16px;background:var(--white);color:var(--navy-primary);box-shadow:0 20px 80px #0005}
+.registration-card h2{font-size:22px;margin:0 0 10px}.registration-card p{font-size:13px;line-height:1.5}.registration-card label{display:block;font-size:13px;font-weight:600;margin:12px 0 5px}.registration-card .form-input{width:100%;min-height:42px}.registration-actions{display:flex;gap:12px;justify-content:flex-end;align-items:center}.registration-actions button{padding:12px;cursor:pointer}#register-status{overflow-wrap:anywhere}button:focus-visible,a:focus-visible{outline:3px solid #0284c7;outline-offset:3px}
+
+#register-user-modal{position:fixed;inset:0;z-index:10010;justify-content:center;align-items:center}.registration-card .form-input{color:#12333a;background:#f4f7f9}.registration-card label{color:#12333a}
+
+#resident-rate-description,#bill-rate-description{color:#334155;font-size:12px;line-height:1.5;margin:10px 0}#resident-bill-status{white-space:normal;text-align:right}

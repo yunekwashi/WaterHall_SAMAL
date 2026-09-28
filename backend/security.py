@@ -63,7 +63,7 @@ def principal():
     kind = claims.get('kind')
     with get_db() as db:
         if kind == 'resident' and isinstance(identity, str) and identity.startswith('HH-'):
-            db.execute('SELECT household_id, password_hash, family_head_name FROM households WHERE household_id = ?', (identifier(identity, 'HH-'),))
+            db.execute('SELECT household_id, password_hash, family_head_name, account_status FROM households WHERE household_id = ?', (identifier(identity, 'HH-'),))
             row = db.fetchone()
             role = 'resident'
         elif kind == 'staff':
@@ -72,7 +72,7 @@ def principal():
             role = 'admin' if row and row['role'] == 'Admin' else 'worker'
         else:
             abort(401, description='Please sign in again')
-    if not row or claims.get('credential') != hashlib.sha256(row['password_hash'].encode()).hexdigest():
+    if not row or (kind == 'resident' and row['account_status'] != 'approved') or claims.get('credential') != hashlib.sha256(row['password_hash'].encode()).hexdigest():
         abort(401, description='Please sign in again')
     g.principal = {'id': identity, 'role': role, 'record': row}
     return g.principal

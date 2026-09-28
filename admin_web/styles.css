@@ -758,3 +758,9 @@ body.server-offline > *:not(#admin-offline-overlay) {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+#billing-config-form label{display:block;margin:14px 0 5px}#billing-config-form input{width:100%;min-height:42px}#admin-reservoir{display:grid;grid-template-columns:1fr 1fr;gap:16px}#admin-reservoir dd{margin:0;font-weight:600}
+
+.reservoir-summary{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:28px 0}.reservoir-summary dd{margin:0;font-weight:700;color:var(--text-color)}
+
+#billing-config-form input{padding:10px 14px;border-radius:8px;border:1px solid var(--border-color);background:#f4f7f9;color:#12333a;font:inherit}#billing-config-status{font-size:13px;line-height:1.5;margin:14px 0}

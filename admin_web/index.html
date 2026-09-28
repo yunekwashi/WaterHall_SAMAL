@@ -108,7 +108,7 @@
       </div>
       <div class="nav-item" data-tab="tab-assets">
         <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-        IoT Control
+        Reservoir measurements
       </div>
       <div class="nav-item" data-tab="tab-announcements">
         <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
@@ -191,8 +191,8 @@
           <canvas id="collectionsChart"></canvas>
         </div>
         <div class="chart-container">
-          <h3>Reservoir Water Quality</h3>
-          <canvas id="qualityChart"></canvas>
+          <h3>Reservoir measurements</h3>
+          <dl class="reservoir-summary"><dt>Water level</dt><dd id="summary-level">Awaiting data</dd><dt>Turbidity</dt><dd id="summary-turbidity">Awaiting data</dd><dt>TDS</dt><dd id="summary-tds">Awaiting data</dd></dl><p>Measurements do not certify drinking-water safety.</p>
         </div>
       </div>
       
@@ -219,6 +219,9 @@
 
     <!-- Directory Tab -->
     <div id="tab-directory" class="tab-content">
+      <section class="glass-panel" style="margin-bottom:24px"><h2>Resident registrations</h2><p>Review pending accounts. Matching names are a review flag; accounts are never merged automatically.</p><p id="registration-review-status" role="status"></p>
+        <div style="overflow-x:auto"><table><thead><tr><th>Resident ID</th><th>Name / review flags</th><th>Contact</th><th>Purok</th><th>Status</th><th>Review</th></tr></thead><tbody id="registrations-tbody"></tbody></table></div>
+      </section>
       <div class="glass-panel">
         <div class="panel-header">
           <div class="panel-title">Resident & Household Directory</div>
@@ -262,39 +265,9 @@
       </div>
     </div>
 
-    <!-- Assets / IoT Control Tab -->
     <div id="tab-assets" class="tab-content">
-      <div class="glass-panel" style="max-width: 600px;">
-        <div class="panel-header">
-          <div class="panel-title">Hardware Simulation Override</div>
-        </div>
-        <p style="color:var(--text-muted); font-size:14px; margin-bottom:30px;">
-          Use these controls to manually override the sensor readings for presentation and testing purposes. Changes will broadcast to all residents and workers in real-time.
-        </p>
-
-        <div class="slider-container">
-          <div class="slider-header">
-            <label for="slider-tank" style="font-weight:600; font-size:14px; color:var(--text-color); cursor:pointer;">Reservoir Water Level</label>
-            <span id="sim-tank-val">68%</span>
-          </div>
-          <input type="range" id="slider-tank" name="slider-tank" aria-label="Reservoir Water Level" min="0" max="100" value="68">
-        </div>
-
-        <div class="slider-container">
-          <div class="slider-header">
-            <label for="slider-turbidity" style="font-weight:600; font-size:14px; color:var(--text-color); cursor:pointer;">Water Turbidity (NTU)</label>
-            <span id="sim-turbidity-val">6.2 NTU</span>
-          </div>
-          <input type="range" id="slider-turbidity" name="slider-turbidity" aria-label="Water Turbidity" min="0" max="20" step="0.1" value="6.2">
-        </div>
-        
-        <div class="slider-container">
-          <div class="slider-header">
-            <label for="slider-ph" style="font-weight:600; font-size:14px; color:var(--text-color); cursor:pointer;">pH Level</label>
-            <span id="sim-ph-val">7.2</span>
-          </div>
-          <input type="range" id="slider-ph" name="slider-ph" aria-label="pH Level" min="0" max="14" step="0.1" value="7.2">
-        </div>
+      <div class="glass-panel"><h2>Reservoir measurements</h2><p>Read-only measurements. Awaiting hardware integration and field validation. These values do not certify drinking-water safety.</p>
+        <dl id="admin-reservoir"><dt>Water level</dt><dd id="admin-water-level">Awaiting data</dd><dt>Turbidity</dt><dd id="admin-turbidity">Awaiting data</dd><dt>TDS</dt><dd id="admin-tds">Awaiting data</dd><dt>Last reading</dt><dd id="admin-reading-time">Awaiting data</dd></dl>
       </div>
     </div>
 
@@ -400,6 +373,14 @@
 
     <!-- Payment Configuration Tab -->
     <div id="tab-payment-settings" class="tab-content">
+      <form id="billing-config-form" class="glass-panel" style="max-width:680px;margin-bottom:24px">
+        <h2>Billing rates</h2><p>Confirm official rates before issuing new bills. Changes apply to new bills only; stored bill breakdowns remain unchanged.</p>
+        <label for="rate-base_rate">Base rate (PHP)</label><input id="rate-base_rate" type="number" class="form-input" min="0" max="1000000" step="0.01" required>
+        <label for="rate-included_m3">Included consumption (m³)</label><input id="rate-included_m3" type="number" class="form-input" min="0" max="1000000" step="0.001" required>
+        <label for="rate-environmental_fee">Environmental fee (PHP)</label><input id="rate-environmental_fee" type="number" class="form-input" min="0" max="1000000" step="0.01" required>
+        <label for="rate-excess_rate">Excess rate (PHP/m³)</label><input id="rate-excess_rate" type="number" class="form-input" min="0" max="1000000" step="0.01" required>
+        <p id="billing-config-status" role="status"></p><button type="submit" class="btn" id="save-billing-config">Confirm and save rates</button>
+      </form>
       <div class="glass-panel" style="max-width: 680px;">
         <div class="panel-header">
           <div class="panel-title">Barangay Payment & Collection Rules</div>

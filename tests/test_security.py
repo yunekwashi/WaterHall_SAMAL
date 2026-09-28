@@ -71,7 +71,7 @@ def test_resident_scope_and_ignored_client_roles(system):
 
 def test_telemetry_auth_validation_zero_and_alerts(system, monkeypatch):
     client, headers, _ = system
-    payload = {'water_level_percentage': 0, 'turbidity_ntu': 6, 'ph_level': 7, 'tds_ppm': 0}
+    payload = {'water_level_percentage': 0, 'turbidity_ntu': 6, 'tds_ppm': 0}
     assert client.post('/api/iot/telemetry', json=payload).status_code == 401
     device = {'X-IoT-Secret': IOT_DEVICE_SECRET}
     assert client.post('/api/iot/telemetry', json=payload, headers=device).status_code == 200

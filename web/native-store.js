@@ -21,8 +21,13 @@
       window.WaterHallStorage.postMessage(JSON.stringify({id, method, data}));
     });
   };
-  window.waterhallSetNativeSession = async token => {
-    await window.waterhallNativeCall('auth', {token});
-    if (window.WaterHallAuth) window.WaterHallAuth.postMessage(JSON.stringify({token}));
+  let authWrites = Promise.resolve();
+  window.waterhallSetNativeSession = token => {
+    const next = authWrites.catch(() => {}).then(async () => {
+      await window.waterhallNativeCall('auth', {token});
+      if (!window.WaterHallStorage && window.WaterHallAuth) window.WaterHallAuth.postMessage(JSON.stringify({token}));
+    });
+    authWrites = next;
+    return next;
   };
 })();

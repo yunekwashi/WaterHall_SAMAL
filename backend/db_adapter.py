@@ -7,6 +7,7 @@ from backend import config
 
 DB_FILE = config.DATABASE_PATH
 POSTGRES_URL = config.DATABASE_URL
+LATEST_SCHEMA_VERSION = 2
 
 
 def is_postgres():
@@ -325,7 +326,8 @@ def init_db():
             db.execute('ALTER TABLE reservoir_quality_readings ALTER COLUMN ph_level DROP DEFAULT')
 
         additions = {
-            'billing_records': {'billed_at': 'TEXT', 'billed_by': 'INTEGER'},
+            'billing_records': {'billed_at': 'TEXT', 'billed_by': 'INTEGER', 'billing_snapshot': 'TEXT'},
+            'households': {'account_status': "TEXT NOT NULL DEFAULT 'approved' CHECK (account_status IN ('pending', 'approved', 'rejected'))"},
             'announcements': {'target_audience': "TEXT NOT NULL DEFAULT 'Everyone'"},
             'resident_reports': {'photo_base64': 'TEXT'},
             'payment_collections': {'request_hash': 'TEXT'},
@@ -347,3 +349,31 @@ def init_db():
             lease_until TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
         db.execute('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT DEFAULT CURRENT_TIMESTAMP)')
         db.execute('INSERT INTO schema_migrations (version) VALUES (1) ON CONFLICT (version) DO NOTHING')
+        # Version 2 is additive: existing accounts remain approved and historic totals
+        # remain unchanged. NULL snapshots explicitly mean legacy breakdown unknown.
+        db.execute('''CREATE TABLE IF NOT EXISTS resident_contact_claims (
+            contact TEXT PRIMARY KEY, household_id INTEGER REFERENCES households(household_id) ON DELETE SET NULL)''')
+        db.execute('''CREATE TABLE IF NOT EXISTS login_attempts (
+            identifier_digest TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0,
+            locked_until DOUBLE PRECISION NOT NULL DEFAULT 0, updated_at DOUBLE PRECISION NOT NULL)''')
+        db.execute('''CREATE TABLE IF NOT EXISTS billing_configuration (
+            config_id INTEGER PRIMARY KEY CHECK (config_id = 1), rates_json TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1, confirmed INTEGER NOT NULL DEFAULT 0)''')
+        import json
+        from backend.billing import LEGACY_SAMPLES
+        db.execute('''INSERT INTO billing_configuration (config_id, rates_json) VALUES (1, ?)
+                      ON CONFLICT (config_id) DO NOTHING''', (json.dumps(LEGACY_SAMPLES),))
+        db.execute('SELECT version FROM schema_migrations WHERE version = 2')
+        if not db.fetchone():
+            from backend.account_validation import normalize_contact
+            db.execute('SELECT household_id, contact_no FROM households ORDER BY household_id')
+            for household in db.fetchall():
+                try:
+                    contact = normalize_contact(household['contact_no'])
+                except ValueError:
+                    continue
+                # Reserve every valid legacy contact without merging or deleting
+                # existing duplicate accounts. Admin review reports them separately.
+                db.execute('''INSERT INTO resident_contact_claims (contact, household_id) VALUES (?, ?)
+                              ON CONFLICT (contact) DO NOTHING''', (contact, household['household_id']))
+            db.execute('INSERT INTO schema_migrations (version) VALUES (2) ON CONFLICT (version) DO NOTHING')

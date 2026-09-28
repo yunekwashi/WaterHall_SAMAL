@@ -74,7 +74,7 @@
 3. Set Wi-Fi credentials, `SERVER_BASE_URL`, and `IOT_DEVICE_SECRET` in that local header. Match the backend environment secret (32+ random characters).
 4. For production, use the HTTPS origin without a trailing slash and install the correct root CA PEM in `ROOT_CA`. Keep `ALLOW_INSECURE_LOCAL_HTTP=false`; do not disable certificate verification. The device synchronizes its clock for TLS.
 5. Local HTTP requires explicit `ALLOW_INSECURE_LOCAL_HTTP=true` on an isolated development network.
-6. This hardware list has no pH probe. The firmware now omits pH rather than reporting a fixed 7.20. The UI shows pH as unmeasured until an actual probe supplies it. Calibrate all installed sensors before operational use.
+6. Supported reservoir measurements are water level, turbidity and TDS only. The software has no active pH or flow-sensor features. Household consumption uses manual meter readings. Hardware integration and calibration remain a separate, unverified phase.
 
 ### Step 3: Flash to ESP32
 1. Connect your ESP32 to your PC via Micro-USB / USB-C data cable.

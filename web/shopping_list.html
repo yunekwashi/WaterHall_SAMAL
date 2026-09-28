@@ -30,7 +30,7 @@
     </ul>
 
     <h2>2. Central Reservoir Sensors</h2>
-    <p>This equipment will simulate and measure the main water tank's status.</p>
+    <p>Future hardware will measure the main water tank's status.</p>
     <ul>
         <li><strong>Ultrasonic Distance Sensor (HC-SR04)</strong> or <strong>Waterproof Ultrasonic Sensor (JSN-SR04T)</strong>
             <ul>
@@ -46,16 +46,8 @@
         </li>
     </ul>
 
-    <h2>3. Household Water Meter Sensors (Leak Detection)</h2>
-    <p>This equipment will measure the flow of water to individual houses to detect leaks (constant flow rates).</p>
-    <ul>
-        <li><strong>YF-S201 (1/2") or YF-B7 (1/2" Brass) Water Flow Sensor</strong>
-            <ul>
-                <li><em>Quantity:</em> 1 for every household you want to physically simulate (e.g., 2 to 4 for a good physical prototype).</li>
-                <li><em>Purpose:</em> Uses a Hall effect sensor to measure the <strong>Flow Rate (L/s)</strong>. If the flow remains constant when it shouldn't, your backend flags it as a leak.</li>
-            </ul>
-        </li>
-    </ul>
+    <h2>3. Manual household water metering</h2>
+    <p>Workers enter readings from physical household meters. No electronic flow sensor is part of this software scope. Consumption is the validated current reading minus the previous reading; leak concerns are reported manually.</p>
 
     <h2>4. Electronics Prototyping Essentials</h2>
     <p>The supporting components required to wire everything together safely.</p>
@@ -67,7 +59,7 @@
             <ul><li><em>Quantity:</em> 2 or 3 (for prototyping before soldering)</li></ul>
         </li>
         <li><strong>Resistors (10kΩ, 4.7kΩ)</strong>
-            <ul><li><em>Quantity:</em> 1 small kit (useful for pull-up resistors on the flow sensors if needed).</li></ul>
+            <ul><li><em>Quantity:</em> Select components only after the reservoir wiring design is verified.</li></ul>
         </li>
         <li><strong>Power Supply (5V Micro USB or Type-C Cable + Wall Adapter)</strong>
             <ul><li><em>Quantity:</em> 1 per ESP32 board to power them constantly.</li></ul>
@@ -78,13 +70,13 @@
     <p>To prove your capstone works during your final defense, you'll need a physical rig.</p>
     <ul>
         <li><strong>Small Plastic Containers/Tanks</strong> (to act as the Central Reservoir)</li>
-        <li><strong>PVC Pipes (1/2 inch) and Valves</strong> (to route water through the flow sensors)</li>
+        <li><strong>PVC Pipes (1/2 inch) and Valves</strong> (for the reservoir test rig)</li>
         <li><strong>Small Submersible Water Pump (5V - 12V)</strong> (to push water through your system to simulate flow)</li>
     </ul>
 
     <div class="tip">
         <strong>Connecting to the App:</strong><br>
-        Once you have the parts, you will write a simple C++ script using the Arduino IDE for the ESP32. The script will read the sensors and send an authenticated HTTPS <code>POST</code> request to <code>SERVER_BASE_URL/api/iot/telemetry</code> (your Python server) with a JSON payload, exactly mimicking what the simulator sliders do right now!
+        Once you have the parts, you will write a simple C++ script using the Arduino IDE for the ESP32. The script will read the sensors and send an authenticated HTTPS <code>POST</code> request to <code>SERVER_BASE_URL/api/iot/telemetry</code> (your Python server) with a JSON payload, with only water level, turbidity and TDS measurements. Hardware implementation is a separate phase.
     </div>
 </body>
 </html>

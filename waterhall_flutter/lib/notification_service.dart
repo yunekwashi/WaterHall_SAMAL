@@ -101,17 +101,20 @@ class NotificationService {
       const secure = FlutterSecureStorage();
       final token = await secure.read(key: 'waterhall_jwt');
       if (token == null) return;
+      final claims = json.decode(utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1])))) as Map<String, dynamic>;
+      final owner = claims['sub'] as String;
+      if ((claims['exp'] as num) * 1000 <= DateTime.now().millisecondsSinceEpoch) return;
       final prefs = await SharedPreferences.getInstance();
       final serverUrl = await AppConfig.resolveActiveServer();
       final cleanUrl = serverUrl.replaceAll(RegExp(r'/+$'), '');
 
-      final lastSeenId = prefs.getInt('last_seen_announcement_id') ?? 0;
+      final lastSeenId = prefs.getInt('last_seen_announcement_id_$owner') ?? 0;
       final pollUri = Uri.parse(
           '$cleanUrl/api/notifications/poll?role=$role&since_id=$lastSeenId');
 
       final response =
           await http.get(pollUri, headers: {'Authorization': 'Bearer $token'}).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) return;
+      if (response.statusCode != 200 || await secure.read(key: 'waterhall_jwt') != token) return;
 
       final data = json.decode(response.body);
       if (data == null) return;
@@ -136,7 +139,7 @@ class NotificationService {
             msg,
           );
         }
-        await prefs.setInt('last_seen_announcement_id', highestId);
+        await prefs.setInt('last_seen_announcement_id_$owner', highestId);
       }
 
       // 2. Check emergency sensor states
@@ -145,33 +148,34 @@ class NotificationService {
       final telemetry = data['telemetry'] as Map<String, dynamic>? ?? {};
 
       final lastContaminationAlert =
-          prefs.getString('last_contamination_alert');
-      final lastLowLevelAlert = prefs.getString('last_low_level_alert');
+          prefs.getString('last_contamination_alert_$owner');
+      final lastLowLevelAlert = prefs.getString('last_low_level_alert_$owner');
       final nowStr =
           DateTime.now().toIso8601String().substring(0, 13); // hourly bucket
 
       if (isContaminated && lastContaminationAlert != nowStr) {
-        final turb = telemetry['turbidity_ntu'] ?? 5.5;
-        final ph = telemetry['ph_level'] ?? 7.0;
+        final turb = telemetry['turbidity_ntu'];
+        if (turb is! num) return;
         await showNotification(
           99901,
           "⚠️ WATER QUALITY ALERT",
-          "Water contamination detected (Turbidity: $turb NTU, pH: $ph). Follow local water authority guidance.",
+          "Elevated turbidity ($turb NTU). Follow local water authority guidance.",
         );
-        await prefs.setString('last_contamination_alert', nowStr);
+        await prefs.setString('last_contamination_alert_$owner', nowStr);
       }
 
       if (isLowLevel && lastLowLevelAlert != nowStr) {
-        final wl = telemetry['water_level_percentage'] ?? 15;
+        final wl = telemetry['water_level_percentage'];
+        if (wl is! num) return;
         await showNotification(
           99902,
           "⚠️ CRITICAL RESERVOIR LEVEL",
           "Water supply level is critically low ($wl%). Please conserve water.",
         );
-        await prefs.setString('last_low_level_alert', nowStr);
+        await prefs.setString('last_low_level_alert_$owner', nowStr);
       }
     } catch (e) {
-      debugPrint("Error checking notifications: $e");
+      debugPrint("Notification check unavailable.");
     }
   }
 }

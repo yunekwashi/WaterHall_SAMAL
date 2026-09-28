@@ -8,7 +8,8 @@ const sessionExpiredMessage = 'Session expired. Please sign in again.';
 class ApiFailure implements Exception {
   final int? status;
   final bool sessionChanged;
-  const ApiFailure({this.status, this.sessionChanged = false});
+  final String? userMessage;
+  const ApiFailure({this.status, this.sessionChanged = false, this.userMessage});
   bool get unavailable => status == null || status == 429 || status! >= 500;
   @override
   String toString() => 'API request was not completed.';
@@ -22,14 +23,15 @@ const dbKeys = {
   'billingRecords': 'waterhall_billing_records',
   'announcements': 'waterhall_announcements',
   'paymentSettings': 'waterhall_payment_settings',
+  'billingConfig': 'waterhall_billing_config',
   'offlineCollections': 'waterhall_offline_collections',
   'unsyncedActions': 'waterhall_unsynced_actions'
 };
 
 final Map<String, dynamic> seedCentralAssets = {
-  'main_tank_level': 0, 'turbidity': 0, 'ph_level': 0, 'tds_ppm': 0,
-  'turbidity_status': 'unknown', 'ph_status': 'unknown', 'has_reading': false,
-  'turbidity_desc': 'Awaiting sensor readings', 'ph_desc': 'Awaiting sensor readings', 'last_updated': null
+  'main_tank_level': null, 'turbidity': null, 'tds_ppm': null,
+  'turbidity_status': 'unknown', 'has_reading': false,
+  'turbidity_desc': 'Awaiting sensor readings', 'last_updated': null
 };
 
 final Map<String, String> defaultPaymentSettings = {
@@ -49,6 +51,8 @@ class Database {
   List<Map<String, dynamic>> _billingRecords = [];
   List<Map<String, dynamic>> _announcements = [];
   Map<String, String> _paymentSettings = {};
+  Map<String, dynamic> _billingConfig = {};
+  Map<String, dynamic> getBillingConfig() => Map.of(_billingConfig);
   
   bool isDatabaseOnline = false;
   String? lastSyncError;
@@ -79,6 +83,7 @@ class Database {
 
   Future<void> endSession({bool expired = false}) async {
     ++_sessionVersion;
+    window.dispatchEvent(Event('waterhall-session-ending'));
     isDatabaseOnline = false;
     window.localStorage.remove('waterhall_jwt');
     window.localStorage.remove('waterhall_session');
@@ -147,7 +152,21 @@ class Database {
         throw const ApiFailure(status: 401, sessionChanged: true);
       }
       if (response.status == null || response.status! < 200 || response.status! >= 300) {
-        throw ApiFailure(status: response.status == 0 ? null : response.status);
+        String? message;
+        // Construct messages from bounded metadata; never echo response bodies.
+        if (!authenticated && uri.path == '/api/login') {
+          message = response.status == 429 ? 'Too many attempts. Please try again in 5 minutes.' : 'Invalid credentials.';
+          try {
+            final data = json.decode(response.responseText ?? '{}');
+            final remaining = data['attempts_remaining'];
+            if (response.status == 401 && remaining is int && remaining >= 0 && remaining <= 4) {
+              message = 'Invalid credentials. $remaining attempts remaining.';
+            }
+            if (response.status == 403) message = data['account_status'] == 'pending'
+              ? 'Registration is pending Admin approval.' : 'Registration was rejected. Contact the administrator.';
+          } catch (_) {}
+        }
+        throw ApiFailure(status: response.status == 0 ? null : response.status, userMessage: message);
       }
       return response;
     } catch (error) {
@@ -182,7 +201,7 @@ class Database {
       'isOnline': isDatabaseOnline,
       'isSyncing': _isSyncing || _syncingActions,
       'authenticated': hasUsableSession(),
-      'reviewCount': getPendingCollections().where((c) => c['sync_error'] != null).length,
+      'reviewCount': getPendingCollections().where((c) => c['sync_error'] != null).length + pendingActions().where((a) => a['sync_error'] != null).length,
       'pendingCount': pending, 'error': lastSyncError
     };
   }
@@ -211,20 +230,35 @@ class Database {
     if (_syncingActions || !checkSession()) return;
     _syncingActions = true;
     final version = _sessionVersion;
+    final actions = pendingActions()..sort((a, b) => (a['last_sync_attempt'] ?? '').toString().compareTo((b['last_sync_attempt'] ?? '').toString()));
     try {
-      for (final action in pendingActions().take(100)) {
+      for (final action in actions.take(100)) {
         if (version != _sessionVersion || !checkSession()) break;
-        final xhr = await apiRequest(action['endpoint'] as String, method: 'POST',
-          requestHeaders: {'Content-Type': 'application/json'},
-          sendData: json.encode(action['body']));
-        final response = json.decode(xhr.responseText ?? '{}');
-        if (version != _sessionVersion || !checkSession()) break;
-        if (xhr.status != 200 || response['status'] != 'success') break;
-        await mutateQueue('actions', (rows) => rows.removeWhere((r) => r['operation_id'] == action['operation_id']));
-        lastSyncError = null;
+        await mutateQueue('actions', (rows) {
+          for (final row in rows) {
+            if (row['operation_id'] == action['operation_id']) row['last_sync_attempt'] = DateTime.now().toUtc().toIso8601String();
+          }
+        });
+        try {
+          final xhr = await apiRequest(action['endpoint'] as String, method: 'POST',
+            requestHeaders: {'Content-Type': 'application/json'}, sendData: json.encode(action['body']));
+          final response = json.decode(xhr.responseText ?? '{}');
+          if (version != _sessionVersion || !checkSession()) break;
+          if (response['status'] != 'success') throw const ApiFailure(status: 409);
+          await mutateQueue('actions', (rows) => rows.removeWhere((r) => r['operation_id'] == action['operation_id']));
+        } on ApiFailure catch (failure) {
+          if (failure.sessionChanged || failure.unavailable) rethrow;
+          await mutateQueue('actions', (rows) {
+            for (final row in rows) {
+              if (row['operation_id'] == action['operation_id']) row['sync_error'] = 'Server rejected this saved operation. Review with Admin; the original operation is retained.';
+            }
+          });
+        }
       }
+      if (version == _sessionVersion) lastSyncError = pendingActions().any((a) => a['sync_error'] != null)
+        ? 'Saved operations need review. Their original data remains on this device.' : null;
     } catch (_) {
-      if (version == _sessionVersion && hasUsableSession() && isDatabaseOnline) lastSyncError = 'Pending operations need review before they can sync.';
+      if (version == _sessionVersion && hasUsableSession() && isDatabaseOnline) lastSyncError = 'Pending operations remain saved for retry.';
     } finally { _syncingActions = false; _notifySyncStatus(); }
   }
 
@@ -233,7 +267,7 @@ class Database {
       if (entry.key != 'offlineCollections' && entry.key != 'unsyncedActions') window.localStorage.remove(entry.value);
     }
     _households = []; _workers = []; _billingRecords = []; _maintenanceLogs = []; _announcements = [];
-    _centralAssets = {}; _paymentSettings = {};
+    _centralAssets = {}; _paymentSettings = {}; _billingConfig = {};
   }
 
   // --- Local Offline Cache Helpers ---
@@ -257,6 +291,8 @@ class Database {
       final rawAnn = window.localStorage[dbKeys['announcements']!];
       if (rawAnn != null) _announcements = List<Map<String, dynamic>>.from(json.decode(rawAnn));
 
+      final rawConfig = window.localStorage[dbKeys['billingConfig']!];
+      if (rawConfig != null) _billingConfig = Map<String, dynamic>.from(json.decode(rawConfig));
       final rawSet = window.localStorage[dbKeys['paymentSettings']!];
       if (rawSet != null) {
         _paymentSettings = Map<String, String>.from(json.decode(rawSet));
@@ -264,7 +300,7 @@ class Database {
         _paymentSettings = Map<String, String>.from(defaultPaymentSettings);
       }
     } catch (e) {
-      print("Error loading local cache: $e");
+      print("Unable to load local cache.");
     }
   }
 
@@ -277,8 +313,9 @@ class Database {
       window.localStorage[dbKeys['billingRecords']!] = json.encode(_billingRecords);
       window.localStorage[dbKeys['announcements']!] = json.encode(_announcements);
       window.localStorage[dbKeys['paymentSettings']!] = json.encode(_paymentSettings);
+      window.localStorage[dbKeys['billingConfig']!] = json.encode(_billingConfig);
     } catch (e) {
-      print("Error saving local cache: $e");
+      print("Unable to save local cache.");
     }
   }
 
@@ -290,6 +327,7 @@ class Database {
       final xhr = await apiRequest(url);
       final data = json.decode(xhr.responseText!) as Map<String, dynamic>;
       
+      _billingConfig = Map<String, dynamic>.from(data['billingConfig'] ?? {});
       _households = List<Map<String, dynamic>>.from(data['households']);
       _centralAssets = Map<String, dynamic>.from(data['centralAssets']);
       _maintenanceLogs = List<Map<String, dynamic>>.from(data['maintenanceLogs']);
@@ -320,6 +358,8 @@ class Database {
     checkSession();
     Timer.periodic(const Duration(seconds: 1), (_) => checkSession());
     window.onFocus.listen((_) => checkSession());
+    window.addEventListener('waterhall-session-expired', (_) { unawaited(endSession(expired: true)); });
+    window.addEventListener('waterhall-request-unavailable', (_) { if (checkSession()) _markOffline(); });
     // 1. Immediately load cached data so offline mode works instantly with no blank screen
     await restoreQueues();
     _loadFromLocalCache();
@@ -603,39 +643,6 @@ class Database {
     return _centralAssets;
   }
 
-  Map<String, dynamic> updateCentralAssets(Map<String, dynamic> updates) {
-    final assets = getCentralAssets();
-    updates.forEach((key, value) {
-      assets[key] = value;
-    });
-    assets['last_updated'] = DateTime.now().toUtc().toIso8601String();
-
-    final num phLevel = assets['ph_level'] ?? 7.2;
-    if (phLevel < 6.5 || phLevel > 8.5) {
-      assets['ph_status'] = 'warning';
-      assets['ph_desc'] = phLevel < 6.5 ? 'Acidic pH. Check lime feeder.' : 'Alkaline pH. Run acid neutralizing wash.';
-    } else {
-      assets['ph_status'] = 'normal';
-      assets['ph_desc'] = 'pH levels normal.';
-    }
-
-    final num turbidity = assets['turbidity'] ?? 6.2;
-    if (turbidity > 5.0) {
-      assets['turbidity_status'] = 'warning';
-      assets['turbidity_desc'] = 'Elevated turbidity. Check backwash filters.';
-    } else {
-      assets['turbidity_status'] = 'normal';
-      assets['turbidity_desc'] = 'Turbidity levels normal.';
-    }
-
-    _saveToLocalCache();
-
-    queueAction('/api/central-assets/update', assets);
-
-
-    return assets;
-  }
-
   List<Map<String, dynamic>> getMaintenanceLogs() {
     return _maintenanceLogs;
   }
@@ -660,7 +667,13 @@ class Database {
   }
 
   List<Map<String, dynamic>> getBillingRecords() {
-    return _billingRecords;
+    final byId = {for (final record in _billingRecords) '${record['bill_id']}': record};
+    for (final action in pendingActions().where((a) => a['endpoint'] == '/api/billing-records/add')) {
+      final record = Map<String, dynamic>.from(action['body']);
+      record['status'] = action['sync_error'] == null ? 'Pending sync' : 'Needs review';
+      byId['${record['bill_id']}'] = record;
+    }
+    return byId.values.toList();
   }
 
   List<Map<String, dynamic>> getBillingHistoryForHousehold(String houseId) {
@@ -685,7 +698,6 @@ class Database {
   }
 
   Future<Map<String, dynamic>> addBillingRecord(Map<String, dynamic> record) async {
-    final records = getBillingRecords();
     final newRecord = {
       'bill_id': 'PENDING-${operationId()}',
       'date': DateTime.now().toUtc().toIso8601String(),
@@ -693,7 +705,7 @@ class Database {
       ...record
     };
     await queueAction('/api/billing-records/add', newRecord);
-    records.insert(0, newRecord);
+    if (checkSession()) await refreshData();
     _saveToLocalCache();
 
 
@@ -734,21 +746,6 @@ class Database {
 
   }
 
-  Future<Map<String, dynamic>> registerResident(String ownerName, String purok, String lot, String password) async {
-    final response = await apiRequest('/api/households/add', method: 'POST', requestHeaders: {
-      'Content-Type': 'application/json'},
-      sendData: json.encode({'owner_name': ownerName, 'purok': purok, 'password': password}));
-    await refreshData();
-    return Map<String, dynamic>.from(json.decode(response.responseText!));
-  }
-
-  Future<Map<String, dynamic>> registerWorker(String name, String role, String zone, String password) async {
-    final response = await apiRequest('/api/workers/add', method: 'POST', requestHeaders: {
-      'Content-Type': 'application/json'},
-      sendData: json.encode({'worker_id': 'EMP-${operationId().substring(0,12)}', 'name': name, 'role': 'Collector', 'zone': zone, 'password': password}));
-    await refreshData();
-    return Map<String, dynamic>.from(json.decode(response.responseText!));
-  }
 
 }
 

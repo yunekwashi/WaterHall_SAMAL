@@ -1,5 +1,5 @@
-const CACHE_NAME = 'waterhall-shell-v5';
-const SHELL = ['/index.html', '/app.js', '/styles.css', '/native-store.js', '/logo.png', '/manifest.json'];
+const CACHE_NAME = 'waterhall-shell-v6';
+const SHELL = ['/landing.html', '/landing.css', '/push-client.js', '/index.html', '/app.js', '/styles.css', '/native-store.js', '/logo.png', '/manifest.json'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -16,7 +16,7 @@ self.addEventListener('fetch', event => {
       event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy)));
     }
     return response;
-  }).catch(async () => (await caches.match(event.request)) || (await caches.match(url.pathname === '/' ? '/index.html' : url.pathname))));
+  }).catch(async () => (await caches.match(event.request)) || (await caches.match(url.pathname === '/' ? '/landing.html' : url.pathname))));
 });
 
 // ==============================================================================

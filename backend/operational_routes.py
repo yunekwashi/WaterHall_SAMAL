@@ -1,5 +1,7 @@
 """Validated business operations used by the existing Flask route URLs."""
 import datetime
+import json
+from decimal import Decimal
 
 from flask import abort, jsonify, request
 from backend.db_adapter import get_db
@@ -7,6 +9,7 @@ from backend.security import principal, require_role, text, number, identifier, 
 from backend.photos import save_photo, photo_for_client
 from backend.operations import begin, finish
 from backend.notifications import enqueue
+from backend import billing
 
 
 def handle_reports():
@@ -23,8 +26,9 @@ def handle_reports():
                 report['photo_base64'] = photo_for_client(report.get('photo_base64'))
             return jsonify(status='success', reports=reports[:50])
     data = request.get_json()
-    hh = identifier(data.get('household_id'), 'HH-')
-    if who['role'] == 'resident' and f'HH-{hh}' != who['id']:
+    supplied = data.get('household_id')
+    hh = identifier(who['id'] if who['role'] == 'resident' else supplied, 'HH-')
+    if who['role'] == 'resident' and supplied is not None and identifier(supplied, 'HH-') != hh:
         abort(403, description='You may only report for your own household')
     kind = text(data.get('report_type'), 'report type', 80)
     description = text(data.get('description'), 'description', 4000)
@@ -60,11 +64,10 @@ def update_central_assets():
     data = request.get_json()
     level = int(number(data.get('main_tank_level'), 'water level', 0, 100))
     turbidity = number(data.get('turbidity'), 'turbidity', 0, 10000)
-    ph = number(data.get('ph_level'), 'pH', 0, 14)
     tds = int(number(data.get('tds_ppm', data.get('tds')), 'TDS', 0, 100000))
     with get_db() as db:
-        db.execute('INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, ph_level, tds_ppm) VALUES (?, ?, ?, ?)',
-                   (level, turbidity, ph, tds))
+        db.execute('INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, tds_ppm) VALUES (?, ?, ?)',
+                   (level, turbidity, tds))
     return jsonify(status='success')
 
 
@@ -74,10 +77,9 @@ def update_household_status():
     status = data.get('current_leak_status')
     if status not in ('normal', 'leak', 'maintenance'):
         abort(400, description='Invalid leak status')
-    flow = number(data.get('flow_rate', 0), 'flow rate', 0, 100000)
     date = timestamp(data['leak_detected_at']) if data.get('leak_detected_at') else None
     with get_db() as db:
-        db.execute('UPDATE households SET current_leak_status = ?, flow_rate = ?, leak_detected_at = ? WHERE household_id = ?', (status, flow, date, hh))
+        db.execute('UPDATE households SET current_leak_status = ?, leak_detected_at = ? WHERE household_id = ?', (status, date, hh))
         if not db.rowcount:
             abort(404, description='Household not found')
     return jsonify(status='success', house_id=f'HH-{hh}')
@@ -111,33 +113,36 @@ def add_billing_record():
     data = request.get_json()
     who = require_role('worker', 'admin')
     hh = identifier(data.get('house_id'), 'HH-')
-    previous = number(data.get('previous_reading'), 'previous reading')
-    current = number(data.get('current_reading'), 'current reading', previous)
-    consumption = round(current - previous, 3)
-    # Existing WaterHall tariff is also shown in the web billing form.
-    total = round(120 + max(0, consumption - 10) * 15 + 50, 2)
-    if abs(number(data.get('total_due'), 'total due') - total) > .01:
-        abort(400, description='Bill total does not match the configured tariff')
+    previous = billing.decimal_value(data.get('previous_reading'), 'Previous reading', 3)
+    current = billing.decimal_value(data.get('current_reading'), 'Current reading', 3)
     date = timestamp(data.get('date'))
     with get_db() as db:
         operation, replay = begin(db, data)
         if replay is not None:
             return jsonify(replay)
+        config = billing.read_config(db, lock=True)
+        snapshot = billing.calculate(config, previous, current)
+        if data.get('billing_config_version', config['version']) != config['version']:
+            abort(409, description='Billing rates changed. Review the current rates before retrying.')
+        total = Decimal(snapshot['total_due'])
+        if data.get('total_due') is not None and billing.decimal_value(data['total_due'], 'Total due') != total:
+            abort(409, description='Bill total does not match current rates. Refresh and review before billing.')
         db.execute('SELECT meter_id, last_reading FROM water_meters WHERE household_id = ?' + (' FOR UPDATE' if db.is_pg else ''), (hh,))
         meter = db.fetchone()
         if not meter:
             abort(404, description='Meter not found')
-        if abs(float(meter['last_reading']) - previous) > .001:
+        if abs(Decimal(str(meter['last_reading'])) - previous) > Decimal('.0005'):
             abort(409, description='Meter reading changed; refresh before billing')
         db.execute('SELECT bill_id FROM billing_records WHERE meter_id = ? AND billed_at LIKE ?', (meter['meter_id'], date[:7] + '%'))
         if db.fetchone():
             abort(409, description='This meter already has a bill for the selected month')
         db.execute('''INSERT INTO billing_records (meter_id, previous_reading, present_reading, consumption_m3, total_amount,
-            payment_status, billed_at, billed_by, is_synced) VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?, 1)''',
-            (meter['meter_id'], previous, current, consumption, total, date, who['record']['user_id']))
+            payment_status, billed_at, billed_by, is_synced, billing_snapshot) VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?, 1, ?)''',
+            (meter['meter_id'], float(previous), float(current), float(Decimal(snapshot['consumption'])),
+             str(total), date, who['record']['user_id'], json.dumps(snapshot)))
         bill_id = db.lastrowid
-        db.execute('UPDATE water_meters SET last_reading = ? WHERE meter_id = ?', (current, meter['meter_id']))
-        result = finish(db, operation, {'status': 'success', 'bill_id': f'BILL-{bill_id}'})
+        db.execute('UPDATE water_meters SET last_reading = ? WHERE meter_id = ?', (float(current), meter['meter_id']))
+        result = finish(db, operation, {'status': 'success', 'bill_id': f'BILL-{bill_id}', 'billing_breakdown': snapshot})
     return jsonify(result)
 
 

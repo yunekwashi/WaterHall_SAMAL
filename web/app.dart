@@ -2,7 +2,6 @@ import 'dart:html';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:js' as js;
-import 'dart:js_util' as js_util;
 import 'db.dart';
 import 'offline_store.dart';
 
@@ -77,7 +76,7 @@ class AppController {
       if (portalTitle != null) portalTitle.text = 'Resident Portal';
       final empIdInput = document.getElementById('employee-id') as InputElement?;
       if (empIdInput != null) {
-        empIdInput.placeholder = "Enter household ID or name";
+        empIdInput.placeholder = 'Resident ID, meter ID, contact or unique name';
       }
     } else {
       if (portalTitle != null) portalTitle.text = 'Worker Portal';
@@ -224,7 +223,7 @@ class AppController {
     }
     var reviewButton = document.getElementById('btn-review-collections');
     if (reviewButton == null && pill?.parent != null) {
-      final button = ButtonElement()..id = 'btn-review-collections'..text = 'Review pending collections';
+      final button = ButtonElement()..id = 'btn-review-collections'..text = 'Review pending operations';
       button.onClick.listen((_) => _showCollectionReview());
       pill!.parent!.append(button);
       reviewButton = button;
@@ -239,14 +238,20 @@ class AppController {
     modal.style.display = 'flex';
     final card = DivElement()..className = 'offline-card';
     card.style..maxHeight = '80vh'..overflowY = 'auto';
-    card.append(HeadingElement.h2()..text = 'Pending collection review');
-    card.append(ParagraphElement()..text = 'These payments remain saved. Resolve bill conflicts with the administrator, then retry. Transaction IDs are preserved.');
+    card.append(HeadingElement.h2()..text = 'Pending operation review');
+    card.append(ParagraphElement()..text = 'These records remain saved. Review rejected readings or payments with Admin, then retry. Record IDs are preserved.');
     for (final row in db.getPendingCollections().where((c) => c['sync_error'] != null)) {
       card.append(ParagraphElement()..text = '${row['house_id']} | ${row['amount_collected']} | ${row['transaction_id']}\n${row['sync_error']}');
     }
-    final retry = ButtonElement()..text = 'Retry pending collections';
+    for (final action in db.pendingActions().where((a) => a['sync_error'] != null)) {
+      final body = action['body'] as Map;
+      final kind = const {'/api/billing-records/add': 'Meter reading and bill', '/api/maintenance-logs/add': 'Maintenance report', '/api/reports/add': 'Service report', '/api/announcements/add': 'Announcement', '/api/households/update': 'Household status'}[action['endpoint']] ?? 'Saved operation';
+      card.append(ParagraphElement()..text = "$kind | ${body['house_id'] ?? body['household_id'] ?? ''} | ${action['operation_id']}\n${action['sync_error']}");
+    }
+    final retry = ButtonElement()..text = 'Retry pending operations';
     retry.onClick.listen((_) async {
       retry.disabled = true;
+      await db.syncActions();
       await db.syncOfflineCollections();
       if (db.checkSession()) _showCollectionReview();
     });
@@ -370,6 +375,9 @@ class AppController {
           showToast('Logged in as Tech: ' + name);
           return;
         }
+      } on ApiFailure catch (failure) {
+        showLoginError(failure.userMessage ?? 'Unable to sign in. Check your connection and credentials.', loginErrorMsg);
+        return;
       } catch (_) {
         // Never expose an HTTP response, credentials, or JWT in an error/log.
       } finally {
@@ -384,7 +392,6 @@ class AppController {
     final logoutBtn = document.getElementById('btn-logout') as ButtonElement?;
     logoutBtn?.onClick.listen((e) async {
       _closeRealtimeStream();
-      unawaited(_unregisterWebPush());
       await db.endSession();
       showToast("Signed out of Tech session");
     });
@@ -393,7 +400,6 @@ class AppController {
     final residentLogoutBtn = document.getElementById('btn-resident-logout') as ButtonElement?;
     residentLogoutBtn?.onClick.listen((e) async {
       _closeRealtimeStream();
-      unawaited(_unregisterWebPush());
       await db.endSession();
       showToast("Signed out of Resident Portal");
     });
@@ -443,7 +449,7 @@ class AppController {
       if (updated != null) {
         final modalFlowRateEl = document.getElementById('modal-flow-rate');
         if (modalFlowRateEl != null) {
-          modalFlowRateEl.text = (updated['flow_rate'] as num).toStringAsFixed(2);
+          modalFlowRateEl.text = 'Manual report';
         }
         updateLeakToggleLabel(newStatus);
         showToast(newStatus == 'leak' ? "Leak status saved for synchronization." : "Resolved status saved for synchronization.");
@@ -497,7 +503,7 @@ class AppController {
       if (h != null) {
         final modalFlowRateEl = document.getElementById('modal-flow-rate');
         if (modalFlowRateEl != null) {
-          modalFlowRateEl.text = (h['flow_rate'] as num).toStringAsFixed(2);
+          modalFlowRateEl.text = 'Manual reading';
         }
       }
 
@@ -506,33 +512,6 @@ class AppController {
 
       renderModalLogs(activeHouseholdId!);
       renderDashboard();
-    });
-
-    // Asset status sliders
-    final sliderTank = document.getElementById('slider-tank') as RangeInputElement?;
-    final sliderPH = document.getElementById('slider-ph') as RangeInputElement?;
-    final sliderTurbidity = document.getElementById('slider-turbidity') as RangeInputElement?;
-
-    final simTankVal = document.getElementById('sim-tank-val');
-    final simPHVal = document.getElementById('sim-ph-val');
-    final simTurbidityVal = document.getElementById('sim-turbidity-val');
-
-    sliderTank?.onInput.listen((e) {
-      final val = int.tryParse(sliderTank.value ?? '') ?? 68;
-      if (simTankVal != null) simTankVal.text = '$val%';
-      updateAssetTelemetry({'main_tank_level': val});
-    });
-
-    sliderPH?.onInput.listen((e) {
-      final val = double.tryParse(sliderPH.value ?? '') ?? 5.8;
-      if (simPHVal != null) simPHVal.text = val.toStringAsFixed(1);
-      updateAssetTelemetry({'ph_level': val});
-    });
-
-    sliderTurbidity?.onInput.listen((e) {
-      final val = double.tryParse(sliderTurbidity.value ?? '') ?? 6.2;
-      if (simTurbidityVal != null) simTurbidityVal.text = '${val.toStringAsFixed(1)} NTU';
-      updateAssetTelemetry({'turbidity': val});
     });
 
     // Profile Actions
@@ -682,13 +661,6 @@ class AppController {
 
   void _registerWebPush(String role) {
     if (js.context.hasProperty('WaterHallPush')) js.context['WaterHallPush'].callMethod('registerSubscription', [role]);
-  }
-
-  Future<void> _unregisterWebPush() async {
-    if (js.context.hasProperty('WaterHallPush')) {
-      // Browser unsubscribe and server deactivation run while the token is still present.
-      await js_util.promiseToFuture(js_util.callMethod(js_util.getProperty(js_util.globalThis, 'WaterHallPush'), 'unregisterSubscription', []));
-    }
   }
 
   void enforceLoginGate() {
@@ -887,15 +859,13 @@ class AppController {
     final workerSafetyStatus = document.getElementById('worker-safety-status');
     final workerTurbVal = document.getElementById('worker-turb-val');
     final workerTdsVal = document.getElementById('worker-tds-val');
-    final workerPhVal = document.getElementById('worker-ph-val');
 
     if (workerTankVal != null) workerTankVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['main_tank_level']}%';
     if (workerTurbVal != null) workerTurbVal.text = assets['has_reading'] == false ? 'N/A' : (assets['turbidity'] as num).toStringAsFixed(1);
     if (workerTdsVal != null) workerTdsVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['tds_ppm']}';
-    if (workerPhVal != null) workerPhVal.text = assets['ph_status'] == 'unknown' ? 'N/A' : (assets['ph_level'] as num).toStringAsFixed(1);
 
     if (workerSafetyStatus != null) {
-      if (assets['ph_status'] == 'warning' || assets['turbidity_status'] == 'warning') {
+      if (assets['turbidity_status'] == 'warning') {
         workerSafetyStatus.text = 'ALERT';
         workerSafetyStatus.style.color = 'var(--alert-red)';
       } else {
@@ -908,10 +878,6 @@ class AppController {
 
     int qualityAlertCount = 0;
     final List<Map<String, String>> qualityAlerts = [];
-    if (assets['ph_status'] == 'warning') {
-      qualityAlertCount++;
-      qualityAlerts.add({'type': 'quality', 'name': 'Central Reservoir pH Alert', 'desc': assets['ph_desc']});
-    }
     if (assets['turbidity_status'] == 'warning') {
       qualityAlertCount++;
       qualityAlerts.add({'type': 'quality', 'name': 'Central Turbidity Alert', 'desc': assets['turbidity_desc']});
@@ -958,7 +924,7 @@ class AppController {
             </div>
             <div class="alert-item-text">
               <strong>${leak['owner_name']} (${leak['purok']})</strong><br>
-              Leak alert: Flow rate at ${(leak['flow_rate'] as num).toStringAsFixed(2)} L/s constant.
+              Reported leak. Field inspection required.
             </div>
           ''';
           item.onClick.listen((e) {
@@ -1157,7 +1123,7 @@ class AppController {
                 : '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> Normal'
               }
             </span>
-            <span class="household-flow">Flow: <span>${(h['flow_rate'] as num).toStringAsFixed(2)} L/s</span></span>
+            <span class="household-flow">Meter: <span>${h['current_m3_usage']} m³</span></span>
           </div>
         ''';
 
@@ -1191,23 +1157,8 @@ class AppController {
       latestBill = bills.first;
     }
 
-    num consumption = 0.0;
-    num total = 0.0;
-    if (latestBill != null) {
-      consumption = (latestBill['consumption'] as num?) ?? 0.0;
-      total = (latestBill['total_due'] as num?) ?? 0.0;
-    } else {
-      final List<num> hist = List<num>.from(h['monthly_history'] ?? []);
-      final num currReading = (h['current_m3_usage'] as num?) ?? 0.0;
-      final num prevReading = hist.length >= 2 ? hist[hist.length - 2] : (currReading - 2.5 > 0 ? currReading - 2.5 : 0.0);
-      consumption = currReading - prevReading;
-      if (consumption < 0) consumption = 0;
-      final excess = consumption > 10.0 ? (consumption - 10.0) * 15.0 : 0.0;
-      total = 120.0 + excess + 50.0;
-    }
-
-    if (m3El != null) m3El.text = consumption.toStringAsFixed(1);
-    if (totalEl != null) totalEl.text = total.toStringAsFixed(2);
+    if (m3El != null) m3El.text = latestBill == null ? '--' : (latestBill['consumption'] as num).toStringAsFixed(3);
+    if (totalEl != null) totalEl.text = latestBill == null ? 'No billing record' : (latestBill['total_due'] as num).toStringAsFixed(2);
 
     if (leakEl != null) {
       if (h['current_leak_status'] == 'leak') {
@@ -1215,7 +1166,7 @@ class AppController {
         leakEl.style.backgroundColor = 'var(--alert-red-bg)';
         leakEl.style.border = '1px solid var(--alert-red)';
       } else {
-        leakEl.innerHtml = '<svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:var(--alert-green)"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> <span style="color:var(--alert-green);font-weight:700">Flow Status Normal</span>';
+        leakEl.innerHtml = '<svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:var(--alert-green)"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> <span style="color:var(--alert-green);font-weight:700">No leak reported</span>';
         leakEl.style.backgroundColor = 'var(--alert-green-bg)';
         leakEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
       }
@@ -1239,13 +1190,13 @@ class AppController {
     if (leakTitleEl == null || leakDescEl == null) return;
 
     if (status == 'leak') {
-      leakTitleEl.text = "Leak status: HIGH CONSTANT FLOW";
+      leakTitleEl.text = "Leak status: LEAK REPORTED";
       leakTitleEl.style.color = 'var(--alert-red)';
-      leakDescEl.text = "Meter detects flow rate exceeds safety coefficient threshold.";
+      leakDescEl.text = "A leak has been reported. Inspect the water line on site.";
     } else {
-      leakTitleEl.text = "Flow status: NORMAL FLOW";
+      leakTitleEl.text = "Leak status: NO REPORT";
       leakTitleEl.style.color = 'var(--alert-green)';
-      leakDescEl.text = "Meter flow matches normal residential consumption metrics.";
+      leakDescEl.text = "No leak is currently reported. This is not an automatic sensor assessment.";
     }
   }
 
@@ -1348,7 +1299,7 @@ class AppController {
           </div>
           <div class="log-card-desc">${log['description']}</div>
           <div style="font-size: 9px; font-weight:700; color:${log['status_resolved'] == true ? 'var(--alert-green)' : 'var(--amber-safety)'}; margin-top:4px; text-transform:uppercase">
-            Status: ${log['status_resolved'] == true ? 'Resolved (Flow Restored)' : 'In Progress (Active Monitoring)'}
+            Status: ${log['status_resolved'] == true ? 'Resolved' : 'In Progress (Active Monitoring)'}
           </div>
         ''';
         historicalLogsEl.append(item);
@@ -1358,122 +1309,8 @@ class AppController {
 
   String _pad(int val) => val.toString().padLeft(2, '0');
 
-  // --- Asset Status & Hardware Simulator ---
-  void updateAssetTelemetry(Map<String, dynamic> updates) {
-    db.updateCentralAssets(updates);
-    renderAssets();
-  }
-
-  void renderAssets() {
-    final assets = db.getCentralAssets();
-
-    final sliderTank = document.getElementById('slider-tank') as RangeInputElement?;
-    final sliderPH = document.getElementById('slider-ph') as RangeInputElement?;
-    final sliderTurbidity = document.getElementById('slider-turbidity') as RangeInputElement?;
-
-    final simTankVal = document.getElementById('sim-tank-val');
-    final simPHVal = document.getElementById('sim-ph-val');
-    final simTurbidityVal = document.getElementById('sim-turbidity-val');
-
-    if (document.activeElement != sliderTank && sliderTank != null) {
-      sliderTank.value = assets['main_tank_level'].toString();
-      if (simTankVal != null) simTankVal.text = '${assets['main_tank_level']}%';
-    }
-
-    if (document.activeElement != sliderPH && sliderPH != null) {
-      sliderPH.value = assets['ph_level'].toString();
-      if (simPHVal != null) simPHVal.text = (assets['ph_level'] as num).toStringAsFixed(1);
-    }
-
-    if (document.activeElement != sliderTurbidity && sliderTurbidity != null) {
-      sliderTurbidity.value = assets['turbidity'].toString();
-      if (simTurbidityVal != null) simTurbidityVal.text = '${(assets['turbidity'] as num).toStringAsFixed(1)} NTU';
-    }
-
-    // 1. Tank Level Progress
-    final tankPercentEl = document.getElementById('asset-tank-percent');
-    final tankFillEl = document.getElementById('asset-tank-fill');
-    final tankBannerEl = document.getElementById('asset-tank-banner');
-
-    final mainTankLevel = assets['main_tank_level'] as int;
-
-    if (tankPercentEl != null) tankPercentEl.text = assets['has_reading'] == false ? 'N/A' : '$mainTankLevel%';
-    if (tankFillEl != null) tankFillEl.style.height = '$mainTankLevel%';
-
-    if (tankBannerEl != null && tankFillEl != null) {
-      if (assets['has_reading'] == false) {
-        tankBannerEl.text = 'Awaiting sensor readings';
-      } else if (mainTankLevel < 30) {
-        tankBannerEl.text = "Low Water Reserve: Check supply status.";
-        tankBannerEl.className = "reservoir-status-banner low";
-        tankFillEl.style.background = 'linear-gradient(180deg, #F87171 0%, #DC2626 100%)';
-      } else if (mainTankLevel < 50) {
-        tankBannerEl.text = "Moderate Water Reserve: Monitor supply.";
-        tankBannerEl.className = "reservoir-status-banner";
-        tankBannerEl.style.backgroundColor = 'var(--alert-amber-bg)';
-        tankBannerEl.style.borderColor = 'rgba(249, 115, 22, 0.3)';
-        tankBannerEl.style.color = 'var(--amber-safety)';
-        tankFillEl.style.background = 'linear-gradient(180deg, #FBBF24 0%, #D97706 100%)';
-      } else {
-        tankBannerEl.text = "Reservoir Level: Within configured range";
-        tankBannerEl.className = "reservoir-status-banner";
-        tankBannerEl.style.backgroundColor = 'var(--alert-green-bg)';
-        tankBannerEl.style.borderColor = 'rgba(16, 185, 129, 0.2)';
-        tankBannerEl.style.color = 'var(--alert-green)';
-        tankFillEl.style.background = 'linear-gradient(180deg, #60A5FA 0%, #2563EB 100%)';
-      }
-    }
-
-    // 2. pH Acidity Level
-    final phValEl = document.getElementById('asset-ph-val');
-    final phBadgeEl = document.getElementById('asset-ph-badge');
-    final phPointerEl = document.getElementById('asset-ph-pointer');
-    final phDescEl = document.getElementById('asset-ph-desc');
-
-    final phLevel = assets['ph_level'] as num;
-
-    if (phValEl != null) phValEl.text = assets['ph_status'] == 'unknown' ? 'N/A' : phLevel.toStringAsFixed(1);
-
-    if (phPointerEl != null) {
-      double phPos = ((phLevel - 4) / 6) * 100;
-      phPos = phPos.clamp(0.0, 100.0);
-      phPointerEl.style.left = '$phPos%';
-    }
-
-    if (phBadgeEl != null) {
-      phBadgeEl.text = assets['ph_status'].toString().toUpperCase();
-      phBadgeEl.className = 'quality-badge ${assets['ph_status']}';
-    }
-    if (phDescEl != null) phDescEl.text = assets['ph_desc'];
-
-    // 3. Turbidity Level
-    final turbValEl = document.getElementById('asset-turbidity-val');
-    final turbBadgeEl = document.getElementById('asset-turbidity-badge');
-    final turbFillEl = document.getElementById('asset-turbidity-fill');
-    final turbDescEl = document.getElementById('asset-turbidity-desc');
-
-    final turbidity = assets['turbidity'] as num;
-
-    if (turbValEl != null) turbValEl.text = turbidity.toStringAsFixed(1);
-
-    if (turbFillEl != null) {
-      double turbPercent = (turbidity / 12) * 100;
-      turbPercent = turbPercent.clamp(0.0, 100.0);
-      turbFillEl.style.width = '$turbPercent%';
-
-      if (assets['turbidity_status'] == 'warning') {
-        turbFillEl.style.backgroundColor = 'var(--amber-safety)';
-      } else {
-        turbFillEl.style.backgroundColor = 'var(--alert-green)';
-      }
-    }
-
-    if (turbBadgeEl != null) {
-      turbBadgeEl.text = assets['turbidity_status'].toString().toUpperCase();
-      turbBadgeEl.className = 'quality-badge ${assets['turbidity_status']}';
-    }
-    if (turbDescEl != null) turbDescEl.text = assets['turbidity_desc'];
-  }
+  // Reservoir measurements are read-only; no simulated readings.
+  void renderAssets() {}
 
   // --- Profile View Controller ---
   void renderProfile() {
@@ -1589,165 +1426,74 @@ class AppController {
     final billPrevReading = document.getElementById('bill-prev-reading');
     final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
 
-    final historyBills = db.getBillingHistoryForHousehold(selectedBillHouseId!);
-    double prevReading = 0.0;
-
-    if (historyBills.isNotEmpty) {
-      prevReading = (historyBills[0]['current_reading'] as num).toDouble();
-    } else {
-      final List<num> hist = List<num>.from(household['monthly_history']);
-      prevReading = hist.length >= 2 ? hist[hist.length - 2].toDouble() : (household['current_m3_usage'] as num).toDouble() - 2.5;
-    }
-
-    if (billPrevReading != null) billPrevReading.text = prevReading.toStringAsFixed(1);
-
-    if (houseId != null && billCurrInput != null) {
-      billCurrInput.value = (household['current_m3_usage'] as num).toStringAsFixed(1);
-    }
+    // Previous reading is the stored meter register, never a consumption estimate.
+    final previous = household['current_m3_usage'] as num?;
+    if (billPrevReading != null) billPrevReading.text = previous == null ? '--' : previous.toStringAsFixed(3);
+    if (houseId != null && billCurrInput != null) billCurrInput.value = '';
 
     updateBillCalculations();
     renderBillingHistoryList(selectedBillHouseId!);
+  }
+
+  bool _savingBill = false;
+
+  // Preview uses integer thousandths / cents. The backend remains authoritative.
+  Map<String, dynamic>? _billDraft() {
+    final config = db.getBillingConfig();
+    final previous = double.tryParse(document.getElementById('bill-prev-reading')?.text ?? '');
+    final current = double.tryParse((document.getElementById('bill-curr-input') as InputElement?)?.value ?? '');
+    if (config['configured'] != true || previous == null || current == null ||
+        !previous.isFinite || previous < 0 || !current.isFinite || current < 0 || current < previous || current > 1000000 ||
+        (current * 1000 - (current * 1000).round()).abs() > 0.000001) return null;
+    final used = (current * 1000).round() - (previous * 1000).round();
+    final included = (double.parse('${config['included_m3']}') * 1000).round();
+    final excess = (used - included).clamp(0, 1000000000);
+    final rate = (double.parse('${config['excess_rate']}') * 100).round();
+    final extraCents = (excess * rate + 500) ~/ 1000;
+    final base = (double.parse('${config['base_rate']}') * 100).round();
+    final fee = (double.parse('${config['environmental_fee']}') * 100).round();
+    return {'previous_reading': previous, 'current_reading': current, 'consumption': used / 1000,
+      'excess_charge': extraCents / 100, 'total_due': (base + fee + extraCents) / 100,
+      'billing_config_version': config['version']};
   }
 
   void updateBillCalculations() {
-    if (selectedBillHouseId == null) return;
-
-    final billPrevReading = document.getElementById('bill-prev-reading');
-    final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
-
-    final prevVal = double.tryParse(billPrevReading?.text ?? '') ?? 0.0;
-
-    final currInputStr = billCurrInput?.value?.trim() ?? '';
-    if (currInputStr.isEmpty) {
-      final billCalcConsumption = document.getElementById('bill-calc-consumption');
-      if (billCalcConsumption != null) billCalcConsumption.text = "0.0";
-
-      final billCalcExcess = document.getElementById('bill-calc-excess');
-      if (billCalcExcess != null) billCalcExcess.text = "0.00";
-
-      final billCalcTotal = document.getElementById('bill-calc-total');
-      if (billCalcTotal != null) billCalcTotal.text = "0.00";
-
-      final btnSaveBill = document.getElementById('btn-save-bill') as ButtonElement?;
-      if (btnSaveBill != null) {
-        btnSaveBill.disabled = true;
-        btnSaveBill.style.opacity = "0.5";
-        btnSaveBill.style.cursor = "not-allowed";
-        final txtSpan = btnSaveBill.querySelector('span');
-        if (txtSpan != null) txtSpan.text = "Enter Input to Calculate";
-      }
-      return;
-    }
-
-    final currVal = double.tryParse(currInputStr) ?? 0.0;
-
-    double consumption = currVal - prevVal;
-    if (consumption < 0.0) consumption = 0.0;
-
-    final billCalcConsumption = document.getElementById('bill-calc-consumption');
-    if (billCalcConsumption != null) billCalcConsumption.text = consumption.toStringAsFixed(1);
-
-    const baseCharge = 120.00;
-    double excessCharge = 0.00;
-    if (consumption > 10.0) {
-      excessCharge = (consumption - 10.0) * 15.00;
-    }
-
-    final billCalcExcess = document.getElementById('bill-calc-excess');
-    if (billCalcExcess != null) billCalcExcess.text = excessCharge.toStringAsFixed(2);
-
-    const maintenanceFee = 50.00;
-    final totalDue = baseCharge + excessCharge + maintenanceFee;
-
-    final billCalcTotal = document.getElementById('bill-calc-total');
-    if (billCalcTotal != null) billCalcTotal.text = totalDue.toStringAsFixed(2);
-
-    // Double billing safeguard
-    final isBilled = db.hasBeenBilledThisMonth(selectedBillHouseId!, DateTime.now().toIso8601String().substring(0, 7));
-    final billingAlertBanner = document.getElementById('billing-alert-banner');
-    final btnSaveBill = document.getElementById('btn-save-bill') as ButtonElement?;
-
-    if (billingAlertBanner != null) {
-      if (isBilled) {
-        billingAlertBanner.innerHtml = '''
-          <svg style="width:18px;height:18px;fill:currentColor" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V8h2v4z"/></svg>
-          <span>DOUBLE-BILLING BLOCKED: Bill already registered for the current month.</span>
-        ''';
-        billingAlertBanner.className = "reservoir-status-banner low";
-        billingAlertBanner.style.backgroundColor = "var(--alert-red-bg)";
-        billingAlertBanner.style.borderColor = "rgba(239, 68, 68, 0.3)";
-        billingAlertBanner.style.color = "var(--alert-red)";
-
-        if (btnSaveBill != null) {
-          btnSaveBill.disabled = true;
-          btnSaveBill.style.opacity = "0.5";
-          btnSaveBill.style.cursor = "not-allowed";
-          final txtSpan = btnSaveBill.querySelector('span');
-          if (txtSpan != null) txtSpan.text = "Register Blocked (Billed)";
-        }
-      } else {
-        billingAlertBanner.innerHtml = '''
-          <svg style="width:18px;height:18px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-          <span>CLEAR: Safe to bill the current month. No duplicates found.</span>
-        ''';
-        billingAlertBanner.className = "reservoir-status-banner";
-        billingAlertBanner.style.backgroundColor = "var(--alert-green-bg)";
-        billingAlertBanner.style.borderColor = "rgba(16, 185, 129, 0.3)";
-        billingAlertBanner.style.color = "var(--alert-green)";
-
-        if (btnSaveBill != null) {
-          btnSaveBill.disabled = false;
-          btnSaveBill.style.opacity = "1";
-          btnSaveBill.style.cursor = "pointer";
-          final txtSpan = btnSaveBill.querySelector('span');
-          if (txtSpan != null) txtSpan.text = "Register & Save Bill";
-        }
-      }
-    }
+    final config = db.getBillingConfig();
+    final draft = _billDraft();
+    final isBilled = selectedBillHouseId != null && db.hasBeenBilledThisMonth(selectedBillHouseId!, DateTime.now().toUtc().toIso8601String().substring(0, 7));
+    void put(String id, String value) { document.getElementById(id)?.text = value; }
+    put('bill-calc-base', config['configured'] == true ? '${config['base_rate']}' : '--');
+    put('bill-calc-fee', config['configured'] == true ? '${config['environmental_fee']}' : '--');
+    put('bill-rate-description', config['configured'] == true ? "Includes ${config['included_m3']} m³; excess at PHP ${config['excess_rate']}/m³." : 'Admin must confirm billing rates before a bill can be recorded.');
+    put('bill-calc-consumption', draft == null ? '--' : (draft['consumption'] as num).toStringAsFixed(3));
+    put('bill-calc-excess', draft == null ? '--' : (draft['excess_charge'] as num).toStringAsFixed(2));
+    put('bill-calc-total', draft == null ? '--' : (draft['total_due'] as num).toStringAsFixed(2));
+    put('billing-alert-banner', isBilled ? 'A bill or pending bill already exists for this month.' : draft == null
+      ? 'Enter a valid reading at or above the previous reading (up to 3 decimal places).'
+      : 'Preview only. The server verifies readings and rates before accepting the bill.');
+    final button = document.getElementById('btn-save-bill') as ButtonElement?;
+    if (button != null) { button.disabled = _savingBill || isBilled || draft == null; button.style.opacity = button.disabled ? '0.5' : '1'; }
   }
 
   Future<void> saveWaterBill() async {
-    if (selectedBillHouseId == null || currentWorker == null) return;
-
-    final isBilled = db.hasBeenBilledThisMonth(selectedBillHouseId!, DateTime.now().toIso8601String().substring(0, 7));
-    if (isBilled) {
-      showToast("Operation blocked to prevent double-billing!");
-      return;
-    }
-
-    final billPrevReading = document.getElementById('bill-prev-reading');
-    final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
-    final billCalcConsumption = document.getElementById('bill-calc-consumption');
-    final billCalcExcess = document.getElementById('bill-calc-excess');
-
-    final prevVal = double.tryParse(billPrevReading?.text ?? '') ?? 0.0;
-    final currVal = double.tryParse(billCurrInput?.value ?? '') ?? 0.0;
-    final consumption = double.tryParse(billCalcConsumption?.text ?? '') ?? 0.0;
-    final excessCharge = double.tryParse(billCalcExcess?.text ?? '') ?? 0.0;
-    final totalDue = 120.00 + excessCharge + 50.00;
-
+    if (_savingBill || selectedBillHouseId == null || currentWorker == null) return;
+    final draft = _billDraft();
+    final month = DateTime.now().toUtc().toIso8601String().substring(0, 7);
+    if (draft == null || db.hasBeenBilledThisMonth(selectedBillHouseId!, month)) return;
     final household = db.getHousehold(selectedBillHouseId!);
     if (household == null) return;
-
-    final record = {
-      'house_id': selectedBillHouseId,
-      'account_number': household['account_number'],
-      'billing_month': DateTime.now().toIso8601String().substring(0, 7),
-      'previous_reading': prevVal,
-      'current_reading': currVal,
-      'consumption': consumption,
-      'water_charge': 120.00 + excessCharge,
-      'maintenance_fee': 50.00,
-      'total_due': totalDue,
-      'billed_by': currentWorker!['worker_id']
-    };
-
-    await db.addBillingRecord(record);
-
-    showToast("Bill saved locally; awaiting sync for ${household['owner_name']}!");
+    _savingBill = true;
     updateBillCalculations();
-    renderBillingHistoryList(selectedBillHouseId!);
-    renderProfile();
+    try {
+      await db.addBillingRecord({...draft, 'house_id': selectedBillHouseId,
+        'account_number': household['account_number'], 'billing_month': month,
+        'billed_by': currentWorker!['worker_id']});
+      showToast('Reading saved. Pending entries require server acknowledgement.');
+      renderBillingHistoryList(selectedBillHouseId!);
+      renderProfile();
+    } catch (_) {
+      showToast('Unable to save the reading. Check storage and your session.');
+    } finally { _savingBill = false; updateBillCalculations(); }
   }
 
   void renderBillingHistoryList(String houseId) {
@@ -1920,29 +1666,26 @@ class AppController {
 
     final assets = db.getCentralAssets();
     final resTankVal = document.getElementById('resident-tank-val');
-    final resPHVal = document.getElementById('resident-ph-val');
     final resTurbVal = document.getElementById('resident-turb-val');
     final resTdsVal = document.getElementById('resident-tds-val');
     final resSafetyStatus = document.getElementById('resident-safety-status');
 
     if (resTankVal != null) resTankVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['main_tank_level']}%';
-    if (resPHVal != null) resPHVal.text = assets['ph_status'] == 'unknown' ? 'N/A' : (assets['ph_level'] as num).toStringAsFixed(1);
     if (resTurbVal != null) resTurbVal.text = assets['has_reading'] == false ? 'N/A' : (assets['turbidity'] as num).toStringAsFixed(1);
     if (resTdsVal != null) resTdsVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['tds_ppm']}';
 
     if (resSafetyStatus != null) {
-      if (assets['ph_status'] == 'warning' || assets['turbidity_status'] == 'warning') {
+      if (assets['turbidity_status'] == 'warning') {
         resSafetyStatus.text = 'ALERT';
         resSafetyStatus.style.color = 'var(--alert-red)';
 
         final turbVal = (assets['turbidity'] as num).toStringAsFixed(1);
-        final phVal = assets['ph_status'] == 'unknown' ? 'unmeasured' : (assets['ph_level'] as num).toStringAsFixed(1);
-        final emergencyKey = 'contaminated_${turbVal}_$phVal';
+        final emergencyKey = 'turbidity_$turbVal';
         if (_lastNotifiedEmergency != emergencyKey) {
           _lastNotifiedEmergency = emergencyKey;
           triggerDeviceNotification(
-            '⚠️ WATER CONTAMINATION ALERT',
-            'Water quality abnormal (Turbidity: $turbVal NTU, pH: $phVal). Follow local water authority guidance before using this supply.',
+            '⚠️ WATER QUALITY ALERT',
+            'Water quality abnormal (Turbidity: $turbVal NTU). Follow local water authority guidance before using this supply.',
             type: 'critical'
           );
         }
@@ -1970,7 +1713,7 @@ class AppController {
 
     if (resProfileName != null) resProfileName.text = household['owner_name'];
     if (resProfileMeta != null) {
-      resProfileMeta.text = 'Meter ID: ${household['house_id']} | ${household['account_number']} | ${household['purok']}';
+      resProfileMeta.text = 'Resident: ${household['house_id']} | Meter: ${household['account_number']} | ${household['purok']}';
     }
 
     // Populate Resident Support tab logout card
@@ -1996,7 +1739,7 @@ class AppController {
       if (household['current_leak_status'] == 'leak') {
         leakFlagEl.innerHtml = '''
           <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor;"><path d="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V8h2v4z"/></svg>
-          <span>Leak Alert Warning: High constant flow rate registered. Please inspect on-site faucets.</span>
+          <span>A leak has been reported. Please contact the water service team.</span>
         ''';
         leakFlagEl.className = "reservoir-status-banner low";
         leakFlagEl.style.backgroundColor = "var(--alert-red-bg)";
@@ -2005,7 +1748,7 @@ class AppController {
       } else {
         leakFlagEl.innerHtml = '''
           <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor;"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-          <span>Normal Flow Clearance: IoT sensors verify secure line pressure. No leak detected.</span>
+          <span>No leak is currently reported. Report any water service concern in Support.</span>
         ''';
         leakFlagEl.className = "reservoir-status-banner";
         leakFlagEl.style.backgroundColor = "var(--alert-green-bg)";
@@ -2014,60 +1757,26 @@ class AppController {
       }
     }
 
-    // Statement calculations
+    // Display only a recorded statement; never fabricate a draft or tariff.
     final bills = db.getBillingHistoryForHousehold(currentResidentId!);
-    Map<String, dynamic>? juneBill;
-    try {
-      juneBill = bills.firstWhere((b) => b['billing_month'] == DateTime.now().toIso8601String().substring(0, 7));
-    } catch (_) {}
-
-    double prevReading = 0.0;
-    double currReading = 0.0;
-    double consumption = 0.0;
-    double excessCharge = 0.0;
-    double totalDue = 0.0;
-    String statusText = 'Pending Payment';
-    String statusClass = 'warning';
-
-    if (juneBill != null) {
-      prevReading = (juneBill['previous_reading'] as num).toDouble();
-      currReading = (juneBill['current_reading'] as num).toDouble();
-      consumption = (juneBill['consumption'] as num).toDouble();
-      excessCharge = consumption > 10.0 ? (consumption - 10.0) * 15.00 : 0.00;
-      totalDue = (juneBill['total_due'] as num).toDouble();
-      statusText = juneBill['status'];
-      statusClass = juneBill['status'] == 'Paid' ? 'normal' : 'warning';
-    } else {
-      // Estimate based on telemetry
-      final List<num> hist = List<num>.from(household['monthly_history']);
-      final num currM3 = (household['current_m3_usage'] as num?) ?? 0.0;
-      prevReading = hist.length >= 2 ? hist[hist.length - 2].toDouble() : (currM3 - 2.5 > 0 ? (currM3 - 2.5).toDouble() : 0.0);
-      currReading = currM3.toDouble();
-      consumption = currReading - prevReading;
-      if (consumption < 0.0) consumption = 0.0;
-      excessCharge = consumption > 10.0 ? (consumption - 10.0) * 15.00 : 0.00;
-      totalDue = 120.00 + excessCharge + 50.00;
-      statusText = 'Unbilled (Draft)';
-      statusClass = 'warning';
-    }
-
-    final resPrevReading = document.getElementById('resident-prev-reading');
-    final resCurrReading = document.getElementById('resident-curr-reading');
-    final resCalcConsumption = document.getElementById('resident-calc-consumption');
-    final resCalcExcess = document.getElementById('resident-calc-excess');
-    final resCalcTotal = document.getElementById('resident-calc-total');
-    final resBillStatus = document.getElementById('resident-bill-status');
-
-    if (resPrevReading != null) resPrevReading.text = prevReading.toStringAsFixed(1);
-    if (resCurrReading != null) resCurrReading.text = currReading.toStringAsFixed(1);
-    if (resCalcConsumption != null) resCalcConsumption.text = consumption.toStringAsFixed(1);
-    if (resCalcExcess != null) resCalcExcess.text = excessCharge.toStringAsFixed(2);
-    if (resCalcTotal != null) resCalcTotal.text = totalDue.toStringAsFixed(2);
-
-    if (resBillStatus != null) {
-      resBillStatus.text = statusText.toUpperCase();
-      resBillStatus.className = 'quality-badge $statusClass';
-    }
+    final month = DateTime.now().toUtc().toIso8601String().substring(0, 7);
+    final current = bills.where((b) => b['billing_month'] == month).toList();
+    final statement = current.isEmpty ? null : current.first;
+    final snapshot = statement?['billing_breakdown'] as Map?;
+    void put(String id, String value) { document.getElementById(id)?.text = value; }
+    String value(dynamic v, int digits) => v == null ? '--' : double.parse('$v').toStringAsFixed(digits);
+    put('resident-bill-cycle', month);
+    put('resident-bill-status', statement == null ? 'NO CURRENT BILLING RECORD' : '${statement['status']}');
+    put('resident-prev-reading', value(statement?['previous_reading'], 3));
+    put('resident-curr-reading', value(statement?['current_reading'], 3));
+    put('resident-calc-consumption', value(statement?['consumption'], 3));
+    put('resident-calc-total', value(statement?['total_due'], 2));
+    put('resident-calc-base', value(snapshot?['base_rate'], 2));
+    put('resident-calc-fee', value(snapshot?['environmental_fee'], 2));
+    put('resident-calc-excess', value(snapshot?['excess_charge'], 2));
+    put('resident-rate-description', statement == null ? 'Awaiting a recorded meter reading and bill.' : snapshot == null
+      ? 'Legacy bill: original total preserved; rate breakdown unavailable.'
+      : "Recorded rates: first ${snapshot['included_m3']} m³ included; excess PHP ${snapshot['excess_rate']}/m³.");
 
     renderSVGChart(List<num>.from(household['monthly_history']), 'resident-chart-container');
     renderResidentLedgerList(bills);
@@ -2123,94 +1832,58 @@ class AppController {
           Bill Ref ID: ${bill['bill_id']} | Issued: $formatted
         </div>
       ''';
+      final breakdown = bill['billing_breakdown'] as Map?;
+      final detail = ParagraphElement()..style.fontSize = '11px';
+      detail.text = breakdown == null ? 'Legacy bill: rate breakdown unavailable. Original total retained.'
+        : "Recorded: base PHP ${breakdown['base_rate']} (includes ${breakdown['included_m3']} m³), excess ${breakdown['excess_m3']} m³ x PHP ${breakdown['excess_rate']} = PHP ${breakdown['excess_charge']}, environmental fee PHP ${breakdown['environmental_fee']}.";
+      item.append(detail);
       listEl.append(item);
     });
   }
 
   void _initRegistrationHandlers() {
-    final btnOpen = document.getElementById('btn-open-register-modal');
+    final button = document.getElementById('btn-open-register-modal');
     final modal = document.getElementById('register-user-modal');
-    final btnClose = document.getElementById('btn-close-register-modal');
-    final btnSubmit = document.getElementById('btn-submit-register');
-
-    final roleSelect = document.getElementById('reg-role') as SelectElement?;
-    final resFields = document.getElementById('reg-resident-fields');
-    final workFields = document.getElementById('reg-worker-fields');
-
-    // Toggle fields based on role
-    roleSelect?.onChange.listen((e) {
-      if (roleSelect.value == 'resident') {
-        resFields?.style.display = 'block';
-        workFields?.style.display = 'none';
-      } else {
-        resFields?.style.display = 'none';
-        workFields?.style.display = 'block';
-      }
-    });
-
-    // Open/Close
-    btnOpen?.onClick.listen((e) {
-      modal?.classes.add('active');
-    });
-    btnClose?.onClick.listen((e) {
-      modal?.classes.remove('active');
-    });
-
-    // Submit
-    btnSubmit?.onClick.listen((e) async {
+    final form = document.getElementById('resident-register-form') as FormElement?;
+    final status = document.getElementById('register-status');
+    final submit = document.getElementById('btn-submit-register') as ButtonElement?;
+    if (Uri.base.queryParameters['role'] == 'resident') button?.style.display = 'block';
+    document.getElementById('btn-close-register-modal')?.onClick.listen((_) { modal?.style.display = 'none'; });
+    button?.onClick.listen((_) async {
+      modal?.style.display = 'flex';
+      status?.text = 'Loading available puroks...';
       try {
-        final passwordInput = document.getElementById('reg-password') as InputElement?;
-        final password = passwordInput?.value?.trim() ?? '';
-        if (password.isEmpty) {
-          showToast('Password is required!');
-          return;
+        final xhr = await db.apiRequest('/api/puroks', authenticated: false);
+        final select = document.getElementById('reg-res-purok') as SelectElement;
+        select.children.clear();
+        for (final name in json.decode(xhr.responseText!)['puroks']) {
+          select.append(OptionElement(data: '$name', value: '$name'));
         }
-
-        if (roleSelect?.value == 'resident') {
-          final nameInput = document.getElementById('reg-res-name') as InputElement?;
-          final purokSelect = document.getElementById('reg-res-purok') as SelectElement?;
-          final lotInput = document.getElementById('reg-res-lot') as InputElement?;
-
-          final name = nameInput?.value?.trim() ?? '';
-          final purok = purokSelect?.value ?? 'Purok 1';
-          final lot = lotInput?.value?.trim() ?? '';
-
-          if (name.isEmpty || lot.isEmpty) {
-            showToast('Name and Lot are required!');
-            return;
-          }
-
-          final res = await db.registerResident(name, purok, lot, password);
-          showToast('Resident Registered: ' + (res['account_number'] ?? ''));
-
-        } else {
-          final nameInput = document.getElementById('reg-work-name') as InputElement?;
-          final roleInput = document.getElementById('reg-work-role') as SelectElement?;
-          final zoneSelect = document.getElementById('reg-work-zone') as SelectElement?;
-
-          final name = nameInput?.value?.trim() ?? '';
-          final role = roleInput?.value ?? 'Field Technician';
-          final zone = zoneSelect?.value ?? 'Purok 1';
-
-          if (name.isEmpty) {
-            showToast('Worker Name is required!');
-            return;
-          }
-
-          final worker = await db.registerWorker(name, role, zone, password);
-          showToast('Worker Registered: ' + (worker['worker_id'] ?? ''));
-        }
-
-        modal?.classes.remove('active');
-
-        // Refresh directory if we are on it
-        if (activeTab == 'view-directory') {
-          renderDirectory();
-        }
-
-      } catch (err) {
-        showToast('Error: $err');
-      }
+        status?.text = select.options.isEmpty ? 'No puroks configured. Contact the administrator.' : '';
+      } catch (_) { status?.text = 'Registration needs an internet connection. Please retry.'; }
+    });
+    form?.onSubmit.listen((event) async {
+      event.preventDefault();
+      if (submit == null || submit.disabled || !form.checkValidity()) return;
+      String read(String id) => (document.getElementById(id) as InputElement).value ?? '';
+      if (read('reg-password') != read('reg-verify-password')) { status?.text = 'Passwords do not match.'; return; }
+      submit.disabled = true;
+      status?.text = 'Submitting registration...';
+      try {
+        final xhr = await db.apiRequest('/api/residents/register', method: 'POST', authenticated: false,
+          requestHeaders: {'Content-Type': 'application/json'}, sendData: json.encode({
+            'owner_name': read('reg-res-name').trim(), 'contact': read('reg-contact').trim(),
+            'purok': (document.getElementById('reg-res-purok') as SelectElement).value,
+            'password': read('reg-password'), 'verify_password': read('reg-verify-password')}));
+        final data = json.decode(xhr.responseText!);
+        form.reset();
+        status?.text = 'Registration submitted. Resident ID: ${data['house_id']}. Meter ID: ${data['account_number']}. Wait for Admin approval before signing in.';
+      } on ApiFailure catch (failure) {
+        status?.text = failure.status == 409 ? 'This mobile number is already registered. Contact the administrator.' : failure.status == 400
+          ? 'Check your name, Philippine mobile number, purok, and matching passwords (12-128 characters).'
+          : 'Registration was not confirmed. Retry with the same contact, or ask Admin to check its status.';
+      } catch (_) { status?.text = 'Unable to submit registration. Please try again.'; }
+      finally { submit.disabled = false; }
     });
   }
 

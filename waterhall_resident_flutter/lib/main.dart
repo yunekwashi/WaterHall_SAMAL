@@ -104,20 +104,12 @@ class _MainScreenState extends State<MainScreen> {
               data['body'] ?? '',
             );
           } catch (e) {
-            debugPrint("Native notification channel error: $e");
+            debugPrint("Native notification could not be displayed.");
           }
         },
       )
-      ..addJavaScriptChannel('WaterHallAuth', onMessageReceived: (message) async {
-        final current = Uri.tryParse(await _controller.currentUrl() ?? '');
-        if (current?.origin != Uri.parse(_activeServerUrl).origin) return;
-        final data = json.decode(message.message) as Map<String, dynamic>;
-        final token = data['token'] as String?;
-        if (token == null || token.isEmpty) {
-          await _secure.delete(key: 'waterhall_jwt');
-        } else {
-          await _secure.write(key: 'waterhall_jwt', value: token);
-        }
+      ..addJavaScriptChannel('WaterHallAuth', onMessageReceived: (message) {
+        _bridgeWrites = _bridgeWrites.catchError((_) {}).then((_) => _handleAuthMessage(message.message));
       })
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -156,6 +148,22 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       _initialized = true;
     });
+  }
+
+  Future<void> _bridgeWrites = Future<void>.value();
+
+  Future<void> _handleAuthMessage(String message) async {
+    try {
+        final current = Uri.tryParse(await _controller.currentUrl() ?? '');
+        if (current?.origin != Uri.parse(_activeServerUrl).origin) return;
+        final data = json.decode(message) as Map<String, dynamic>;
+        final token = data['token'] as String?;
+        if (token == null || token.isEmpty) {
+          await _secure.delete(key: 'waterhall_jwt');
+        } else {
+          await _secure.write(key: 'waterhall_jwt', value: token);
+        }
+    } catch (_) { debugPrint('Native session update unavailable.'); }
   }
 
   String _getAppUrl() {

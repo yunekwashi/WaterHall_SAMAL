@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WATERHALL</title>
   <link rel="icon" type="image/png" href="logo.png" />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=3.0.6">
+  <link rel="stylesheet" href="styles.css?v=3.1.0">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#070B13">
   <script src="/native-store.js"></script>
@@ -162,6 +162,7 @@
               <button type="button" class="login-btn" id="btn-login" style="width: 100%; justify-content: center; font-weight:700;">
                 <span>Login to Dashboard</span>
               </button>
+              <button type="button" class="login-btn" id="btn-open-register-modal" style="display:none;margin-top:12px">Create Resident account</button>
             </div>
           </div>
           <!-- Barangay Tagpopongan Official Seal Footer -->
@@ -208,7 +209,7 @@
             <!-- Central Reservoir Telemetry Card for Workers (Live IoT) -->
             <div class="reservoir-card" style="border: 1.5px solid var(--navy-border); background-color: var(--white); margin: 16px 16px 0 16px;">
               <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
-                Central Reservoir Telemetry (IoT Live)
+                Reservoir measurements
               </span>
               <div class="metrics-row" style="grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div class="metric-card">
@@ -216,8 +217,8 @@
                   <div class="metric-card-val"><span id="worker-tank-val">--%</span></div>
                 </div>
                 <div class="metric-card">
-                  <span class="metric-card-lbl">Water Safety</span>
-                  <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="worker-safety-status">SAFE</div>
+                  <span class="metric-card-lbl">Monitoring status</span>
+                  <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="worker-safety-status">AWAITING DATA</div>
                 </div>
               </div>
               <div class="metrics-row" style="margin-top: 8px; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
@@ -228,10 +229,6 @@
                 <div class="metric-card">
                   <span class="metric-card-lbl">TDS Solids</span>
                   <div class="metric-card-val"><span id="worker-tds-val">--</span> <small style="font-size:10px;">ppm</small></div>
-                </div>
-                <div class="metric-card">
-                  <span class="metric-card-lbl">pH Acidity</span>
-                  <div class="metric-card-val"><span id="worker-ph-val">--</span> <small style="font-size:10px;">pH</small></div>
                 </div>
               </div>
             </div>
@@ -463,6 +460,7 @@
               </span>
               
               <div style="display:flex; flex-direction:column; gap:8px; font-size:13px; color:#000000;">
+                <p id="bill-rate-description" aria-live="polite">Loading billing rates...</p>
                 <div style="display:flex; justify-content:space-between">
                   <span>Billing Cycle:</span>
                   <strong>Current billing month</strong>
@@ -472,20 +470,20 @@
                   <strong><span id="bill-calc-consumption">0.0</span> m³</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span>Base Charge (First 10 m³):</span>
-                  <strong>₱120.00</strong>
+                  <span>Base charge:</span>
+                  <strong>PHP <span id="bill-calc-base">--</span></strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span>Excess Charge (Excess x ₱15.00):</span>
+                  <span>Excess charge:</span>
                   <strong>₱<span id="bill-calc-excess">0.00</span></strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
                   <span>Environmental/Maintenance:</span>
-                  <strong>₱50.00</strong>
+                  <strong>PHP <span id="bill-calc-fee">--</span></strong>
                 </div>
                 <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px; color:#000000;">
                   <strong>Total Bill Amount:</strong>
-                  <strong style="font-size:18px;">₱<span id="bill-calc-total">170.00</span></strong>
+                  <strong style="font-size:18px;">₱<span id="bill-calc-total">--</span></strong>
                 </div>
               </div>
             </div>
@@ -534,7 +532,7 @@
             
             <div class="reservoir-card" style="border: 1.5px solid var(--navy-border); background-color: var(--white);">
               <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
-                Central Reservoir Telemetry (IoT Live)
+                Reservoir measurements
               </span>
               <div class="metrics-row" style="grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div class="metric-card">
@@ -542,8 +540,8 @@
                   <div class="metric-card-val"><span id="resident-tank-val">--%</span></div>
                 </div>
                 <div class="metric-card">
-                  <span class="metric-card-lbl">Water Safety</span>
-                  <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="resident-safety-status">SAFE</div>
+                  <span class="metric-card-lbl">Monitoring status</span>
+                  <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="resident-safety-status">AWAITING DATA</div>
                 </div>
               </div>
               <div class="metrics-row" style="margin-top: 8px; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
@@ -555,10 +553,6 @@
                   <span class="metric-card-lbl">TDS Solids</span>
                   <div class="metric-card-val"><span id="resident-tds-val">--</span> <small style="font-size:10px;">ppm</small></div>
                 </div>
-                <div class="metric-card">
-                  <span class="metric-card-lbl">pH Acidity</span>
-                  <div class="metric-card-val"><span id="resident-ph-val">--</span> <small style="font-size:10px;">pH</small></div>
-                </div>
               </div>
             </div>
 
@@ -566,38 +560,39 @@
               <span class="reservoir-title" style="font-size:12px; font-weight:800; text-transform:uppercase; text-align:center; display:block; border-bottom:1.5px solid var(--off-white); padding-bottom:8px; margin-bottom:8px; color:#000000;">
                 Current Billing Statement
               </span>
+              <p id="resident-rate-description" aria-live="polite">Awaiting a recorded bill.</p>
               <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; color:#000000;">
                 <div style="display:flex; justify-content:space-between">
                   <span>Billing Cycle:</span>
-                  <strong>Current billing month</strong>
+                  <strong id="resident-bill-cycle">--</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
                   <span>Payment Status:</span>
-                  <span id="resident-bill-status" class="quality-badge warning" style="font-size:11px; font-weight:700;">Pending Payment</span>
+                  <span id="resident-bill-status" class="quality-badge warning" style="font-size:11px; font-weight:700;">Awaiting bill</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--gray-medium); padding-top:8px;">
                   <span>Prev Reading:</span>
-                  <strong><span id="resident-prev-reading">0.0</span> m³</strong>
+                  <strong><span id="resident-prev-reading">--</span> m³</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
                   <span>Current Reading:</span>
-                  <strong><span id="resident-curr-reading">0.0</span> m³</strong>
+                  <strong><span id="resident-curr-reading">--</span> m³</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
                   <span>Consumption Volume:</span>
                   <strong><span id="resident-calc-consumption">0.0</span> m³</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--gray-medium); padding-top:8px;">
-                  <span>Base Rate (First 10 m³):</span>
-                  <strong>₱120.00</strong>
+                  <span>Recorded base rate:</span>
+                  <strong>PHP <span id="resident-calc-base">--</span></strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
-                  <span>Excess Usage (x ₱15.00):</span>
+                  <span>Recorded excess charge:</span>
                   <strong>₱<span id="resident-calc-excess">0.00</span></strong>
                 </div>
                 <div style="display:flex; justify-content:space-between">
                   <span>Environmental Fee:</span>
-                  <strong>₱50.00</strong>
+                  <strong>PHP <span id="resident-calc-fee">--</span></strong>
                 </div>
                 <div style="display:flex; justify-content:space-between; border-top:1.5px solid var(--navy-border); padding-top:8px; margin-top:4px; font-size:14px; color:#000000;">
                   <strong>Total Amount Due:</strong>
@@ -675,7 +670,7 @@
               <div class="log-form-field">
                 <label for="resident-issue-category">Select Issue Category</label>
                 <select id="resident-issue-category" class="log-select">
-                  <option value="Water Leak (High flow/flooding)">💧 Water Leak (High flow/flooding)</option>
+                  <option value="Water Leak">💧 Water Leak</option>
                   <option value="Low Water Pressure / No Water">📉 Low Water Pressure / No Water</option>
                   <option value="Cloudy / Discolored Water">🧪 Cloudy / Discolored Water</option>
                   <option value="Broken Water Meter">📟 Broken Water Meter</option>
@@ -785,8 +780,8 @@
                 <div class="metric-card-val"><span id="modal-current-m3">0.0</span> m³</div>
               </div>
               <div class="metric-card">
-                <span class="metric-card-lbl">Flow Speed</span>
-                <div class="metric-card-val"><span id="modal-flow-rate">0.00</span> L/s</div>
+                <span class="metric-card-lbl">Assessment</span>
+                <div class="metric-card-val"><span id="modal-flow-rate">Manual report</span></div>
               </div>
             </div>
 
@@ -814,7 +809,7 @@
 
               <div class="log-checkbox-row">
                 <input type="checkbox" id="log-resolved" class="log-checkbox" checked>
-                <label for="log-resolved">Mark Issue as Resolved / Flow Normal</label>
+                <label for="log-resolved">Mark issue as resolved</label>
               </div>
 
               <button type="button" class="submit-log-btn" id="btn-submit-log">Submit & Update Database</button>
@@ -853,6 +848,18 @@
         </a>
       </nav>
 
+      <div id="register-user-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="register-title">
+        <form id="resident-register-form" class="registration-card">
+          <h2 id="register-title">Resident registration</h2><p>Admin approval is required. Your ID will be generated automatically.</p>
+          <label for="reg-res-name">Full name</label><input class="form-input" id="reg-res-name" required minlength="2" maxlength="100" autocomplete="name">
+          <label for="reg-contact">Philippine mobile number</label><input class="form-input" id="reg-contact" type="tel" required maxlength="24" placeholder="09xxxxxxxxx" autocomplete="tel">
+          <label for="reg-res-purok">Purok</label><select class="form-input" id="reg-res-purok" required></select>
+          <label for="reg-password">Password (12-128 characters)</label><input class="form-input" id="reg-password" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
+          <label for="reg-verify-password">Verify password</label><input class="form-input" id="reg-verify-password" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
+          <p id="register-status" role="status" aria-live="polite"></p>
+          <div class="registration-actions"><button type="button" id="btn-close-register-modal">Close</button><button type="submit" id="btn-submit-register" class="login-btn">Submit registration</button></div>
+        </form>
+      </div>
       <!-- Account Recovery Modal -->
       <div class="modal-overlay" id="web-modal-forgot-pw" style="display: none; z-index: 1000; align-items: center; justify-content: center;">
         <div class="offline-card" style="max-width: 380px; width: 90%; padding: 24px; border-radius: 12px; background: #0c1524; border: 1px solid #1f3044; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); text-align: left;">
@@ -932,137 +939,7 @@
       </div>
     </div> <!-- Close app-screen -->
     </div> <!-- Close device-container -->
-  <script>
-    // Service Worker Registration
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/service-worker.js').then(function(reg) {
-          console.log('[SW] Service Worker registered with scope:', reg.scope);
-        }).catch(function(err) {
-          console.warn('[SW] Service Worker registration failed:', err);
-        });
-      });
-    }
-
-    // Helper: Convert URL-safe base64 string to Uint8Array for PushManager
-    function urlBase64ToUint8Array(base64String) {
-      var padding = '='.repeat((4 - base64String.length % 4) % 4);
-      var base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-      var rawData = window.atob(base64);
-      var outputArray = new Uint8Array(rawData.length);
-      for (var i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-      }
-      return outputArray;
-    }
-
-    // Web Push Subscription API bridge for WaterHall Client
-    window.WaterHallPush = {
-      async registerSubscription(role) {
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-          console.log('[PUSH] Web Push not supported on this browser/environment');
-          return { success: false, reason: 'unsupported' };
-        }
-
-        try {
-          var permission = Notification.permission;
-          if (permission === 'default') {
-            permission = await Notification.requestPermission();
-          }
-          if (permission !== 'granted') {
-            console.log('[PUSH] Notification permission status:', permission);
-            return { success: false, reason: 'denied' };
-          }
-
-          var keyRes = await fetch('/api/push/vapid-public-key');
-          if (!keyRes.ok) throw new Error('Failed to fetch VAPID key');
-          var keyData = await keyRes.json();
-          var vapidKey = keyData.public_key;
-          if (!vapidKey) throw new Error('VAPID public key is empty');
-
-          var swReg = await navigator.serviceWorker.ready;
-          var sub = await swReg.pushManager.getSubscription();
-          if (!sub) {
-            sub = await swReg.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(vapidKey)
-            });
-          }
-
-          var rawSub = sub.toJSON();
-          var jwt = window.localStorage.getItem('waterhall_jwt') || '';
-
-          var postRes = await fetch('/api/push/subscribe', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + jwt
-            },
-            body: JSON.stringify({
-              endpoint: sub.endpoint,
-              keys: rawSub.keys || {},
-              role: role || 'resident'
-            })
-          });
-
-          if (postRes.ok) {
-            console.log('[PUSH] Successfully registered Web Push subscription');
-            var banner = document.getElementById('push-permission-banner');
-            if (banner) banner.style.display = 'none';
-            return { success: true };
-          } else {
-            console.warn('[PUSH] Subscription registration failed on server');
-            return { success: false, reason: 'server_error' };
-          }
-        } catch (err) {
-          console.error('[PUSH] Subscription error:', err);
-          return { success: false, error: err.message };
-        }
-      },
-
-      async unregisterSubscription() {
-        try {
-          if ('serviceWorker' in navigator && 'PushManager' in window) {
-            var swReg = await navigator.serviceWorker.ready;
-            var sub = await swReg.pushManager.getSubscription();
-            if (sub) {
-              var jwt = window.localStorage.getItem('waterhall_jwt') || '';
-              await fetch('/api/push/unsubscribe', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': 'Bearer ' + jwt
-                },
-                body: JSON.stringify({ endpoint: sub.endpoint })
-              }).catch(function() {});
-              await sub.unsubscribe();
-              console.log('[PUSH] Unsubscribed from Web Push');
-            }
-          }
-        } catch (err) {
-          console.warn('[PUSH] Unsubscribe error:', err);
-        }
-      },
-
-      checkPermissionBanner() {
-        if ('Notification' in window && Notification.permission === 'default') {
-          var banner = document.getElementById('push-permission-banner');
-          if (banner) banner.style.display = 'flex';
-        }
-      }
-    };
-
-    // Attach click handler for Enable Push button
-    document.addEventListener('DOMContentLoaded', function() {
-      var btn = document.getElementById('btn-enable-push');
-      if (btn) {
-        btn.addEventListener('click', function() {
-          var role = window.location.search.includes('role=worker') ? 'worker' : 'resident';
-          window.WaterHallPush.registerSubscription(role);
-        });
-      }
-    });
-  </script>
-  <script src="app.js?v=3.0.8"></script>
+  <script src="push-client.js"></script>
+  <script src="app.js?v=3.1.0"></script>
 </body>
 </html>

@@ -1,3 +1,21 @@
+async function apiFetch(path, options = {}) {
+  const token = jwtToken;
+  const authorized = !!options.headers?.Authorization;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(path, {...options, signal: controller.signal});
+    if (authorized && token !== jwtToken) throw new Error('Session changed');
+    if (authorized && response.status === 401) {
+      performAutomaticLogoutDueToServerOffline(); showLogin();
+      const error = document.getElementById('login-error');
+      if (error) { error.textContent = 'Session expired. Please sign in again.'; error.style.display = 'block'; }
+      throw new Error('Session expired');
+    }
+    return response;
+  } finally { clearTimeout(timer); }
+}
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 }
@@ -52,7 +70,7 @@ async function checkServerHealth() {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
+    const res = await apiFetch('/api/health', { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeoutId);
     if (!res.ok) {
       isServerOnline = false;
@@ -94,6 +112,8 @@ function performAutomaticLogoutDueToServerOffline() {
     sessionStorage.clear();
   } catch (_) {}
 
+  ratesDirty = false;
+  document.getElementById('billing-config-form')?.reset();
   // 2. Clear all sensitive in-memory data
   globalData = {
     households: [],
@@ -114,7 +134,7 @@ function performAutomaticLogoutDueToServerOffline() {
     'billing-tbody',
     'collections-audit-tbody',
     'announcements-tbody',
-    'reports-tbody'
+    'reports-tbody', 'registrations-tbody', 'resident-tbody', 'household-tbody', 'worker-tbody', 'admin-billing-tbody'
   ];
   tables.forEach(id => {
     const el = document.getElementById(id);
@@ -260,7 +280,7 @@ document.getElementById('btn-login').addEventListener('click', async () => {
   }
 
   try {
-    const res = await fetch('/api/login', {
+    const res = await apiFetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: u, password: p })
@@ -332,7 +352,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     const titles = { 
       'tab-dashboard': 'System Overview', 
       'tab-directory': 'User Directory', 
-      'tab-assets': 'IoT Control', 
+      'tab-assets': 'Reservoir measurements',
       'tab-announcements': 'Public Announcements',
       'tab-billing': 'Billing & Collections Audit',
       'tab-payment-settings': 'Barangay Payment Configuration',
@@ -343,13 +363,14 @@ document.querySelectorAll('.nav-item').forEach(item => {
 });
 
 async function fetchData(silent = false) {
+  const sessionToken = jwtToken;
   if (!jwtToken) {
     showLogin();
     if (!silent) hideLoader();
     return;
   }
   try {
-    const res = await fetch('/api/all-data?role=admin', {
+    const res = await apiFetch('/api/all-data?role=admin', {
       headers: { 'Authorization': 'Bearer ' + jwtToken }
     });
 
@@ -365,7 +386,11 @@ async function fetchData(silent = false) {
       isServerOnline = true;
       hideAdminOfflineOverlay();
       const data = await res.json();
+      if (sessionToken !== jwtToken) return;
       globalData = data;
+      renderBillingConfig(data.billingConfig || {});
+      renderReservoir(data.centralAssets || {});
+      await loadRegistrations();
       renderDashboard(data);
       renderDirectory(data);
       renderAnnouncements(data.announcements || []);
@@ -379,6 +404,7 @@ async function fetchData(silent = false) {
     }
     if (!silent) hideLoader();
   } catch (e) {
+    if (e.message === 'Session expired' || e.message === 'Session changed') { hideAdminOfflineOverlay(); showLogin(); hideLoader(); return; }
     // Network error: server turned off or disconnected
     console.warn('Backend server disconnected during fetchData:', e);
     showAdminOfflineOverlay();
@@ -480,31 +506,11 @@ function renderCharts(data) {
     }
   });
 
-  // Quality Doughnut Chart
-  const ctxQual = document.getElementById('qualityChart').getContext('2d');
-  if (charts.quality) charts.quality.destroy();
-
-  const ca = data.centralAssets || { has_reading: false };
-  charts.quality = new Chart(ctxQual, {
-    type: 'doughnut',
-    data: {
-      labels: ['Water Level %', 'Turbidity NTU', 'pH Level'],
-      datasets: [{
-        data: ca.has_reading === false ? [] : [ca.main_tank_level, ca.turbidity, ca.ph_status === 'unknown' ? null : ca.ph_level],
-        backgroundColor: ['#3498DB', '#10B981', '#F4D03F'],
-        borderWidth: 0,
-        hoverOffset: 6
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '72%',
-      plugins: {
-        legend: { position: 'bottom', labels: { color: '#BDC9D4', padding: 16, font: { size: 12 } } }
-      }
-    }
-  });
+  // Measurements have different units; show values without a misleading part-to-whole chart.
+  const ca = data.centralAssets || {has_reading: false};
+  for (const [id, key, unit] of [['summary-level','main_tank_level','%'], ['summary-turbidity','turbidity',' NTU'], ['summary-tds','tds_ppm',' ppm']]) {
+    document.getElementById(id).textContent = ca.has_reading && ca[key] != null ? String(ca[key]) + unit : 'Awaiting data';
+  }
 }
 
 function renderDirectory(data) {
@@ -554,7 +560,7 @@ function renderDirectory(data) {
 window.deleteHousehold = async function(id) {
   if (confirm("Are you sure you want to remove this resident? This action cannot be undone.")) {
     try {
-      const res = await fetch('/api/households/' + id, {
+      const res = await apiFetch('/api/households/' + id, {
         method: 'DELETE',
         headers: { 'Authorization': 'Bearer ' + jwtToken }
       });
@@ -579,7 +585,7 @@ window.deleteHousehold = async function(id) {
 window.deleteWorker = async function(id) {
   if (confirm("Are you sure you want to remove this worker? This action cannot be undone.")) {
     try {
-      const res = await fetch('/api/workers/' + id, {
+      const res = await apiFetch('/api/workers/' + id, {
         method: 'DELETE',
         headers: { 'Authorization': 'Bearer ' + jwtToken }
       });
@@ -663,7 +669,7 @@ document.getElementById('btn-res-save').addEventListener('click', async () => {
   btn.disabled = true;
 
   try {
-    const res = await fetch('/api/households/add', {
+    const res = await apiFetch('/api/households/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
       body: JSON.stringify({ owner_name: name, contact: contact, purok: purok, password: password, verify_password: verifyPassword })
@@ -739,7 +745,7 @@ document.getElementById('btn-work-save').addEventListener('click', async () => {
   btn.disabled = true;
 
   try {
-    const res = await fetch('/api/workers/add', {
+    const res = await apiFetch('/api/workers/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
       body: JSON.stringify({ name: name, contact: contact, role: role, password: password, verify_password: verifyPassword })
@@ -771,47 +777,6 @@ document.getElementById('btn-work-save').addEventListener('click', async () => {
   }
 });
 
-// IoT Simulator Sliders
-const sliders = ['tank', 'turbidity', 'ph'];
-let simTimeout;
-
-sliders.forEach(s => {
-  const el = document.getElementById('slider-' + s);
-  const valEl = document.getElementById('sim-' + s + '-val');
-  el.addEventListener('input', (e) => {
-    const val = e.target.value;
-    if (s === 'tank') valEl.textContent = val + '%';
-    if (s === 'turbidity') valEl.textContent = val + ' NTU';
-    if (s === 'ph') valEl.textContent = val;
-    clearTimeout(simTimeout);
-    simTimeout = setTimeout(() => broadcastSim(), 600);
-  });
-});
-
-async function broadcastSim() {
-  const tank = document.getElementById('slider-tank').value;
-  const turb = document.getElementById('slider-turbidity').value;
-  const ph = document.getElementById('slider-ph').value;
-  try {
-    await fetch('/api/central-assets/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwtToken },
-      body: JSON.stringify({
-        main_tank_level: Number.parseInt(tank, 10),
-        turbidity: Number.parseFloat(turb),
-        ph_level: Number.parseFloat(ph)
-      })
-    });
-    fetchData(true);
-  } catch (e) {
-    console.warn('Broadcast sim failed, checking server:', e);
-    const alive = await checkServerHealth();
-    if (!alive) {
-      showAdminOfflineOverlay();
-    }
-  }
-}
-
 // Account Password Recovery Handlers
 document.getElementById('btn-forgot-password').addEventListener('click', (e) => {
   e.preventDefault();
@@ -841,7 +806,7 @@ document.getElementById('btn-recover-submit').addEventListener('click', async ()
   btn.disabled = true;
 
   try {
-    const res = await fetch('/api/recover-account', {
+    const res = await apiFetch('/api/recover-account', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -925,7 +890,7 @@ document.getElementById('btn-admin-broadcast')?.addEventListener('click', async 
   btn.disabled = true;
 
   try {
-    const res = await fetch('/api/announcements/add', {
+    const res = await apiFetch('/api/announcements/add', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1054,7 +1019,7 @@ document.getElementById('btn-save-payment-settings')?.addEventListener('click', 
   btn.disabled = true;
 
   try {
-    const res = await fetch('/api/settings/payment', {
+    const res = await apiFetch('/api/settings/payment', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1113,7 +1078,7 @@ function renderReports(reports) {
 
 window.resolveReport = async function(reportId) {
   try {
-    const res = await fetch('/api/reports/update-status', {
+    const res = await apiFetch('/api/reports/update-status', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1153,4 +1118,60 @@ document.addEventListener('click', event => {
     photo.style.maxWidth = '100%';
     popup.document.body.appendChild(photo);
   }
+});
+
+const rateFields = ['base_rate', 'included_m3', 'environmental_fee', 'excess_rate'];
+let ratesDirty = false;
+document.getElementById('billing-config-form').addEventListener('input', () => { ratesDirty = true; });
+function renderBillingConfig(config) {
+  if (ratesDirty) return;
+  for (const field of rateFields) document.getElementById('rate-' + field).value = config[field] ?? '';
+  document.getElementById('billing-config-status').textContent = config.configured
+    ? 'Confirmed rate version ' + config.version + '. Existing bills retain their recorded rates.'
+    : 'Unconfirmed sample rates. Admin must enter and confirm the official rates.';
+}
+function renderReservoir(data) {
+  const present = data.has_reading === true;
+  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['admin-turbidity', 'turbidity', ' NTU'], ['admin-tds', 'tds_ppm', ' ppm'], ['admin-reading-time', 'last_updated', '']]) {
+    document.getElementById(id).textContent = present && data[key] != null ? String(data[key]) + unit : 'Awaiting data';
+  }
+}
+document.getElementById('billing-config-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = document.getElementById('save-billing-config');
+  if (button.disabled || !event.target.reportValidity()) return;
+  button.disabled = true;
+  const status = document.getElementById('billing-config-status');
+  try {
+    const body = Object.fromEntries(rateFields.map(field => [field, document.getElementById('rate-' + field).value]));
+    const response = await apiFetch('/api/settings/billing', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken}, body: JSON.stringify(body)});
+    if (!response.ok) throw new Error('Rates were not saved. Check all four non-negative values.');
+    ratesDirty = false;
+    renderBillingConfig((await response.json()).configuration);
+  } catch (_) { status.textContent = 'Rates were not confirmed. Check your session, connection and values, then retry.'; }
+  finally { button.disabled = false; }
+});
+async function loadRegistrations() {
+  const token = jwtToken;
+  const response = await apiFetch('/api/residents/registrations', {headers: {Authorization: 'Bearer ' + token}});
+  if (!response.ok) return;
+  const data = await response.json();
+  if (token !== jwtToken) return;
+  document.getElementById('registrations-tbody').innerHTML = data.registrations.map(row => `<tr>
+    <td>${escapeHtml(row.house_id)}</td><td>${escapeHtml(row.family_head_name)}${row.possible_same_name ? '<br><strong>Possible same name ? review</strong>' : ''}${row.possible_duplicate_contact ? '<br><strong>Legacy duplicate contact ? review</strong>' : ''}</td>
+    <td>${escapeHtml(row.contact_no)}</td><td>${escapeHtml(row.purok_name)}</td><td>${escapeHtml(row.account_status)}</td>
+    <td>${row.account_status === 'pending' ? `<button type="button" class="btn" data-review-id="${escapeHtml(row.house_id)}" data-review-status="approved">Approve</button> <button type="button" data-review-id="${escapeHtml(row.house_id)}" data-review-status="rejected">Reject</button>` : 'Reviewed'}</td></tr>`).join('') || '<tr><td colspan="6">No resident registrations.</td></tr>';
+}
+document.getElementById('registrations-tbody').addEventListener('click', async event => {
+  const button = event.target.closest('[data-review-id]');
+  if (!button || button.disabled) return;
+  const buttons = [...button.closest('tr').querySelectorAll('button')];
+  buttons.forEach(item => item.disabled = true);
+  const status = document.getElementById('registration-review-status');
+  try {
+    const response = await apiFetch('/api/residents/review', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken}, body: JSON.stringify({house_id: button.dataset.reviewId, status: button.dataset.reviewStatus})});
+    status.textContent = response.ok ? 'Registration ' + button.dataset.reviewStatus + '.' : 'Review was not saved. Refresh and check the current status.';
+    await fetchData(true);
+  } catch (_) { status.textContent = 'Review was not confirmed. Check connection and refresh before retrying.'; }
+  finally { buttons.forEach(item => item.disabled = false); }
 });

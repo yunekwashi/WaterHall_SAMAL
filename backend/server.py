@@ -10,7 +10,7 @@ from backend.security import principal, require_role, claims_for, text, password
 from backend.photos import save_photo, photo_for_client
 from backend.collections import synchronize
 from backend.notifications import enqueue, drain
-from backend import operational_routes
+from backend import operational_routes, accounts, billing, login_security
 from flask import Flask, jsonify, request, send_from_directory, send_file, abort
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from flask_cors import CORS
@@ -26,9 +26,9 @@ except ImportError:
 
 # Database adapter (Supports PostgreSQL on Vercel/Cloud and SQLite locally)
 try:
-    from backend.db_adapter import get_db, init_db, is_postgres
+    from backend.db_adapter import get_db, init_db, is_postgres, LATEST_SCHEMA_VERSION
 except ImportError:
-    from db_adapter import get_db, init_db, is_postgres
+    from db_adapter import get_db, init_db, is_postgres, LATEST_SCHEMA_VERSION
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app = Flask(__name__, static_folder=None)
@@ -101,13 +101,13 @@ def rate_limit_address():
 limiter = Limiter(rate_limit_address, app=app, default_limits=['240 per minute'],
                   storage_uri=config.RATELIMIT_STORAGE_URI)
 # Migrations run with `python -m backend.manage migrate`, never at cold start.
-PUBLIC = {'health_check', 'readiness', 'login', 'recover_account', 'get_vapid_public_key', 'runtime_config'}
+PUBLIC = {'health_check', 'readiness', 'login', 'recover_account', 'get_vapid_public_key', 'runtime_config', 'get_puroks', 'register_resident'}
 STAFF = {'sync_offline_collections', 'get_collections_history', 'update_report_status',
          'update_household_status', 'add_maintenance_log', 'add_billing_record', 'add_announcement'}
 ADMIN = {'update_payment_settings', 'update_central_assets', 'add_household', 'add_worker',
-         'delete_household', 'delete_worker'}
+         'delete_household', 'delete_worker', 'get_registrations', 'review_registration', 'save_billing_config'}
 AUTHENTICATED = {'get_all_data', 'get_puroks', 'get_latest_iot', 'get_payment_settings', 'handle_reports',
-                 'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events'}
+                 'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events', 'get_billing_config'}
 
 @app.before_request
 def enforce_api_policy():
@@ -149,7 +149,7 @@ def clean_error(error):
 def readiness():
     try:
         with get_db() as db:
-            db.execute('SELECT version FROM schema_migrations WHERE version = 1')
+            db.execute('SELECT version FROM schema_migrations WHERE version = ?', (LATEST_SCHEMA_VERSION,))
             if not db.fetchone():
                 raise RuntimeError('Schema not ready')
         return jsonify(status='ready')
@@ -184,7 +184,7 @@ def safe_serve_file(base_folder, requested_path, default_file='index.html'):
 
 @app.route('/')
 def serve_index():
-    return send_file(os.path.join(os.path.abspath(app.static_folder), 'index.html'))
+    return send_file(os.path.join(os.path.abspath(app.static_folder), 'landing.html'))
 
 @app.route('/<path:path>')
 def serve_static(path):
@@ -224,35 +224,23 @@ def login():
         return jsonify({"msg": "Missing username or password"}), 400
 
     with get_db() as db:
-        # 1. Check worker in users table
-        db.execute("SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(TRIM(?)) OR LOWER(TRIM(full_name)) = LOWER(TRIM(?));", (username, username))
-        user = db.fetchone()
-
-        if user and check_password_hash(user['password_hash'], password):
-            access_token = create_access_token(identity=user['username'], additional_claims=claims_for(user['password_hash'], 'staff'))
-            return jsonify(access_token=access_token, role=('admin' if user['role'] == 'Admin' else 'worker'), id=user['username'], name=user['full_name'])
-
-        # 2. Check resident in households table
-        clean_id = username.upper().replace('HH-', '').replace('HH', '').strip()
-        hh_id_val = int(clean_id) if clean_id.isdigit() else -1
-
-        db.execute("""
-            SELECT h.*, m.serial_number FROM households h
-            LEFT JOIN water_meters m ON h.household_id = m.household_id
-            WHERE h.household_id = ?
-               OR LOWER(TRIM(h.family_head_name)) = LOWER(TRIM(?))
-               OR LOWER(TRIM(m.serial_number)) = LOWER(TRIM(?))
-;
-        """, (hh_id_val, username, username))
-        resident = db.fetchone()
-
-        if resident and check_password_hash(resident['password_hash'], password):
-            hh_str = f"HH-{resident['household_id']}"
-            access_token = create_access_token(identity=hh_str, additional_claims=claims_for(resident['password_hash'], 'resident'))
-            return jsonify(access_token=access_token, role='resident', id=hh_str, name=resident['family_head_name'])
-
-    app.logger.warning("Authentication failed")
-    return jsonify({"msg": "Bad username or password"}), 401
+        kind, account, identity = accounts.login_account(db, username)
+        valid, remaining, retry_after = login_security.attempt(db, kind + ':' + identity,
+            password, account['password_hash'] if account else None)
+    # Commit failure counters before returning errors; requests during lockout do
+    # not extend its expiry, even when the supplied password is correct.
+    if retry_after:
+        response = jsonify(msg='Too many failed login attempts. Please try again in 5 minutes.', retry_after=retry_after, attempts_remaining=0)
+        response.headers['Retry-After'] = str(retry_after)
+        return response, 429
+    if not valid:
+        return jsonify(msg=f'Invalid credentials. {remaining} attempts remaining.', attempts_remaining=remaining), 401
+    if kind == 'resident' and account['account_status'] != 'approved':
+        return jsonify(msg='Registration is pending Admin approval.' if account['account_status'] == 'pending'
+                       else 'Registration was rejected. Contact the administrator.', account_status=account['account_status']), 403
+    role = 'resident' if kind == 'resident' else ('admin' if account['role'] == 'Admin' else 'worker')
+    token = create_access_token(identity=identity, additional_claims=claims_for(account['password_hash'], kind))
+    return jsonify(access_token=token, role=role, id=identity, name=account['family_head_name'] if kind == 'resident' else account['full_name'])
 
 @app.route('/api/recover-account', methods=['POST'])
 @limiter.limit("5 per minute")
@@ -280,7 +268,7 @@ def recover_account():
 def get_all_data():
     with get_db() as db:
         db.execute('''
-            SELECT h.household_id, h.family_head_name, h.current_leak_status, h.flow_rate, h.leak_detected_at,
+            SELECT h.household_id, h.family_head_name, h.current_leak_status, h.leak_detected_at, h.contact_no, h.account_status,
                    p.purok_name, m.serial_number, m.last_reading, m.meter_id
             FROM households h
             JOIN puroks p ON h.purok_id = p.purok_id
@@ -290,6 +278,8 @@ def get_all_data():
 
         households = []
         for row in rows:
+            if principal()['role'] == 'worker' and row['account_status'] != 'approved':
+                continue
             hh_id = row['household_id']
             meter_id = row['meter_id']
 
@@ -306,38 +296,25 @@ def get_all_data():
                 'account_number': row['serial_number'] or 'Unassigned',
                 'current_m3_usage': row['last_reading'] or 0.0,
                 'current_leak_status': row['current_leak_status'] or 'normal',
-                'flow_rate': row['flow_rate'] or 0.0,
+                'contact_no': row['contact_no'], 'account_status': row['account_status'],
                 'leak_detected_at': row['leak_detected_at'],
                 'monthly_history': monthly_history
             })
 
-        db.execute("SELECT * FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         row = db.fetchone()
         if row:
-            ph_known = row.get('ph_level') is not None
-            ph_val = float(row.get('ph_level') or 0)
-            turb_val = float(row.get('turbidity_ntu', 0))
-            tds_val = int(row.get('tds_ppm', 0))
-            water_level = int(row.get('water_level_percentage', 0))
-
-            ph_warn = ph_known and (ph_val < 6.5 or ph_val > 8.5)
-            turb_warn = turb_val > 5.0
-
+            turb_val = float(row['turbidity_ntu'])
             central_assets = {
-                'main_tank_level': water_level,
-                'turbidity': turb_val,
-                'ph_level': ph_val,
-                'tds_ppm': tds_val,
-                'turbidity_status': 'warning' if turb_warn else 'normal',
-                'turbidity_desc': 'Elevated turbidity. Check backwash filters.' if turb_warn else 'Turbidity levels normal.',
-                'ph_status': ('warning' if ph_warn else 'normal') if ph_known else 'unknown',
-                'ph_desc': 'pH not measured' if not ph_known else ('Acidic pH. Check lime feeder.' if ph_val < 6.5 else 'Alkaline pH. Run acid neutralizing wash.') if ph_warn else 'pH neutral & compliant.',
-                'last_updated': row.get('recorded_at'), 'has_reading': True
+                'main_tank_level': row['water_level_percentage'], 'turbidity': turb_val,
+                'tds_ppm': row['tds_ppm'], 'has_reading': True,
+                'turbidity_status': 'warning' if turb_val > 5 else 'normal',
+                'turbidity_desc': 'Elevated turbidity; follow local water authority guidance.' if turb_val > 5 else 'No turbidity alert.',
+                'last_updated': row.get('recorded_at')
             }
         else:
-            central_assets = {'main_tank_level': 0, 'turbidity': 0, 'ph_level': 0,
-                              'tds_ppm': 0, 'turbidity_status': 'unknown', 'ph_status': 'unknown',
-                              'turbidity_desc': 'Awaiting sensor readings', 'ph_desc': 'Awaiting sensor readings',
+            central_assets = {'main_tank_level': None, 'turbidity': None, 'tds_ppm': None,
+                              'turbidity_status': 'unknown', 'turbidity_desc': 'Awaiting sensor readings',
                               'last_updated': None, 'has_reading': False}
 
         db.execute("SELECT * FROM maintenance_logs ORDER BY date DESC;")
@@ -366,7 +343,7 @@ def get_all_data():
                 })
 
         db.execute('''
-            SELECT b.bill_id, b.previous_reading, b.present_reading, b.consumption_m3, b.total_amount, b.payment_status, b.payment_date, b.billed_at,
+            SELECT b.bill_id, b.previous_reading, b.present_reading, b.consumption_m3, b.total_amount, b.payment_status, b.payment_date, b.billed_at, b.billing_snapshot,
                    u.username AS biller_username, m.serial_number, m.household_id
             FROM billing_records b
             JOIN water_meters m ON b.meter_id = m.meter_id
@@ -378,6 +355,7 @@ def get_all_data():
             dt = b_row.get('billed_at')
             month_str = dt[:7] if dt else 'Unknown (legacy record)'
 
+            snapshot = json.loads(b_row['billing_snapshot']) if b_row.get('billing_snapshot') else None
             billing_records.append({
                 'bill_id': f"BILL-{b_row['bill_id']}",
                 'house_id': f"HH-{b_row['household_id']}",
@@ -386,8 +364,9 @@ def get_all_data():
                 'previous_reading': b_row['previous_reading'],
                 'current_reading': b_row['present_reading'],
                 'consumption': b_row['consumption_m3'],
-                'water_charge': b_row['total_amount'] - 50.0,
-                'maintenance_fee': 50.0,
+                'water_charge': float(snapshot['base_rate']) + float(snapshot['excess_charge']) if snapshot else None,
+                'maintenance_fee': float(snapshot['environmental_fee']) if snapshot else None,
+                'billing_breakdown': snapshot,
                 'total_due': b_row['total_amount'],
                 'billed_by': b_row.get('biller_username') or 'Unknown',
                 'date': dt or '',
@@ -444,12 +423,12 @@ def get_all_data():
             'billingRecords': billing_records,
             'announcements': announcements,
             'paymentSettings': payment_settings,
+            'billingConfig': billing.read_config(db),
             'collectionsHistory': collections_history,
             'residentReports': resident_reports
         })
 
 @app.route('/api/puroks', methods=['GET'])
-@jwt_required()
 def get_puroks():
     with get_db() as db:
         db.execute("SELECT purok_id, purok_name FROM puroks ORDER BY purok_id ASC;")
@@ -471,57 +450,22 @@ def iot_telemetry():
     data = request.get_json()
     water_level = int(number(data.get('water_level_percentage', data.get('tank_level')), 'water level', 0, 100))
     turbidity = number(data.get('turbidity_ntu', data.get('turbidity')), 'turbidity', 0, 10000)
-    raw_ph = data.get('ph_level', data.get('ph'))
-    ph = number(raw_ph, 'pH', 0, 14) if raw_ph is not None else None
-    ph_label = f'{ph:.1f}' if ph is not None else 'not measured'
     tds = int(number(data.get('tds_ppm', data.get('tds')), 'TDS', 0, 100000))
-    if data.get('flow_rate_lpm') is not None:
-        data['flow_rate_lpm'] = number(data['flow_rate_lpm'], 'flow rate', 0, 100000)
-        data['purok_id'] = identifier(data.get('purok_id'))
-    if data.get('house_id') or data.get('household_id'):
-        identifier(data.get('house_id') or data.get('household_id'), 'HH-')
-        data['flow_rate'] = number(data.get('flow_rate', data.get('flow_rate_lpm', 0)), 'flow rate', 0, 100000)
 
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
 
     with get_db() as db:
         db.execute('''
-            INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, ph_level, tds_ppm, recorded_at)
-            VALUES (?, ?, ?, ?, ?);
-        ''', (water_level, turbidity, ph, tds, now_str))
-
-        flow_lpm = data.get('flow_rate_lpm')
-        purok_id = data.get('purok_id', 1)
-        if flow_lpm is not None:
-            try:
-                flow_val = float(flow_lpm)
-                db.execute('INSERT INTO flow_readings (purok_id, flow_rate_lpm, recorded_at) VALUES (?, ?, ?);',
-                           (purok_id, flow_val, now_str))
-            except (ValueError, TypeError):
-                pass
-
-        # Optional household telemetry
-        house_id = data.get('household_id') or data.get('house_id')
-        if house_id:
-            clean_id = str(house_id).upper().replace('HH-', '').replace('HH', '').strip()
-            if clean_id.isdigit():
-                hh_id = int(clean_id)
-                hh_flow = float(data.get('flow_rate', flow_lpm or 0.0))
-                is_leak = data.get('leak') or (data.get('current_leak_status') == 'leak') or (hh_flow > 0.5)
-                leak_status = 'leak' if is_leak else 'normal'
-                leak_time = now_str if leak_status == 'leak' else None
-                db.execute('''
-                    UPDATE households
-                    SET current_leak_status = ?, flow_rate = ?, leak_detected_at = ?
-                    WHERE household_id = ?;
-                ''', (leak_status, hh_flow, leak_time, hh_id))
+            INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, tds_ppm, recorded_at)
+            VALUES (?, ?, ?, ?);
+        ''', (water_level, turbidity, tds, now_str))
 
         # Automated emergency system alerts for contamination or critically low water level
         now_dt = datetime.datetime.now(datetime.timezone.utc)
         one_hour_ago = (now_dt - datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
 
-        # 1. Contamination Alert Check (Turbidity > 5.0 NTU or pH < 6.5 or pH > 8.5)
-        if turbidity > 5.0 or (ph is not None and (ph < 6.5 or ph > 8.5)):
+        # 1. Elevated turbidity alert (not a drinking-water safety certification)
+        if turbidity > 5.0:
             db.execute("""
                 SELECT COUNT(*) as cnt FROM announcements
                 WHERE author = 'System Sensor Alert'
@@ -531,7 +475,7 @@ def iot_telemetry():
             recent_alert = db.fetchone()
             alert_count = recent_alert['cnt'] if recent_alert and 'cnt' in recent_alert else (list(recent_alert.values())[0] if recent_alert else 0)
             if alert_count == 0:
-                alert_msg = f"⚠️ WATER QUALITY ALERT: Water contamination detected (Turbidity: {turbidity:.1f} NTU, pH: {ph_label}). Water may be unsafe for direct drinking. Follow local water authority guidance before using this supply."
+                alert_msg = f"⚠️ WATER QUALITY ALERT: Elevated turbidity detected ({turbidity:.1f} NTU). Water may be unsafe for direct drinking. Follow local water authority guidance before using this supply."
                 db.execute("""
                     INSERT INTO announcements (message, author, target_audience, timestamp)
                     VALUES (?, 'System Sensor Alert', 'Everyone', ?);
@@ -540,7 +484,7 @@ def iot_telemetry():
                 # Queue durable push notification for contamination
                 send_web_push(
                     title="⚠️ Water Quality Warning",
-                    body=f"Water turbidity ({turbidity:.1f} NTU) or pH ({ph_label}) is abnormal. Follow local water authority guidance.",
+                    body=f"Water turbidity ({turbidity:.1f} NTU) is elevated. Follow local water authority guidance.",
                     target_audience='Everyone',
                     tag='alert-water-quality',
                     extra_data={'url': '/', 'type': 'critical'}, db=db
@@ -579,7 +523,6 @@ def iot_telemetry():
         'recorded_at': now_str,
         'water_level_percentage': water_level,
         'turbidity_ntu': turbidity,
-        'ph_level': ph,
         'tds_ppm': tds,
         'message': 'IoT sensor data ingested successfully'
     })
@@ -588,14 +531,13 @@ def iot_telemetry():
 def get_latest_iot():
     """Returns the latest sensor reading snapshot for real-time subscribers."""
     with get_db() as db:
-        db.execute("SELECT * FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         row = db.fetchone()
         if not row:
             return jsonify(status='awaiting_sensor', recorded_at=None), 200
         result = dict(row)
         result['water_level'] = result.get('water_level_percentage')
         result['turbidity'] = result.get('turbidity_ntu')
-        result['ph'] = result.get('ph_level')
         result['tds'] = result.get('tds_ppm')
         return jsonify(result)
 
@@ -755,7 +697,7 @@ def poll_notifications():
         new_announcements = [dict(r) for r in db.fetchall()]
 
         # Latest telemetry for urgent status checks
-        db.execute("SELECT water_level_percentage, turbidity_ntu, ph_level, tds_ppm, recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT water_level_percentage, turbidity_ntu, tds_ppm, recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         telemetry = db.fetchone()
         telemetry_dict = dict(telemetry) if telemetry else {}
 
@@ -763,9 +705,8 @@ def poll_notifications():
         is_low_level = False
         if telemetry_dict:
             turb = telemetry_dict.get('turbidity_ntu') or 0.0
-            ph = telemetry_dict.get('ph_level')
             wl = telemetry_dict.get('water_level_percentage', 100)
-            if turb > 5.0 or (ph is not None and (ph < 6.5 or ph > 8.5)):
+            if turb > 5.0:
                 is_contaminated = True
             if wl <= 20:
                 is_low_level = True
@@ -861,120 +802,47 @@ def unsubscribe_push():
 
     return jsonify({'status': 'success', 'message': 'Push subscription deactivated'})
 
+@app.route('/api/residents/register', methods=['POST'])
+@limiter.limit('6 per minute; 30 per hour')
+def register_resident():
+    return jsonify(accounts.create_resident(request.get_json(), pending=True)), 201
+
+
 @app.route('/api/households/add', methods=['POST'])
 @jwt_required()
-@limiter.limit("20 per minute")
+@limiter.limit('20 per minute')
 def add_household():
-    data = request.get_json() or {}
-    owner_name = text(data.get('owner_name') or data.get('name'), 'full name', 100, 1)
+    return jsonify(accounts.create_resident(request.get_json()))
 
-    raw_contact = data.get('contact') or data.get('contact_no')
-    if not raw_contact:
-        abort(400, description='Contact number is required')
-    contact = text(str(raw_contact), 'contact number', 30, 7)
-    if not re.fullmatch(r'^\+?[0-9\s\-()]{7,25}$', contact):
-        abort(400, description='Invalid contact number format')
-
-    if not data.get('purok'):
-        abort(400, description='Assigned Purok is required')
-    purok_name = text(data['purok'], 'purok', 50, 1)
-
-    plain_pw = data.get('password')
-    verify_pw = data.get('verify_password')
-    if not plain_pw:
-        abort(400, description='Password is required')
-    if verify_pw is not None and plain_pw != verify_pw:
-        abort(400, description='Passwords do not match.')
-    password(plain_pw)
-    pass_hash = generate_password_hash(plain_pw)
-
-    with get_db() as db:
-        if not db.is_pg:
-            db.execute('BEGIN IMMEDIATE')
-        db.execute("SELECT purok_id FROM puroks WHERE LOWER(purok_name) = LOWER(?);", (purok_name,))
-        row = db.fetchone()
-        if not row:
-            abort(400, description='Unknown purok')
-        purok_id = row['purok_id']
-
-        db.execute('''
-            INSERT INTO households (purok_id, family_head_name, registration_date, password_hash, contact_no)
-            VALUES (?, ?, ?, ?, ?);
-        ''', (purok_id, owner_name, datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'), pass_hash, contact))
-
-        hh_id = db.lastrowid
-        if not hh_id:
-            abort(500, description='Failed to generate household record')
-
-        # Sequential unique meter serial number using project convention: TAG-2026-XXXX
-        candidate_num = hh_id
-        while True:
-            serial_number = f'TAG-2026-{candidate_num:04d}'
-            db.execute("SELECT meter_id FROM water_meters WHERE serial_number = ?;", (serial_number,))
-            if not db.fetchone():
-                break
-            candidate_num += 1
-
-        db.execute('''
-            INSERT INTO water_meters (household_id, serial_number, last_reading)
-            VALUES (?, ?, 0.0);
-        ''', (hh_id, serial_number))
-
-    return jsonify({'status': 'success', 'house_id': f'HH-{hh_id}', 'account_number': serial_number, 'resident_id': serial_number})
 
 @app.route('/api/workers/add', methods=['POST'])
 @jwt_required()
-@limiter.limit("10 per minute")
+@limiter.limit('10 per minute')
 def add_worker():
-    data = request.get_json() or {}
-    worker_name = text(data.get('name') or data.get('full_name'), 'full name', 100, 1)
+    return jsonify(accounts.create_worker(request.get_json()))
 
-    raw_contact = data.get('contact') or data.get('contact_no')
-    if not raw_contact:
-        abort(400, description='Contact number is required')
-    contact = text(str(raw_contact), 'contact number', 30, 7)
-    if not re.fullmatch(r'^\+?[0-9\s\-()]{7,25}$', contact):
-        abort(400, description='Invalid contact number format')
 
-    role = text(data.get('role', 'Collector'), 'role', 30, 1)
-    if role != 'Collector':
-        abort(400, description='Create administrators with the secure CLI')
+@app.route('/api/residents/registrations', methods=['GET'])
+def get_registrations():
+    return jsonify(status='success', registrations=accounts.registrations())
 
-    assigned_zone = text(data.get('zone') or data.get('assigned_zone') or 'Purok 1', 'assigned zone', 80)
 
-    plain_pw = data.get('password')
-    verify_pw = data.get('verify_password')
-    if not plain_pw:
-        abort(400, description='Password is required')
-    if verify_pw is not None and plain_pw != verify_pw:
-        abort(400, description='Passwords do not match.')
-    password(plain_pw)
-    pass_hash = generate_password_hash(plain_pw)
+@app.route('/api/residents/review', methods=['POST'])
+def review_registration():
+    return jsonify(accounts.review_resident(request.get_json()))
 
+
+@app.route('/api/settings/billing', methods=['GET'])
+def get_billing_config():
     with get_db() as db:
-        if not db.is_pg:
-            db.execute('BEGIN IMMEDIATE')
+        return jsonify(status='success', configuration=billing.read_config(db))
 
-        # Generate unique sequential Worker Employee ID: EMP-001, EMP-002, EMP-003...
-        db.execute("SELECT username FROM users WHERE LOWER(username) LIKE 'emp-%';")
-        existing_usernames = {row['username'].upper() for row in db.fetchall()}
 
-        seq = 1
-        while True:
-            candidate_id = f'EMP-{seq:03d}'
-            if candidate_id not in existing_usernames:
-                db.execute("SELECT user_id FROM users WHERE LOWER(username) = LOWER(?);", (candidate_id,))
-                if not db.fetchone():
-                    worker_id = candidate_id
-                    break
-            seq += 1
+@app.route('/api/settings/billing', methods=['POST'])
+def save_billing_config():
+    with get_db() as db:
+        return jsonify(status='success', configuration=billing.update_config(db, request.get_json()))
 
-        db.execute('''
-            INSERT INTO users (username, password_hash, full_name, role, assigned_zone, contact_no)
-            VALUES (?, ?, ?, ?, ?, ?);
-        ''', (worker_id, pass_hash, worker_name, role, assigned_zone, contact))
-
-    return jsonify({'status': 'success', 'worker_id': worker_id, 'employee_id': worker_id, 'role': role})
 
 @app.route('/api/households/<hh_id>', methods=['DELETE'])
 @jwt_required()

@@ -111,12 +111,14 @@ def test_postgres_connection_failure_is_closed_and_redacted(monkeypatch, caplog,
     assert 'database.example.invalid' not in visible
 
 
-def test_absent_ph_is_not_fabricated(system):
+def test_only_supported_reservoir_measurements_are_active(system):
     from backend.server import IOT_DEVICE_SECRET
     client, headers, _ = system
     result = client.post('/api/iot/telemetry', json={'water_level_percentage': 50, 'turbidity_ntu': 1, 'tds_ppm': 30}, headers={'X-IoT-Secret': IOT_DEVICE_SECRET})
     assert result.status_code == 200
-    assert client.get('/api/all-data', headers=headers['HH-1']).json['centralAssets']['ph_status'] == 'unknown'
+    assets = client.get('/api/all-data', headers=headers['HH-1']).json['centralAssets']
+    assert assets['main_tank_level'] == 50 and assets['tds_ppm'] == 30
+    assert not {'ph_level', 'ph_status', 'flow_rate'} & assets.keys()
     with get_db() as db:
         db.execute('SELECT ph_level FROM reservoir_quality_readings')
         assert db.fetchone()['ph_level'] is None

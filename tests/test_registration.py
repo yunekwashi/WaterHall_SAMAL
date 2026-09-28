@@ -2,6 +2,9 @@
 import secrets
 from backend.db_adapter import get_db
 
+# Ephemeral test data; preserve boundary lengths without storing literal passwords.
+TEST_PASSWORD = secrets.token_urlsafe(96)
+
 
 def test_resident_valid_registration_and_automatic_id(system):
     client, headers, _ = system
@@ -9,8 +12,8 @@ def test_resident_valid_registration_and_automatic_id(system):
         'owner_name': 'Maria Clara',
         'contact': '09171234567',
         'purok': 'Purok 1',
-        'password': 'SecurePassword123!',
-        'verify_password': 'SecurePassword123!'
+        'password': TEST_PASSWORD[:18],
+        'verify_password': TEST_PASSWORD[:18]
     }
     res = client.post('/api/households/add', json=payload, headers=headers['admin'])
     assert res.status_code == 200, res.json
@@ -30,8 +33,8 @@ def test_resident_purok_assignment_and_contact_storage(system):
         'owner_name': 'Crisostomo Ibarra',
         'contact': '09289876543',
         'purok': 'Purok 2',
-        'password': 'CrisostomoPass2026!',
-        'verify_password': 'CrisostomoPass2026!'
+        'password': TEST_PASSWORD[:19],
+        'verify_password': TEST_PASSWORD[:19]
     }
     res = client.post('/api/households/add', json=payload, headers=headers['admin'])
     assert res.status_code == 200
@@ -63,8 +66,8 @@ def test_resident_password_validation(system):
     # 1. Mismatched passwords
     res = client.post('/api/households/add', json={
         **base,
-        'password': 'Password12345!',
-        'verify_password': 'PasswordDifferent99!'
+        'password': TEST_PASSWORD[:14],
+        'verify_password': TEST_PASSWORD[:20]
     }, headers=headers['admin'])
     assert res.status_code == 400
     assert 'passwords do not match' in res.json.get('msg', '').lower()
@@ -72,8 +75,8 @@ def test_resident_password_validation(system):
     # 2. Below minimum (11 chars)
     res = client.post('/api/households/add', json={
         **base,
-        'password': 'Short12345!',
-        'verify_password': 'Short12345!'
+        'password': TEST_PASSWORD[:11],
+        'verify_password': TEST_PASSWORD[:11]
     }, headers=headers['admin'])
     assert res.status_code == 400
     assert '12 to 128' in res.json.get('msg', '')
@@ -81,8 +84,8 @@ def test_resident_password_validation(system):
     # 3. Exact 12 characters (minimum valid)
     res_12 = client.post('/api/households/add', json={
         **base,
-        'password': 'ExactTwelve1!',
-        'verify_password': 'ExactTwelve1!'
+        'password': TEST_PASSWORD[:13],
+        'verify_password': TEST_PASSWORD[:13]
     }, headers=headers['admin'])
     assert res_12.status_code == 200
 
@@ -90,8 +93,9 @@ def test_resident_password_validation(system):
     res_13 = client.post('/api/households/add', json={
         **base,
         'owner_name': 'Thirteen Chars',
-        'password': 'ThirteenChars!',
-        'verify_password': 'ThirteenChars!'
+        'contact': '09331112234',
+        'password': TEST_PASSWORD[:14],
+        'verify_password': TEST_PASSWORD[:14]
     }, headers=headers['admin'])
     assert res_13.status_code == 200
 
@@ -100,6 +104,7 @@ def test_resident_password_validation(system):
     res_128 = client.post('/api/households/add', json={
         **base,
         'owner_name': 'Max Chars User',
+        'contact': '09331112235',
         'password': pw_128,
         'verify_password': pw_128
     }, headers=headers['admin'])
@@ -125,8 +130,8 @@ def test_resident_duplicate_and_server_side_id_enforcement(system):
         'contact': '09191234567',
         'purok': 'Purok 1',
         'account_number': 'FAKE-ACCOUNT-999',
-        'password': 'ValidPassword123!',
-        'verify_password': 'ValidPassword123!'
+        'password': TEST_PASSWORD[:17],
+        'verify_password': TEST_PASSWORD[:17]
     }
     res = client.post('/api/households/add', json=payload, headers=headers['admin'])
     assert res.status_code == 200
@@ -134,7 +139,7 @@ def test_resident_duplicate_and_server_side_id_enforcement(system):
     assert res.json['account_number'].startswith('TAG-2026-')
 
     # Register another one: IDs must be distinct
-    payload2 = {**payload, 'owner_name': 'Second Household'}
+    payload2 = {**payload, 'owner_name': 'Second Household', 'contact': '09191234568'}
     res2 = client.post('/api/households/add', json=payload2, headers=headers['admin'])
     assert res2.status_code == 200
     assert res2.json['account_number'] != res.json['account_number']
@@ -171,7 +176,7 @@ def test_resident_login_with_newly_created_account(system):
     assert login_name.json['role'] == 'resident'
 
     # Login with wrong password rejected
-    login_bad = client.post('/api/login', json={'username': acc_num, 'password': 'WrongPassword123!'})
+    login_bad = client.post('/api/login', json={'username': acc_num, 'password': TEST_PASSWORD[:17]})
     assert login_bad.status_code == 401
 
 
@@ -181,8 +186,8 @@ def test_worker_valid_registration_and_automatic_id(system):
         'name': 'Apolinario Mabini',
         'contact': '09181234567',
         'role': 'Collector',
-        'password': 'WorkerSecurePass123!',
-        'verify_password': 'WorkerSecurePass123!'
+        'password': TEST_PASSWORD[:20],
+        'verify_password': TEST_PASSWORD[:20]
     }
     res = client.post('/api/workers/add', json=payload, headers=headers['admin'])
     assert res.status_code == 200, res.json
@@ -201,8 +206,8 @@ def test_worker_sequential_employee_id_generation(system):
             'name': f'Field Worker {i}',
             'contact': f'0917000000{i}',
             'role': 'Collector',
-            'password': 'WorkerPassword123!',
-            'verify_password': 'WorkerPassword123!'
+            'password': TEST_PASSWORD[:18],
+            'verify_password': TEST_PASSWORD[:18]
         }
         res = client.post('/api/workers/add', json=payload, headers=headers['admin'])
         assert res.status_code == 200
@@ -219,8 +224,8 @@ def test_worker_contact_and_role_storage(system):
         'contact': '09198765432',
         'role': 'Collector',
         'zone': 'Purok 1',
-        'password': 'MarceloPass1234!',
-        'verify_password': 'MarceloPass1234!'
+        'password': TEST_PASSWORD[:16],
+        'verify_password': TEST_PASSWORD[:16]
     }
     res = client.post('/api/workers/add', json=payload, headers=headers['admin'])
     assert res.status_code == 200
@@ -234,7 +239,7 @@ def test_worker_contact_and_role_storage(system):
         assert row['contact_no'] == '09198765432'
         assert row['full_name'] == 'Marcelo H. Del Pilar'
         # Password must be hashed, never plaintext
-        assert 'MarceloPass1234!' not in row['password_hash']
+        assert TEST_PASSWORD[:16] not in row['password_hash']
         assert row['password_hash'].startswith('scrypt:') or row['password_hash'].startswith('pbkdf2:')
 
     # Rejection of invalid role
@@ -259,8 +264,8 @@ def test_worker_password_validation(system):
     # 1. Mismatched passwords
     res = client.post('/api/workers/add', json={
         **base,
-        'password': 'WorkerPass1234!',
-        'verify_password': 'WorkerPassMismatch!'
+        'password': TEST_PASSWORD[:15],
+        'verify_password': TEST_PASSWORD[:19]
     }, headers=headers['admin'])
     assert res.status_code == 400
     assert 'passwords do not match' in res.json.get('msg', '').lower()
@@ -268,8 +273,8 @@ def test_worker_password_validation(system):
     # 2. Below minimum (11 chars)
     res = client.post('/api/workers/add', json={
         **base,
-        'password': 'ShortPass1!',
-        'verify_password': 'ShortPass1!'
+        'password': TEST_PASSWORD[:11],
+        'verify_password': TEST_PASSWORD[:11]
     }, headers=headers['admin'])
     assert res.status_code == 400
     assert '12 to 128' in res.json.get('msg', '')
@@ -278,8 +283,8 @@ def test_worker_password_validation(system):
     res_13 = client.post('/api/workers/add', json={
         **base,
         'name': 'Thirteen Worker',
-        'password': 'ThirteenChar!',
-        'verify_password': 'ThirteenChar!'
+        'password': TEST_PASSWORD[:13],
+        'verify_password': TEST_PASSWORD[:13]
     }, headers=headers['admin'])
     assert res_13.status_code == 200
 
@@ -319,7 +324,7 @@ def test_worker_login_with_newly_created_account(system):
     assert login_name.json['role'] == 'worker'
 
     # Login with wrong password rejected
-    login_bad = client.post('/api/login', json={'username': wid, 'password': 'WrongPassword123!'})
+    login_bad = client.post('/api/login', json={'username': wid, 'password': TEST_PASSWORD[:17]})
     assert login_bad.status_code == 401
 
 
