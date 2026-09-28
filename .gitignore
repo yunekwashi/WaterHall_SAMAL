@@ -97,3 +97,12 @@ api_test2.json
 assets_extra.json
 response.json
 database_contents.txt
+
+# Final Android installation packages are local release artifacts, not source.
+/WATERHALL_RELEASE/
+# Retired installation copies must not be added to Git.
+/WATERHALL_INSTALL/
+*.apks
+*.xapk
+*.apk.sha1
+*.aab.sha1
