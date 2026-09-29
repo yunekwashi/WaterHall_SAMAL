@@ -1,17 +1,537 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="WaterHall community water services: billing, reports and announcements.">
-  <title>WaterHall · Community water services</title>
-  <link rel="icon" href="/logo.png"><link rel="stylesheet" href="/landing.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="WaterHall: IoT-Enable Water Asset and Detection System For Brgy Tagpopongan Babak District Island Garden City Of Samal. Public information, capstone documentation, and project details.">
+  <title>WaterHall · IoT-Enabled Water Asset & Detection System</title>
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/landing.css?v=3">
 </head>
 <body>
-  <a class="skip" href="#main">Skip to content</a>
-  <header><a class="brand" href="/" aria-label="WaterHall home"><img src="/logo.png" alt="">WaterHall</a><nav aria-label="Main navigation"><a href="#services">Services</a><a href="#about">About the project</a><a class="button small" href="/index.html?role=resident">Resident portal</a></nav></header>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <!-- Header / Navigation -->
+  <header class="site-header" id="top">
+    <div class="header-container">
+      <a class="brand" href="#home" aria-label="WaterHall Home">
+        <img src="/logo.png" alt="WaterHall Emblem" class="brand-logo" width="40" height="40">
+        <span class="brand-text">WaterHall</span>
+      </a>
+
+      <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="primary-nav">
+        <span class="hamburger-bar"></span>
+        <span class="hamburger-bar"></span>
+        <span class="hamburger-bar"></span>
+      </button>
+
+      <nav class="primary-nav" id="primary-nav" aria-label="Main navigation">
+        <ul class="nav-list">
+          <li><a href="#home" class="nav-link active">Home</a></li>
+          <li><a href="#about" class="nav-link">About</a></li>
+          <li><a href="#services" class="nav-link">Services</a></li>
+          <li><a href="#how-it-works" class="nav-link">How It Works</a></li>
+          <li><a href="#technology" class="nav-link">Technology</a></li>
+          <li><a href="#team" class="nav-link">Team</a></li>
+          <li><a href="#contact" class="nav-link">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
   <main id="main">
-    <section class="hero"><div><p class="eyebrow">COMMUNITY WATER SERVICES</p><h1>A clearer connection<br>to your water service.</h1><p class="intro">View your water bills, report a concern, and stay informed about community announcements in one place.</p><div class="actions"><a class="button" href="/index.html?role=resident">Open Resident portal <span aria-hidden="true">→</span></a><a class="secondary" href="/index.html?role=worker">Field Worker sign in</a></div><p class="note">New resident? Register in the Resident portal. Accounts become available after Admin approval.</p></div><aside class="service-card"><img src="/logo.png" alt="WaterHall"><p class="eyebrow">CONNECTED COMMUNITY</p><h2>Records you can follow.<br>Concerns you can report.</h2><p>Manual meter readings support billing. Field collections can be saved offline and synchronized after reconnection.</p><div class="card-footer">Resident services · Field operations</div></aside></section>
-    <section id="services"><p class="eyebrow">WHAT YOU CAN DO</p><h2>Your water service, easier to follow.</h2><div class="grid"><article><span class="number">01</span><h3>Understand your bill</h3><p>Review recorded meter readings, consumption, payment status, and the rate breakdown saved with each new bill.</p></article><article><span class="number">02</span><h3>Report a concern</h3><p>Send a service report with optional photo evidence. Your report is linked to your account for review.</p></article><article><span class="number">03</span><h3>Stay informed</h3><p>Read community announcements and available reservoir measurements. Missing readings are clearly shown as awaiting data.</p></article></div></section>
-    <section id="about" class="about"><div><p class="eyebrow">ABOUT THE PROJECT</p><h2>WaterHall</h2><p>Software for community water billing, field collection, resident reports, and service communication.</p><p>Planned reservoir monitoring covers water level, turbidity, and TDS. Hardware integration and field validation are a separate phase. Measurements do not certify drinking-water safety.</p></div><dl><dt>Official capstone title</dt><dd>[OFFICIAL CAPSTONE TITLE]</dd><dt>Project team</dt><dd>[VERIFIED TEAM NAMES]</dd><dt>Institution</dt><dd>[VERIFIED SCHOOL NAME]</dd><dt>Publication note</dt><dd>Project credits await confirmation.</dd></dl></section>
-  </main><footer><span>WaterHall · Community water services</span><a href="/index.html?role=resident">Resident access</a><a href="/index.html?role=worker">Worker access</a></footer>
-</body></html>
+    <!-- Hero Section -->
+    <section class="hero-section" id="home" aria-labelledby="hero-title">
+      <div class="section-container hero-layout">
+        <div class="hero-content">
+          <div class="eyebrow-badge">
+            <span class="badge-dot"></span>
+            <span>Simple. Secure. Convenient.</span>
+          </div>
+
+          <h1 id="hero-title" class="hero-title">
+            WaterHall: IoT-Enable Water Asset and Detection System For Brgy Tagpopongan Babak District Island Garden City Of Samal
+          </h1>
+
+          <p class="hero-description">
+            WaterHall makes water billing, meter records, and community water service information easier to manage and access.
+          </p>
+
+          <div class="hero-actions">
+            <a href="#about" class="btn btn-primary">
+              Learn More
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+            </a>
+            <a href="#services" class="btn btn-secondary">Our Services</a>
+          </div>
+
+          <div class="hero-highlights">
+            <div class="highlight-item">
+              <span class="highlight-label">Community</span>
+              <span class="highlight-value">Brgy. Tagpopongan</span>
+            </div>
+            <div class="highlight-divider" aria-hidden="true"></div>
+            <div class="highlight-item">
+              <span class="highlight-label">Location</span>
+              <span class="highlight-value">IGACOS, Davao del Norte</span>
+            </div>
+            <div class="highlight-divider" aria-hidden="true"></div>
+            <div class="highlight-item">
+              <span class="highlight-label">Scope</span>
+              <span class="highlight-value">Billing &amp; Asset Monitoring</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="waterhall-card">
+            <div class="card-header-bar">
+              <img src="/tagpopongan_logo.jpg" alt="Barangay Tagpopongan Seal" class="card-seal" width="56" height="56">
+              <div class="card-titles">
+                <span class="card-tag">Barangay Water System</span>
+                <span class="card-subtag">Tagpopongan Babak District</span>
+              </div>
+            </div>
+
+            <div class="card-centerpiece">
+              <div class="emblem-glow">
+                <img src="/logo.png" alt="WaterHall" class="center-emblem" width="100" height="100">
+              </div>
+              <h2 class="card-title">WaterHall</h2>
+              <p class="card-summary">Community water billing, field verification, and asset telemetry records.</p>
+            </div>
+
+            <div class="card-feature-list">
+              <div class="mini-feature">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                <span>Accurate Billing Records</span>
+              </div>
+              <div class="mini-feature">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                <span>Offline-Ready Operations</span>
+              </div>
+              <div class="mini-feature">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+                <span>IoT Reservoir Telemetry</span>
+              </div>
+            </div>
+
+            <div class="card-footer-note">
+              <span>Barangay Tagpopongan Water System • IGACOS</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- About Section -->
+    <section class="content-section" id="about" aria-labelledby="about-heading">
+      <div class="section-container">
+        <div class="section-header">
+          <p class="section-eyebrow">ABOUT WATERHALL</p>
+          <h2 id="about-heading" class="section-title">A Better Way to Manage Water Services</h2>
+          <p class="section-lead">
+            WaterHall is a web and offline mobile-based water meter billing and administrative records system designed to help improve water service management and make records easier to organize and access.
+          </p>
+        </div>
+
+        <div class="about-grid">
+          <div class="about-card">
+            <div class="about-icon-box">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            </div>
+            <h3 class="about-card-title">Community Record Keeping</h3>
+            <p class="about-card-text">
+              Replaces error-prone manual paper logs with structured digital accounts for every household in Barangay Tagpopongan, ensuring transparent consumption records and historical billing data.
+            </p>
+          </div>
+
+          <div class="about-card">
+            <div class="about-icon-box">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            </div>
+            <h3 class="about-card-title">Administrative Clarity</h3>
+            <p class="about-card-text">
+              Provides local barangay administrators with verified records of meter readings, revenue audits, registration reviews, and community-wide public announcements.
+            </p>
+          </div>
+
+          <div class="about-card">
+            <div class="about-icon-box">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+            <h3 class="about-card-title">Operational Awareness</h3>
+            <p class="about-card-text">
+              Integrates reservoir measurements to provide operational insight into reservoir water levels, turbidity, and total dissolved solids. Measurements assist local management and do not certify drinking-water safety.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Services / Features Section -->
+    <section class="content-section bg-subtle" id="services" aria-labelledby="services-heading">
+      <div class="section-container">
+        <div class="section-header">
+          <p class="section-eyebrow">OUR SERVICES</p>
+          <h2 id="services-heading" class="section-title">Water Services Made Easier</h2>
+          <p class="section-lead">Streamlining water management processes for residents, field collectors, and local barangay officials.</p>
+        </div>
+
+        <div class="services-grid">
+          <article class="service-card">
+            <div class="service-number" aria-hidden="true">01</div>
+            <div class="service-icon-wrap">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="6" y1="8" x2="10" y2="8"></line><line x1="6" y1="12" x2="18" y2="12"></line><line x1="6" y1="16" x2="14" y2="16"></line></svg>
+            </div>
+            <h3 class="service-title">View Water Bills</h3>
+            <p class="service-description">Easily manage and organize water billing information and records.</p>
+          </article>
+
+          <article class="service-card">
+            <div class="service-number" aria-hidden="true">02</div>
+            <div class="service-icon-wrap">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            </div>
+            <h3 class="service-title">Monitor Meter Records</h3>
+            <p class="service-description">Keep track of water meter readings and usage records.</p>
+          </article>
+
+          <article class="service-card">
+            <div class="service-number" aria-hidden="true">03</div>
+            <div class="service-icon-wrap">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            </div>
+            <h3 class="service-title">Report Water Concerns</h3>
+            <p class="service-description">Record and manage concerns related to water services.</p>
+          </article>
+
+          <article class="service-card">
+            <div class="service-number" aria-hidden="true">04</div>
+            <div class="service-icon-wrap">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            </div>
+            <h3 class="service-title">Stay Informed</h3>
+            <p class="service-description">Keep track of important water service announcements and updates.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section class="content-section" id="how-it-works" aria-labelledby="how-it-works-heading">
+      <div class="section-container">
+        <div class="section-header">
+          <p class="section-eyebrow">HOW IT WORKS</p>
+          <h2 id="how-it-works-heading" class="section-title">Simple and Organized</h2>
+          <p class="section-lead">A dependable workflow connecting field operations with community administration.</p>
+        </div>
+
+        <div class="steps-container">
+          <div class="step-card">
+            <div class="step-header">
+              <span class="step-badge">1</span>
+              <h3 class="step-title">Meter Reading</h3>
+            </div>
+            <p class="step-description">Water meter information is recorded.</p>
+          </div>
+
+          <div class="step-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+          </div>
+
+          <div class="step-card">
+            <div class="step-header">
+              <span class="step-badge">2</span>
+              <h3 class="step-title">Billing Record</h3>
+            </div>
+            <p class="step-description">Meter information is used to maintain billing records.</p>
+          </div>
+
+          <div class="step-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+          </div>
+
+          <div class="step-card">
+            <div class="step-header">
+              <span class="step-badge">3</span>
+              <h3 class="step-title">Record Management</h3>
+            </div>
+            <p class="step-description">Water service records are organized and maintained.</p>
+          </div>
+
+          <div class="step-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+          </div>
+
+          <div class="step-card">
+            <div class="step-header">
+              <span class="step-badge">4</span>
+              <h3 class="step-title">Updates & Concerns</h3>
+            </div>
+            <p class="step-description">Water service concerns and community updates are managed through the system.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Technology & System Architecture Section -->
+    <section class="content-section bg-subtle" id="technology" aria-labelledby="technology-heading">
+      <div class="section-container">
+        <div class="section-header">
+          <p class="section-eyebrow">SYSTEM &amp; TECHNOLOGY</p>
+          <h2 id="technology-heading" class="section-title">Designed for Community Reliability</h2>
+          <p class="section-lead">A resilient multi-tier architecture built with modern web, offline mobile, and IoT components.</p>
+        </div>
+
+        <div class="tech-grid">
+          <div class="tech-card">
+            <h3 class="tech-card-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+              System Components
+            </h3>
+            <ul class="tech-list">
+              <li><strong>Admin Web Portal:</strong> Centralized dashboard for billing audits, registration reviews, and reports.</li>
+              <li><strong>Worker Mobile Application:</strong> Field collection tool with SQLite offline storage and synchronization.</li>
+              <li><strong>Resident Mobile Application:</strong> Household billing transparency and service concern reporting.</li>
+              <li><strong>Flask Backend / API:</strong> Secure RESTful API powering core validation, auth, and data services.</li>
+              <li><strong>PostgreSQL Database:</strong> Hosted cloud database for transactional records and audit history.</li>
+            </ul>
+          </div>
+
+          <div class="tech-card">
+            <h3 class="tech-card-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+              Deployment &amp; IoT Scope
+            </h3>
+            <ul class="tech-list">
+              <li><strong>Cloud Platform:</strong> Automated continuous deployment via Vercel and GitHub.</li>
+              <li><strong>Microcontroller:</strong> ESP32 low-power Wi-Fi enabled embedded controller.</li>
+              <li><strong>Water Level Sensor:</strong> JSN-SR04T waterproof ultrasonic sensor for reservoir level measurement.</li>
+              <li><strong>Turbidity Sensor:</strong> NOTE1 Turbidity Sensor Module for relative clarity detection.</li>
+              <li><strong>TDS Sensor:</strong> Total Dissolved Solids probe for electrical conductivity estimation.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Project Team Section -->
+    <section class="content-section" id="team" aria-labelledby="team-heading">
+      <div class="section-container">
+        <div class="section-header">
+          <p class="section-eyebrow">PROJECT TEAM</p>
+          <h2 id="team-heading" class="section-title">Meet the WaterHall Team</h2>
+          <p class="section-lead">The researchers and developers behind the WaterHall capstone project.</p>
+        </div>
+
+        <div class="team-grid">
+          <div class="team-card">
+            <div class="team-photo-wrap">
+              <img src="/assets/team/michael-jon-balaga.jpg" alt="Michael Jon Balaga" class="team-photo" width="400" height="400">
+            </div>
+            <div class="team-info">
+              <h3 class="team-name">Michael Jon Balaga</h3>
+              <p class="team-role">Lead System Developer</p>
+              <div class="team-badge">Jose Maria College Foundation Inc.</div>
+            </div>
+          </div>
+
+          <div class="team-card">
+            <div class="team-photo-wrap">
+              <img src="/assets/team/ryiel-s-banggat.jpg" alt="Ryiel S. Banggat" class="team-photo" width="400" height="400">
+            </div>
+            <div class="team-info">
+              <h3 class="team-name">Ryiel S. Banggat</h3>
+              <p class="team-role">User Interface Developer & Technical Documentation</p>
+              <div class="team-badge">Jose Maria College Foundation Inc.</div>
+            </div>
+          </div>
+
+          <div class="team-card">
+            <div class="team-photo-wrap">
+              <img src="/assets/team/john-dave-chicote.jpg" alt="John Dave Chicote" class="team-photo" width="400" height="400">
+            </div>
+            <div class="team-info">
+              <h3 class="team-name">John Dave Chicote</h3>
+              <p class="team-role">User Interface Developer & Technical Documentation</p>
+              <div class="team-badge">Jose Maria College Foundation Inc.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Final CTA Section -->
+    <section class="cta-section" aria-labelledby="cta-title">
+      <div class="section-container">
+        <div class="cta-card">
+          <h2 id="cta-title" class="cta-title">Better Water Service Management Starts With Better Records.</h2>
+          <p class="cta-description">
+            WaterHall helps improve the way water billing, meter records, concerns, and community information are organized and managed.
+          </p>
+          <div class="cta-actions">
+            <a href="#about" class="btn btn-primary btn-cta">
+              Learn More
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section class="content-section" id="contact" aria-labelledby="contact-heading">
+      <div class="section-container">
+        <div class="section-header">
+          <p class="section-eyebrow">GET IN TOUCH</p>
+          <h2 id="contact-heading" class="section-title">Contact</h2>
+          <p class="section-lead">
+            For inquiries about the WaterHall project, please coordinate with the project team or the appropriate Barangay Tagpopongan office.
+          </p>
+        </div>
+
+        <div class="contact-details-grid">
+          <div class="contact-card">
+            <div class="contact-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            </div>
+            <h3 class="contact-card-label">Project Team</h3>
+            <p class="contact-card-value">WaterHall Development Team</p>
+          </div>
+
+          <div class="contact-card">
+            <div class="contact-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+            </div>
+            <h3 class="contact-card-label">Institution</h3>
+            <p class="contact-card-value">Jose Maria College Foundation Inc.</p>
+          </div>
+
+          <div class="contact-card">
+            <div class="contact-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+            </div>
+            <h3 class="contact-card-label">Degree Program</h3>
+            <p class="contact-card-value">BS Information Technology</p>
+          </div>
+
+          <div class="contact-card">
+            <div class="contact-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            </div>
+            <h3 class="contact-card-label">Community Deployment</h3>
+            <p class="contact-card-value">Barangay Tagpopongan, Babak District, Island Garden City of Samal</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="brand">
+            <img src="/logo.png" alt="WaterHall Emblem" class="brand-logo" width="32" height="32">
+            <span class="brand-text">WaterHall</span>
+          </div>
+          <p class="footer-summary">
+            IoT-Enabled Water Asset &amp; Detection System for Barangay Tagpopongan, Babak District, Island Garden City of Samal.
+          </p>
+          <p class="footer-academic">
+            WaterHall Development Team • Jose Maria College Foundation Inc. • BS Information Technology
+          </p>
+        </div>
+
+        <nav class="footer-nav" aria-label="Footer navigation">
+          <div class="footer-col">
+            <p class="footer-col-title">Navigation</p>
+            <ul class="footer-links">
+              <li><a href="#home">Home</a></li>
+              <li><a href="#about">About</a></li>
+              <li><a href="#services">Services</a></li>
+              <li><a href="#how-it-works">How It Works</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <p class="footer-col-title">Project Details</p>
+            <ul class="footer-links">
+              <li><a href="#technology">Technology</a></li>
+              <li><a href="#team">Project Team</a></li>
+              <li><a href="#contact">Contact</a></li>
+              <li><a href="#top">Back to Top ↑</a></li>
+            </ul>
+          </div>
+        </nav>
+      </div>
+
+      <div class="footer-bottom">
+        <p class="footer-copy">
+          Public information page for the WaterHall capstone project. All rights reserved.
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Light client script for navigation enhancement -->
+  <script>
+    (function () {
+      const toggle = document.getElementById('nav-toggle');
+      const nav = document.getElementById('primary-nav');
+      if (toggle && nav) {
+        toggle.addEventListener('click', function () {
+          const isOpen = nav.classList.toggle('nav-open');
+          toggle.classList.toggle('active', isOpen);
+          toggle.setAttribute('aria-expanded', String(isOpen));
+        });
+
+        // Close mobile nav on click of link
+        nav.querySelectorAll('.nav-link').forEach(function (link) {
+          link.addEventListener('click', function () {
+            nav.classList.remove('nav-open');
+            toggle.classList.remove('active');
+            toggle.setAttribute('aria-expanded', 'false');
+          });
+        });
+
+        // Close on escape
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape' && nav.classList.contains('nav-open')) {
+            nav.classList.remove('nav-open');
+            toggle.classList.remove('active');
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.focus();
+          }
+        });
+      }
+
+      // Active section highlight on scroll
+      const sections = document.querySelectorAll('section[id]');
+      const navLinks = document.querySelectorAll('.nav-link');
+      function onScroll() {
+        const scrollPos = window.scrollY + 120;
+        sections.forEach(function (section) {
+          const top = section.offsetTop;
+          const height = section.offsetHeight;
+          const id = section.getAttribute('id');
+          if (scrollPos >= top && scrollPos < top + height) {
+            navLinks.forEach(function (link) {
+              if (link.getAttribute('href') === '#' + id) {
+                link.classList.add('active');
+              } else {
+                link.classList.remove('active');
+              }
+            });
+          }
+        });
+      }
+      window.addEventListener('scroll', onScroll, { passive: true });
+    })();
+  </script>
+</body>
+</html>

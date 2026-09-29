@@ -409,3 +409,50 @@ def test_admin_chart_js_loads_locally_without_csp_error(browser_page):
 
     # Verify no source map CSP block errors occurred
     assert not any('chart.umd.min.js.map' in v for v in csp_violations), "CSP should not block chart source map"
+
+
+@pytest.mark.parametrize('width,height', [
+    (1920, 1080),
+    (1366, 768),
+    (768, 1024),
+    (412, 915),
+    (390, 844),
+    (360, 800),
+])
+def test_landing_page_responsive_and_intact(browser_page, width, height):
+    """Requirement: Landing page must be fully responsive across desktop, tablet, and mobile with no overflow or broken images."""
+    page, origin, _, errors = browser_page
+    page.set_viewport_size({'width': width, 'height': height})
+    page.goto(origin + '/')
+
+    # Verify official capstone title is visible
+    expect(page.locator('#hero-title')).to_be_visible()
+
+    # Verify no horizontal overflow
+    overflow = page.evaluate('() => document.documentElement.scrollWidth > window.innerWidth')
+    assert not overflow, f'Horizontal overflow detected at {width}x{height}'
+
+    # Verify all images load without broken states
+    page.locator('#team').scroll_into_view_if_needed()
+    page.wait_for_timeout(400)
+    broken_images = page.evaluate('''() => {
+        const imgs = Array.from(document.querySelectorAll('img'));
+        return imgs.filter(img => !img.complete || img.naturalWidth === 0).map(img => img.src);
+    }''')
+    assert broken_images == [], f'Broken images found at {width}x{height}: {broken_images}'
+
+    # Verify no private portal routes exist
+    portal_links = page.evaluate('''() => {
+        const links = Array.from(document.querySelectorAll('a'));
+        return links.map(a => a.href).filter(h => h.includes('role=') || h.includes('/admin'));
+    }''')
+    assert portal_links == [], f'Private portal link found: {portal_links}'
+
+    # Mobile menu toggle check if mobile
+    if width <= 768:
+        toggle = page.locator('#nav-toggle')
+        expect(toggle).to_be_visible()
+        toggle.click()
+        expect(page.locator('#primary-nav')).to_be_visible()
+
+    assert not errors
