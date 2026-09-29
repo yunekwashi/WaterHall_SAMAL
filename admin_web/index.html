@@ -7,8 +7,8 @@
   <link rel="icon" type="image/png" href="/admin/logo.png" />
   <link rel="stylesheet" href="/admin/styles.css?v=20" />
   <script src="/admin/vendor/purify.min.js"></script>
-  <!-- Chart.js for premium data visualization -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
+  <!-- Chart.js for premium data visualization (vendored locally to satisfy strict CSP connect-src) -->
+  <script src="/admin/vendor/chart.umd.min.js"></script>
 </head>
 <body class="server-offline">
 
@@ -556,6 +556,6 @@
     </div>
   </div>
 
-  <script src="/admin/app.js?v=20"></script>
+  <script src="/admin/app.js?v=21"></script>
 </body>
 </html>

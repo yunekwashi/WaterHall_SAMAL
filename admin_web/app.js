@@ -2,18 +2,42 @@ async function apiFetch(path, options = {}) {
   const token = jwtToken;
   const authorized = !!options.headers?.Authorization;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timeoutMs = options.timeout || 30000;
+  const timer = setTimeout(() => controller.abort(new DOMException('Request timeout', 'AbortError')), timeoutMs);
+
+  let abortListener = null;
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort(options.signal.reason);
+    } else {
+      abortListener = () => controller.abort(options.signal.reason);
+      options.signal.addEventListener('abort', abortListener, { once: true });
+    }
+  }
+
   try {
-    const response = await fetch(path, {...options, signal: controller.signal});
+    const fetchOptions = { ...options, signal: controller.signal };
+    delete fetchOptions.timeout;
+    const response = await fetch(path, fetchOptions);
     if (authorized && token !== jwtToken) throw new Error('Session changed');
     if (authorized && response.status === 401) {
-      performAutomaticLogoutDueToServerOffline(); showLogin();
+      jwtToken = null;
+      try {
+        localStorage.removeItem('admin_jwt');
+        sessionStorage.clear();
+      } catch (_) {}
+      showLogin();
       const error = document.getElementById('login-error');
       if (error) { error.textContent = 'Session expired. Please sign in again.'; error.style.display = 'block'; }
       throw new Error('Session expired');
     }
     return response;
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+    if (options.signal && abortListener) {
+      try { options.signal.removeEventListener('abort', abortListener); } catch (_) {}
+    }
+  }
 }
 
 function escapeHtml(value) {
@@ -69,17 +93,39 @@ async function checkServerHealth() {
   }
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const res = await apiFetch('/api/health', { signal: controller.signal, cache: 'no-store' });
+    const timeoutId = setTimeout(() => controller.abort(new DOMException('Health check timeout', 'AbortError')), 6000);
+    const res = await fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeoutId);
     if (!res.ok) {
-      isServerOnline = false;
-      return false;
+      return await checkServerReadinessFallback();
     }
     const data = await res.json().catch(() => null);
     isServerOnline = !!(data && data.status === 'ok');
-    return isServerOnline;
+    if (!isServerOnline) {
+      return await checkServerReadinessFallback();
+    }
+    return true;
   } catch (e) {
+    return await checkServerReadinessFallback();
+  }
+}
+
+async function checkServerReadinessFallback() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(new DOMException('Readiness check timeout', 'AbortError')), 5000);
+    const res = await fetch('/api/ready', { signal: controller.signal, cache: 'no-store' });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && (data.status === 'ready' || data.status === 'ok')) {
+        isServerOnline = true;
+        return true;
+      }
+    }
+    isServerOnline = false;
+    return false;
+  } catch (_) {
     isServerOnline = false;
     return false;
   }
@@ -203,6 +249,7 @@ async function retryAdminConnection() {
 
   const alive = await checkServerHealth();
   if (alive) {
+    consecutiveHealthFailures = 0;
     if (statusText) statusText.textContent = 'Server is running! Unlocking login...';
     hideAdminOfflineOverlay();
     showLogin();
@@ -219,27 +266,43 @@ async function retryAdminConnection() {
   }
 }
 
-// Active Heartbeat & Real-Time Sync Loop (every 2.0 seconds)
-setInterval(async () => {
-  const alive = await checkServerHealth();
+// Active Heartbeat & Real-Time Sync Loop (every 3.5 seconds)
+let isHeartbeatRunning = false;
+let consecutiveHealthFailures = 0;
 
-  if (!alive) {
-    // If server went down, immediately lock the portal and log out
-    if (isServerOnline || !document.body.classList.contains('server-offline')) {
-      console.warn('[SECURITY] Backend server went offline. Locking Admin Portal and terminating session.');
-      showAdminOfflineOverlay();
+setInterval(async () => {
+  if (isHeartbeatRunning) return;
+  isHeartbeatRunning = true;
+  try {
+    const alive = await checkServerHealth();
+
+    if (!alive) {
+      consecutiveHealthFailures++;
+      // Require 2 consecutive health failures to prevent transient network spikes from locking out
+      if (consecutiveHealthFailures >= 2) {
+        if (isServerOnline || !document.body.classList.contains('server-offline')) {
+          console.warn('[SECURITY] Backend server went offline. Locking Admin Portal and terminating session.');
+          showAdminOfflineOverlay();
+        }
+      }
+    } else {
+      consecutiveHealthFailures = 0;
+      // Server is online
+      if (!isServerOnline || document.body.classList.contains('server-offline')) {
+        console.info('[SYSTEM] Backend server restored. Lifting lockdown overlay.');
+        hideAdminOfflineOverlay();
+        showLogin(); // User was logged out; show login screen
+      } else if (jwtToken && document.getElementById('login-screen')?.style.display === 'none') {
+        // Trigger background data sync only if no fetch is currently running
+        if (!isFetchingData) {
+          fetchData(true);
+        }
+      }
     }
-  } else {
-    // Server is online
-    if (!isServerOnline || document.body.classList.contains('server-offline')) {
-      console.info('[SYSTEM] Backend server restored. Lifting lockdown overlay.');
-      hideAdminOfflineOverlay();
-      showLogin(); // User was logged out; show login screen
-    } else if (jwtToken && document.getElementById('login-screen')?.style.display === 'none') {
-      fetchData(true);
-    }
+  } finally {
+    isHeartbeatRunning = false;
   }
-}, 2000);
+}, 3500);
 
 function showLogin() {
   document.getElementById('login-screen').style.display = 'flex';
@@ -308,9 +371,15 @@ document.getElementById('btn-login').addEventListener('click', async () => {
   } catch (e) {
     // Connection error during login attempt
     console.error('Login request failed:', e);
-    errEl.textContent = 'Cannot connect to server. Is it running?';
-    errEl.style.display = 'block';
-    showAdminOfflineOverlay();
+    const alive = await checkServerHealth();
+    if (!alive) {
+      errEl.textContent = 'Cannot connect to server. Is it running?';
+      errEl.style.display = 'block';
+      showAdminOfflineOverlay();
+    } else {
+      errEl.textContent = 'Login attempt was interrupted. Please check connection and try again.';
+      errEl.style.display = 'block';
+    }
   } finally {
     btn.textContent = 'Login to Dashboard';
     btn.disabled = false;
@@ -362,6 +431,9 @@ document.querySelectorAll('.nav-item').forEach(item => {
   });
 });
 
+let currentFetchController = null;
+let isFetchingData = false;
+
 async function fetchData(silent = false) {
   const sessionToken = jwtToken;
   if (!jwtToken) {
@@ -369,9 +441,26 @@ async function fetchData(silent = false) {
     if (!silent) hideLoader();
     return;
   }
+
+  // Prevent overlapping background fetches
+  if (silent && isFetchingData) {
+    return;
+  }
+
+  // If an interactive fetch is requested while one is running, abort the prior one gracefully
+  if (!silent && currentFetchController) {
+    currentFetchController.abort(new DOMException('Superseded by user request', 'AbortError'));
+  }
+
+  const fetchController = new AbortController();
+  currentFetchController = fetchController;
+  isFetchingData = true;
+
   try {
     const res = await apiFetch('/api/all-data?role=admin', {
-      headers: { 'Authorization': 'Bearer ' + jwtToken }
+      headers: { 'Authorization': 'Bearer ' + jwtToken },
+      signal: fetchController.signal,
+      timeout: 30000
     });
 
     if (res.status === 401) {
@@ -399,16 +488,45 @@ async function fetchData(silent = false) {
       renderPaymentSettings(data.paymentSettings || {});
       renderReports(data.residentReports || []);
     } else {
-      // Non-ok response from server -> server in distress or down
-      showAdminOfflineOverlay();
+      // Non-ok response from server -> verify whether backend is truly down before showing offline overlay
+      const alive = await checkServerHealth();
+      if (!alive) {
+        showAdminOfflineOverlay();
+      } else {
+        console.warn('Backend responded with HTTP ' + res.status + ', but health check passed.');
+      }
     }
     if (!silent) hideLoader();
   } catch (e) {
-    if (e.message === 'Session expired' || e.message === 'Session changed') { hideAdminOfflineOverlay(); showLogin(); hideLoader(); return; }
-    // Network error: server turned off or disconnected
-    console.warn('Backend server disconnected during fetchData:', e);
-    showAdminOfflineOverlay();
+    if (e.message === 'Session expired' || e.message === 'Session changed') {
+      hideAdminOfflineOverlay();
+      showLogin();
+      if (!silent) hideLoader();
+      return;
+    }
+
+    // Check if error was caused by AbortController (replacement, timeout, or user navigation)
+    const isAbort = e.name === 'AbortError' || fetchController.signal.aborted;
+    if (isAbort) {
+      console.info('fetchData request aborted/superseded without treating as server offline.');
+      if (!silent) hideLoader();
+      return;
+    }
+
+    // Network error: verify if server is actually offline before logging out
+    console.warn('Backend server error during fetchData:', e);
+    const alive = await checkServerHealth();
+    if (!alive) {
+      showAdminOfflineOverlay();
+    } else {
+      console.info('Backend is alive (/api/health ok). Keeping admin session active despite transient fetchData error.');
+    }
     if (!silent) hideLoader();
+  } finally {
+    if (currentFetchController === fetchController) {
+      currentFetchController = null;
+      isFetchingData = false;
+    }
   }
 }
 

@@ -342,3 +342,70 @@ def test_native_auth_serialization_and_push_logout_capture(browser_page):
     }""")
     assert captured == dict(authMatches=True, unsubscribed=True)
     assert not errors
+
+
+def test_admin_healthy_backend_abort_error_does_not_logout(browser_page):
+    """Requirement: When backend is healthy, an AbortError during fetchData must NOT logout or trigger lockdown."""
+    page, origin, (_, _, password), errors = browser_page
+    page.goto(origin + '/admin/')
+    page.locator('#login-username').fill('admin')
+    page.locator('#login-password').fill(password)
+    page.locator('#btn-login').click()
+    expect(page.locator('#login-screen')).to_be_hidden()
+    expect(page.locator('#admin-offline-overlay')).to_be_hidden()
+
+    # Route /api/all-data to abort, simulating client-side abort / network cancellation
+    page.route('**/api/all-data*', lambda route: route.abort('failed'))
+
+    # Trigger fetchData
+    page.evaluate("() => fetchData(false)")
+    page.wait_for_timeout(1000)
+
+    # Admin session MUST remain logged in and offline lockdown MUST NOT be visible
+    expect(page.locator('#login-screen')).to_be_hidden()
+    expect(page.locator('#admin-offline-overlay')).to_be_hidden()
+    assert page.evaluate("() => localStorage.getItem('admin_jwt')") is not None
+
+    page.unroute('**/api/all-data*')
+
+
+def test_admin_genuine_health_failure_triggers_lockdown_and_recovery(browser_page):
+    """Requirement: Genuine health failure triggers lockdown; backend recovery lifts lockdown."""
+    page, origin, (_, _, password), errors = browser_page
+    page.goto(origin + '/admin/')
+    page.locator('#login-username').fill('admin')
+    page.locator('#login-password').fill(password)
+    page.locator('#btn-login').click()
+    expect(page.locator('#login-screen')).to_be_hidden()
+
+    # Simulate genuine backend outage on /api/health and /api/ready
+    page.route('**/api/health*', lambda route: route.fulfill(status=503, json={'status': 'unavailable'}))
+    page.route('**/api/ready*', lambda route: route.fulfill(status=503, json={'status': 'unavailable'}))
+
+    # Trigger offline overlay to simulate confirmed backend outage
+    page.evaluate("() => showAdminOfflineOverlay()")
+    expect(page.locator('#admin-offline-overlay')).to_be_visible()
+    assert page.evaluate("() => localStorage.getItem('admin_jwt')") is None
+
+    # Simulate server recovery
+    page.unroute('**/api/health*')
+    page.unroute('**/api/ready*')
+
+    # Click retry connection button
+    page.locator('#btn-admin-retry').click()
+    expect(page.locator('#admin-offline-overlay')).to_be_hidden()
+    expect(page.locator('#login-screen')).to_be_visible()
+
+
+def test_admin_chart_js_loads_locally_without_csp_error(browser_page):
+    """Requirement: Chart.js is loaded from local /admin/vendor path and window.Chart is defined."""
+    page, origin, (_, _, password), errors = browser_page
+    csp_violations = []
+    page.on('console', lambda msg: csp_violations.append(msg.text) if 'blocked by CSP' in msg.text else None)
+
+    page.goto(origin + '/admin/')
+    is_chart_loaded = page.evaluate("() => typeof window.Chart === 'function'")
+    assert is_chart_loaded, "window.Chart should be defined from local vendor bundle"
+
+    # Verify no source map CSP block errors occurred
+    assert not any('chart.umd.min.js.map' in v for v in csp_violations), "CSP should not block chart source map"
