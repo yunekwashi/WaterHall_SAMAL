@@ -1,5 +1,7 @@
 #pragma once
 // Copy to device_config.h (ignored). Never commit real credentials.
+// For local physical testing, see: device_config.local.example.h
+// For production provisioning, see: device_config.production.example.h
 const char* WIFI_SSID = "";
 const char* WIFI_PASSWORD = "";
 const char* SERVER_BASE_URL = ""; // Production HTTPS origin, without a trailing slash.

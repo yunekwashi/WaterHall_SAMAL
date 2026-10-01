@@ -21,6 +21,8 @@ class AppController {
   String? _lastNotifiedEmergency;
   EventSource? _sseSource;
   String? _reportPhoto;
+  String? _pendingNativePhotoRequestId;
+  int _photoRequestCounter = 0;
 
   // Cached UI Elements
   late Element loginView;
@@ -810,7 +812,17 @@ class AppController {
     } else if (targetViewId == 'view-profile') {
       renderProfile();
     } else if (targetViewId == 'view-billing') {
-      renderBillingView(null);
+      if (selectedBillHouseId == null) {
+        final households = db.getHouseholds();
+        if (households.isNotEmpty) {
+          selectedBillHouseId = households[0]['house_id'];
+          final billMeterSearch = document.getElementById('bill-meter-search') as InputElement?;
+          if (billMeterSearch != null) {
+            billMeterSearch.value = '${households[0]['owner_name']} (${households[0]['account_number']})';
+          }
+        }
+      }
+      renderBillingView(selectedBillHouseId);
     } else if (targetViewId == 'view-resident-home' || targetViewId == 'view-resident-ledger' || targetViewId == 'view-resident-support') {
       renderResidentDashboard();
     }
@@ -860,7 +872,7 @@ class AppController {
     final workerTurbVal = document.getElementById('worker-turb-val');
     final workerTdsVal = document.getElementById('worker-tds-val');
 
-    if (workerTankVal != null) workerTankVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['main_tank_level']}%';
+    if (workerTankVal != null) workerTankVal.text = (assets['has_reading'] == false || assets['main_tank_level'] == null) ? 'N/A' : '${assets['main_tank_level']}%';
     if (workerTurbVal != null) workerTurbVal.text = assets['has_reading'] == false ? 'N/A' : (assets['turbidity'] as num).toStringAsFixed(1);
     if (workerTdsVal != null) workerTdsVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['tds_ppm']}';
 
@@ -1334,13 +1346,13 @@ class AppController {
     }
 
     final households = db.getHouseholds();
-    final zoneCount = households.where((h) => h['purok'] == currentWorker!['selected_zone']).length;
+    final meterCount = households.length;
     final myLogs = db.getMaintenanceLogs().where((l) => l['worker_id'] == currentWorker!['worker_id'] && l['status_resolved'] == true).length;
 
     final profileStatTotal = document.getElementById('profile-stat-total');
     final profileStatLogs = document.getElementById('profile-stat-logs');
 
-    if (profileStatTotal != null) profileStatTotal.text = zoneCount.toString();
+    if (profileStatTotal != null) profileStatTotal.text = meterCount.toString();
     if (profileStatLogs != null) profileStatLogs.text = myLogs.toString();
   }
 
@@ -1369,11 +1381,12 @@ class AppController {
 
     btnSaveBill?.onClick.listen((e) => saveWaterBill());
 
-    // Seed default first item
+    // Seed default first item and load its actual readings immediately
     final households = db.getHouseholds();
     if (households.isNotEmpty) {
       selectedBillHouseId = households[0]['house_id'];
       billMeterSearch.value = '${households[0]['owner_name']} (${households[0]['account_number']})';
+      renderBillingView(selectedBillHouseId);
     }
   }
 
@@ -1426,10 +1439,14 @@ class AppController {
     final billPrevReading = document.getElementById('bill-prev-reading');
     final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
 
-    // Previous reading is the stored meter register, never a consumption estimate.
-    final previous = household['current_m3_usage'] as num?;
-    if (billPrevReading != null) billPrevReading.text = previous == null ? '--' : previous.toStringAsFixed(3);
-    if (houseId != null && billCurrInput != null) billCurrInput.value = '';
+    // Load applicable previous reading (respecting pending readings if any)
+    final previous = db.getApplicablePreviousReading(selectedBillHouseId!);
+    if (billPrevReading != null) {
+      billPrevReading.text = previous == null ? '--' : previous.toStringAsFixed(3);
+    }
+    if (houseId != null && billCurrInput != null) {
+      billCurrInput.value = '';
+    }
 
     updateBillCalculations();
     renderBillingHistoryList(selectedBillHouseId!);
@@ -1440,60 +1457,131 @@ class AppController {
   // Preview uses integer thousandths / cents. The backend remains authoritative.
   Map<String, dynamic>? _billDraft() {
     final config = db.getBillingConfig();
-    final previous = double.tryParse(document.getElementById('bill-prev-reading')?.text ?? '');
-    final current = double.tryParse((document.getElementById('bill-curr-input') as InputElement?)?.value ?? '');
+    final prevText = document.getElementById('bill-prev-reading')?.text ?? '';
+    final currVal = (document.getElementById('bill-curr-input') as InputElement?)?.value?.trim() ?? '';
+    if (prevText == '--' || prevText.isEmpty || currVal.isEmpty) return null;
+    final previous = double.tryParse(prevText);
+    final current = double.tryParse(currVal);
     if (config['configured'] != true || previous == null || current == null ||
-        !previous.isFinite || previous < 0 || !current.isFinite || current < 0 || current < previous || current > 1000000 ||
-        (current * 1000 - (current * 1000).round()).abs() > 0.000001) return null;
-    final used = (current * 1000).round() - (previous * 1000).round();
-    final included = (double.parse('${config['included_m3']}') * 1000).round();
-    final excess = (used - included).clamp(0, 1000000000);
-    final rate = (double.parse('${config['excess_rate']}') * 100).round();
-    final extraCents = (excess * rate + 500) ~/ 1000;
-    final base = (double.parse('${config['base_rate']}') * 100).round();
-    final fee = (double.parse('${config['environmental_fee']}') * 100).round();
-    return {'previous_reading': previous, 'current_reading': current, 'consumption': used / 1000,
-      'excess_charge': extraCents / 100, 'total_due': (base + fee + extraCents) / 100,
-      'billing_config_version': config['version']};
+        !previous.isFinite || previous < 0 || !current.isFinite || current < 0 || current < previous || current > 1000000) {
+      return null;
+    }
+
+    // Decimal places check: support up to 3 decimal places
+    final scaled = current * 1000;
+    if ((scaled - scaled.round()).abs() > 0.0001) return null;
+
+    final usedLiters = (current * 1000).round() - (previous * 1000).round();
+    if (usedLiters < 0) return null;
+
+    final includedLiters = (double.parse('${config['included_m3']}') * 1000).round();
+    final excessLiters = (usedLiters - includedLiters).clamp(0, 1000000000);
+    final excessRateCents = (double.parse('${config['excess_rate']}') * 100).round();
+    final extraCents = (excessLiters * excessRateCents + 500) ~/ 1000;
+    final baseCents = (double.parse('${config['base_rate']}') * 100).round();
+    final feeCents = (double.parse('${config['environmental_fee']}') * 100).round();
+
+    final totalDue = double.parse(((baseCents + feeCents + extraCents) / 100).toStringAsFixed(2));
+    final consumption = double.parse((usedLiters / 1000).toStringAsFixed(3));
+    final excessCharge = double.parse((extraCents / 100).toStringAsFixed(2));
+    final curReading = double.parse(current.toStringAsFixed(3));
+    final prevReading = double.parse(previous.toStringAsFixed(3));
+
+    return {
+      'previous_reading': prevReading,
+      'current_reading': curReading,
+      'consumption': consumption,
+      'excess_charge': excessCharge,
+      'total_due': totalDue,
+      'billing_config_version': config['version']
+    };
   }
 
   void updateBillCalculations() {
     final config = db.getBillingConfig();
     final draft = _billDraft();
-    final isBilled = selectedBillHouseId != null && db.hasBeenBilledThisMonth(selectedBillHouseId!, DateTime.now().toUtc().toIso8601String().substring(0, 7));
+    final now = DateTime.now();
+    final month = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final isBilled = selectedBillHouseId != null && db.hasBeenBilledThisMonth(selectedBillHouseId!, month);
     void put(String id, String value) { document.getElementById(id)?.text = value; }
     put('bill-calc-base', config['configured'] == true ? '${config['base_rate']}' : '--');
     put('bill-calc-fee', config['configured'] == true ? '${config['environmental_fee']}' : '--');
     put('bill-rate-description', config['configured'] == true ? "Includes ${config['included_m3']} m³; excess at PHP ${config['excess_rate']}/m³." : 'Admin must confirm billing rates before a bill can be recorded.');
-    put('bill-calc-consumption', draft == null ? '--' : (draft['consumption'] as num).toStringAsFixed(3));
-    put('bill-calc-excess', draft == null ? '--' : (draft['excess_charge'] as num).toStringAsFixed(2));
+    put('bill-calc-consumption', draft == null ? '0.000' : (draft['consumption'] as num).toStringAsFixed(3));
+    put('bill-calc-excess', draft == null ? '0.00' : (draft['excess_charge'] as num).toStringAsFixed(2));
     put('bill-calc-total', draft == null ? '--' : (draft['total_due'] as num).toStringAsFixed(2));
-    put('billing-alert-banner', isBilled ? 'A bill or pending bill already exists for this month.' : draft == null
-      ? 'Enter a valid reading at or above the previous reading (up to 3 decimal places).'
-      : 'Preview only. The server verifies readings and rates before accepting the bill.');
+
+    final currInputVal = (document.getElementById('bill-curr-input') as InputElement?)?.value?.trim() ?? '';
+    final previous = double.tryParse(document.getElementById('bill-prev-reading')?.text ?? '');
+    final current = double.tryParse(currInputVal);
+
+    String alertMessage;
+    if (isBilled) {
+      alertMessage = 'A bill or pending bill already exists for this billing cycle ($month).';
+    } else if (config['configured'] != true) {
+      alertMessage = 'Admin must confirm billing rates before issuing new bills.';
+    } else if (currInputVal.isEmpty) {
+      alertMessage = 'Enter current reading at or above previous reading (up to 3 decimal places).';
+    } else if (current == null || !current.isFinite || current < 0) {
+      alertMessage = 'Enter a valid non-negative reading (up to 3 decimal places).';
+    } else if (previous != null && current < previous) {
+      alertMessage = 'Current reading cannot be lower than previous reading (${previous.toStringAsFixed(3)} m³).';
+    } else if (draft == null) {
+      alertMessage = 'Reading format invalid. Up to 3 decimal places supported.';
+    } else {
+      alertMessage = 'Draft: ${(draft['consumption'] as num).toStringAsFixed(3)} m³ | Total Due: ₱${(draft['total_due'] as num).toStringAsFixed(2)}';
+    }
+    put('billing-alert-banner', alertMessage);
+
     final button = document.getElementById('btn-save-bill') as ButtonElement?;
-    if (button != null) { button.disabled = _savingBill || isBilled || draft == null; button.style.opacity = button.disabled ? '0.5' : '1'; }
+    if (button != null) {
+      button.disabled = _savingBill || isBilled || draft == null;
+      button.style.opacity = button.disabled ? '0.5' : '1';
+    }
   }
 
   Future<void> saveWaterBill() async {
     if (_savingBill || selectedBillHouseId == null || currentWorker == null) return;
     final draft = _billDraft();
-    final month = DateTime.now().toUtc().toIso8601String().substring(0, 7);
+    final now = DateTime.now();
+    final month = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final billDate = now.toUtc().toIso8601String();
+
     if (draft == null || db.hasBeenBilledThisMonth(selectedBillHouseId!, month)) return;
     final household = db.getHousehold(selectedBillHouseId!);
     if (household == null) return;
+
     _savingBill = true;
     updateBillCalculations();
+
+    final isOnlineBeforeSave = db.isDatabaseOnline;
     try {
-      await db.addBillingRecord({...draft, 'house_id': selectedBillHouseId,
-        'account_number': household['account_number'], 'billing_month': month,
-        'billed_by': currentWorker!['worker_id']});
-      showToast('Reading saved. Pending entries require server acknowledgement.');
-      renderBillingHistoryList(selectedBillHouseId!);
+      final savedRecord = await db.addBillingRecord({
+        ...draft,
+        'house_id': selectedBillHouseId,
+        'account_number': household['account_number'],
+        'billing_month': month,
+        'date': billDate,
+        'billed_by': currentWorker!['worker_id']
+      });
+
+      if (isOnlineBeforeSave && savedRecord['is_synced'] == true) {
+        showToast("Bill successfully saved.");
+      } else {
+        showToast("Bill saved offline. Pending synchronization.");
+      }
+
+      final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
+      if (billCurrInput != null) billCurrInput.value = '';
+
+      renderBillingView(selectedBillHouseId!);
       renderProfile();
-    } catch (_) {
+    } catch (e) {
       showToast('Unable to save the reading. Check storage and your session.');
-    } finally { _savingBill = false; updateBillCalculations(); }
+    } finally {
+      _savingBill = false;
+      updateBillCalculations();
+    }
   }
 
   void renderBillingHistoryList(String houseId) {
@@ -1670,7 +1758,7 @@ class AppController {
     final resTdsVal = document.getElementById('resident-tds-val');
     final resSafetyStatus = document.getElementById('resident-safety-status');
 
-    if (resTankVal != null) resTankVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['main_tank_level']}%';
+    if (resTankVal != null) resTankVal.text = (assets['has_reading'] == false || assets['main_tank_level'] == null) ? 'N/A' : '${assets['main_tank_level']}%';
     if (resTurbVal != null) resTurbVal.text = assets['has_reading'] == false ? 'N/A' : (assets['turbidity'] as num).toStringAsFixed(1);
     if (resTdsVal != null) resTdsVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['tds_ppm']}';
 
@@ -1695,8 +1783,8 @@ class AppController {
       }
     }
 
-    final tankLvl = assets['main_tank_level'] as num? ?? 0;
-    if (assets['has_reading'] != false && tankLvl <= 20) {
+    final tankLvl = assets['main_tank_level'] as num?;
+    if (assets['has_reading'] != false && tankLvl != null && tankLvl <= 20) {
       final emergencyKey = 'low_water_$tankLvl';
       if (_lastNotifiedEmergency != emergencyKey) {
         _lastNotifiedEmergency = emergencyKey;
@@ -1757,16 +1845,24 @@ class AppController {
       }
     }
 
-    // Display only a recorded statement; never fabricate a draft or tariff.
+    // Prefer an unpaid statement, then this month, then the most recent recorded bill.
     final bills = db.getBillingHistoryForHousehold(currentResidentId!);
     final month = DateTime.now().toUtc().toIso8601String().substring(0, 7);
+    final unpaid = bills.where((b) => '${b['status']}'.toLowerCase() != 'paid').toList();
     final current = bills.where((b) => b['billing_month'] == month).toList();
-    final statement = current.isEmpty ? null : current.first;
+    Map<String, dynamic>? statement;
+    if (unpaid.isNotEmpty) {
+      statement = unpaid.first;
+    } else if (current.isNotEmpty) {
+      statement = current.first;
+    } else if (bills.isNotEmpty) {
+      statement = bills.first;
+    }
     final snapshot = statement?['billing_breakdown'] as Map?;
     void put(String id, String value) { document.getElementById(id)?.text = value; }
     String value(dynamic v, int digits) => v == null ? '--' : double.parse('$v').toStringAsFixed(digits);
-    put('resident-bill-cycle', month);
-    put('resident-bill-status', statement == null ? 'NO CURRENT BILLING RECORD' : '${statement['status']}');
+    put('resident-bill-cycle', statement == null ? 'No recorded cycle' : '${statement['billing_month']}');
+    put('resident-bill-status', statement == null ? 'No unpaid or current bill' : '${statement['status']}');
     put('resident-prev-reading', value(statement?['previous_reading'], 3));
     put('resident-curr-reading', value(statement?['current_reading'], 3));
     put('resident-calc-consumption', value(statement?['consumption'], 3));
@@ -1774,7 +1870,9 @@ class AppController {
     put('resident-calc-base', value(snapshot?['base_rate'], 2));
     put('resident-calc-fee', value(snapshot?['environmental_fee'], 2));
     put('resident-calc-excess', value(snapshot?['excess_charge'], 2));
-    put('resident-rate-description', statement == null ? 'Awaiting a recorded meter reading and bill.' : snapshot == null
+    final paidAt = statement?['payment_date']?.toString() ?? '';
+    put('resident-payment-date', (statement != null && '${statement['status']}'.toLowerCase() == 'paid' && paidAt.isNotEmpty) ? paidAt : 'Not paid');
+    put('resident-rate-description', statement == null ? 'No billing record is on file yet. Amounts appear here after a Worker saves a meter reading.' : snapshot == null
       ? 'Legacy bill: original total preserved; rate breakdown unavailable.'
       : "Recorded rates: first ${snapshot['included_m3']} m³ included; excess PHP ${snapshot['excess_rate']}/m³.");
 
@@ -1808,7 +1906,7 @@ class AppController {
     listEl.innerHtml = '';
 
     if (history.isEmpty) {
-      listEl.innerHtml = '<div style="font-size:11px;color:var(--text-muted);padding:4px">No billing history available.</div>';
+      listEl.innerHtml = '<div class="empty-state" style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;">No billing history is on file for this household yet.</div>';
       return;
     }
 
@@ -1829,7 +1927,7 @@ class AppController {
           <strong>₱${(bill['total_due'] as num).toStringAsFixed(2)}</strong>
         </div>
         <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">
-          Bill Ref ID: ${bill['bill_id']} | Issued: $formatted
+          Bill Ref ID: ${bill['bill_id']} | Issued: $formatted${bill['status'] == 'Paid' && (bill['payment_date'] ?? '').toString().isNotEmpty ? ' | Paid: ${bill['payment_date']}' : ''}
         </div>
       ''';
       final breakdown = bill['billing_breakdown'] as Map?;
@@ -1848,6 +1946,17 @@ class AppController {
     final status = document.getElementById('register-status');
     final submit = document.getElementById('btn-submit-register') as ButtonElement?;
     if (Uri.base.queryParameters['role'] == 'resident') button?.style.display = 'block';
+    document.querySelectorAll('[data-toggle-password]').forEach((node) {
+      node.onClick.listen((event) {
+        event.preventDefault();
+        final buttonEl = node as ButtonElement;
+        final input = document.getElementById(buttonEl.dataset['togglePassword'] ?? '') as InputElement?;
+        if (input == null) return;
+        final hidden = input.type == 'password';
+        input.type = hidden ? 'text' : 'password';
+        buttonEl.text = hidden ? 'Hide' : 'Show';
+      });
+    });
     document.getElementById('btn-close-register-modal')?.onClick.listen((_) { modal?.style.display = 'none'; });
     button?.onClick.listen((_) async {
       modal?.style.display = 'flex';
@@ -1892,27 +2001,11 @@ class AppController {
     final modal = document.getElementById('modal-collect-payment');
     final btnCancel = document.getElementById('btn-collect-cancel');
     final btnConfirm = document.getElementById('btn-collect-confirm') as ButtonElement?;
-    final hhNameInput = document.getElementById('collect-hh-name') as InputElement?;
     final amountInput = document.getElementById('collect-amount-input') as InputElement?;
     final methodSelect = document.getElementById('collect-payment-method') as SelectElement?;
 
     btnOpen?.onClick.listen((e) {
-      if (activeHouseholdId == null) return;
-      final h = db.getHousehold(activeHouseholdId!);
-      if (h == null) return;
-
-      if (hhNameInput != null) {
-        hhNameInput.value = "${h['owner_name']} (${h['house_id']})";
-      }
-
-      // Find latest unpaid bill or calculate total
-      final bills = db.getBillingHistoryForHousehold(activeHouseholdId!);
-      final due = bills.where((b) => b['status'] == 'Unpaid' || b['status'] == 'Pending').fold<num>(0, (sum, b) => sum + (b['total_due'] as num));
-      if (amountInput != null) {
-        amountInput.value = due.toStringAsFixed(2);
-      }
-
-      modal?.style.display = 'flex';
+      showToast("Field payment collection is disabled. Payments must be settled in-person at Barangay Hall.");
     });
 
     btnCancel?.onClick.listen((e) {
@@ -1949,25 +2042,113 @@ class AppController {
     });
 
     // Resident Service / Incident Report Submission Handler
+    final galleryInput = document.getElementById('resident-gallery-input') as FileUploadInputElement?;
+    final cameraInput = document.getElementById('resident-camera-input') as FileUploadInputElement?;
     final photoInput = document.getElementById('resident-photo-input') as FileUploadInputElement?;
-    document.getElementById('btn-resident-photo-trigger')?.onClick.listen((_) => photoInput?.click());
-    photoInput?.onChange.listen((_) async {
-      final files = photoInput.files;
-      if (files == null || files.isEmpty) return;
-      final file = files.first;
-      if (file.size > 2 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].contains(file.type)) {
-        showToast('Use a JPEG, PNG or WebP photo of at most 2 MiB.');
-        photoInput.value = ''; _reportPhoto = null; return;
-      }
-      final reader = FileReader()..readAsDataUrl(file);
-      await reader.onLoad.first;
-      _reportPhoto = reader.result as String;
-      document.getElementById('resident-photo-name')?.text = file.name;
+
+    void showSelectedPhoto(String dataUrl, String fileName) {
+      _reportPhoto = dataUrl;
+      document.getElementById('resident-photo-name')?.text = fileName;
       final preview = document.getElementById('resident-photo-preview');
       preview?.children.clear();
-      preview?.append(ImageElement(src: _reportPhoto));
-      preview?.style.display = 'block';
+      final image = ImageElement(src: dataUrl)..alt = 'Selected evidence preview';
+      preview?.append(image);
+      document.getElementById('resident-photo-preview-card')?.style.display = 'block';
+      document.getElementById('resident-photo-pickers')?.style.display = 'none';
+    }
+
+    js.context['waterhallPhotoPickerResult'] = js.allowInterop((dynamic requestId, dynamic dataUrl, dynamic fileName, dynamic error) {
+      if (requestId != _pendingNativePhotoRequestId) return;
+      _pendingNativePhotoRequestId = null;
+      if (error is String && error.isNotEmpty) {
+        showToast(error);
+        return;
+      }
+      if (dataUrl is String && dataUrl.isNotEmpty) {
+        showSelectedPhoto(dataUrl, fileName is String && fileName.isNotEmpty ? fileName : 'Selected photo');
+      }
     });
+
+    void openPhotoPicker(FileUploadInputElement? fallbackInput, String source) {
+      if (!js.context.hasProperty('NativePhotoPicker')) {
+        fallbackInput?.click();
+        return;
+      }
+      if (_pendingNativePhotoRequestId != null) return;
+
+      final requestId = '${DateTime.now().microsecondsSinceEpoch}-${++_photoRequestCounter}';
+      _pendingNativePhotoRequestId = requestId;
+      try {
+        js.context['NativePhotoPicker'].callMethod('postMessage', [
+          json.encode({'request_id': requestId, 'source': source})
+        ]);
+      } catch (_) {
+        _pendingNativePhotoRequestId = null;
+        fallbackInput?.click();
+      }
+    }
+
+    void clearSelectedPhoto() {
+      _reportPhoto = null;
+      if (galleryInput != null) galleryInput.value = '';
+      if (cameraInput != null) cameraInput.value = '';
+      if (photoInput != null) photoInput.value = '';
+      document.getElementById('resident-photo-name')?.text = 'No file chosen';
+      final preview = document.getElementById('resident-photo-preview');
+      preview?.children.clear();
+      document.getElementById('resident-photo-preview-card')?.style.display = 'none';
+      document.getElementById('resident-photo-pickers')?.style.display = 'flex';
+    }
+
+    Future<void> handleResidentPhotoFile(FileUploadInputElement? input) async {
+      final files = input?.files;
+      if (files == null || files.isEmpty) return;
+      final file = files.first;
+
+      // Validate size (max 2 MiB)
+      if (file.size > 2 * 1024 * 1024) {
+        showToast('Photo must be at most 2 MiB.');
+        clearSelectedPhoto();
+        return;
+      }
+
+      // Validate mime type (JPEG, PNG, WebP)
+      final type = file.type.toLowerCase();
+      final validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+      final ext = file.name.contains('.') ? file.name.split('.').last.toLowerCase() : '';
+      final validExts = ['jpg', 'jpeg', 'png', 'webp'];
+      if (!validTypes.contains(type) && !validExts.contains(ext)) {
+        showToast('Use a JPEG, PNG or WebP photo.');
+        clearSelectedPhoto();
+        return;
+      }
+
+      try {
+        final reader = FileReader()..readAsDataUrl(file);
+        await reader.onLoad.first;
+        showSelectedPhoto(reader.result as String, file.name);
+      } catch (_) {
+        showToast('Could not load selected photo.');
+        clearSelectedPhoto();
+      }
+    }
+
+    // Input change listeners
+    galleryInput?.onChange.listen((_) => handleResidentPhotoFile(galleryInput));
+    cameraInput?.onChange.listen((_) => handleResidentPhotoFile(cameraInput));
+    photoInput?.onChange.listen((_) => handleResidentPhotoFile(photoInput));
+
+    // Button triggers
+    document.getElementById('btn-resident-gallery-trigger')?.onClick.listen((_) => openPhotoPicker(galleryInput, 'gallery'));
+    document.getElementById('btn-resident-camera-trigger')?.onClick.listen((_) => openPhotoPicker(cameraInput, 'camera'));
+    document.getElementById('btn-resident-photo-trigger')?.onClick.listen((_) => galleryInput?.click());
+    document.getElementById('btn-resident-photo-replace-gallery')?.onClick.listen((_) => openPhotoPicker(galleryInput, 'gallery'));
+    document.getElementById('btn-resident-photo-replace-camera')?.onClick.listen((_) => openPhotoPicker(cameraInput, 'camera'));
+    document.getElementById('btn-resident-photo-remove')?.onClick.listen((_) {
+      clearSelectedPhoto();
+      showToast('Photo removed.');
+    });
+
     final btnSubmitReport = document.getElementById('btn-resident-submit-log');
     btnSubmitReport?.onClick.listen((e) async {
       if (currentResidentId == null) return;
@@ -1985,6 +2166,7 @@ class AppController {
       if (success) {
         showToast("Report saved. Pending reports sync when online.");
         if (descText != null) descText.value = '';
+        clearSelectedPhoto();
       } else {
         showToast("Report was not saved. Please retry; keep your description.");
       }

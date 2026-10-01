@@ -56,8 +56,9 @@ def system(empty_database):
     password = secrets.token_urlsafe(24)
     hashed = generate_password_hash(password)
     with db_adapter.get_db() as db:
-        # Explicit sample tariff for isolated tests only; production requires Admin confirmation.
+        # Explicit sample tariff and collection policy for isolated tests only; production requires Admin confirmation.
         db.execute('UPDATE billing_configuration SET confirmed = 1 WHERE config_id = 1')
+        db.execute("INSERT INTO payment_settings (setting_key, setting_value) VALUES ('allow_worker_collection', 'true') ON CONFLICT (setting_key) DO NOTHING")
         for name, role in [('admin', 'Admin'), ('worker', 'Collector'), ('other-worker', 'Collector')]:
             db.execute('INSERT INTO users (username, password_hash, full_name, role) VALUES (?, ?, ?, ?)', (name, hashed, name, role))
         db.execute("INSERT INTO puroks (purok_name) VALUES ('Purok 1')")

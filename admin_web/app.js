@@ -1043,26 +1043,145 @@ document.getElementById('btn-admin-broadcast')?.addEventListener('click', async 
 // ==============================================================================
 // Billing & Collections Renderers
 // ==============================================================================
+// In-Office Admin Payment Processing Modal & Handlers
+// ==============================================================================
+let pendingPaymentBill = null;
+
+function openMarkAsPaidModal({ billId, houseId, cycle, amount, familyHead }) {
+  pendingPaymentBill = { billId, houseId, cycle, amount, familyHead };
+  const modal = document.getElementById('modal-mark-paid');
+  if (!modal) return;
+
+  const billElem = document.getElementById('pay-modal-bill-id');
+  const hhElem = document.getElementById('pay-modal-household');
+  const cycleElem = document.getElementById('pay-modal-cycle');
+  const dateElem = document.getElementById('pay-modal-date');
+  const amtElem = document.getElementById('pay-modal-amount');
+  const errDiv = document.getElementById('pay-modal-error');
+  const confirmBtn = document.getElementById('btn-pay-modal-confirm');
+
+  if (billElem) billElem.textContent = billId;
+  if (hhElem) hhElem.textContent = familyHead ? `${familyHead} (${houseId})` : houseId;
+  if (cycleElem) cycleElem.textContent = cycle || 'Current Cycle';
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (dateElem) dateElem.textContent = dateStr;
+  if (amtElem) amtElem.textContent = '₱' + parseFloat(amount).toFixed(2);
+
+  if (errDiv) {
+    errDiv.style.display = 'none';
+    errDiv.textContent = '';
+  }
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Confirm Payment';
+  }
+
+  modal.classList.add('active');
+}
+
+function closeMarkAsPaidModal() {
+  const modal = document.getElementById('modal-mark-paid');
+  if (modal) modal.classList.remove('active');
+  pendingPaymentBill = null;
+}
+
+document.getElementById('btn-pay-modal-cancel')?.addEventListener('click', closeMarkAsPaidModal);
+
+document.getElementById('btn-pay-modal-confirm')?.addEventListener('click', async () => {
+  if (!pendingPaymentBill) return;
+  const confirmBtn = document.getElementById('btn-pay-modal-confirm');
+  const errDiv = document.getElementById('pay-modal-error');
+  const methodSelect = document.getElementById('pay-modal-method');
+  const paymentMethod = methodSelect ? methodSelect.value : 'Cash (Barangay Hall)';
+
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Recording Payment...';
+  }
+  if (errDiv) errDiv.style.display = 'none';
+
+  try {
+    const res = await apiFetch('/api/admin/billing/mark-paid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + jwtToken
+      },
+      body: JSON.stringify({
+        bill_id: pendingPaymentBill.billId,
+        payment_method: paymentMethod,
+        payment_date: new Date().toISOString()
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      closeMarkAsPaidModal();
+      await fetchData();
+      alert(`Payment for ${pendingPaymentBill.billId} (₱${parseFloat(pendingPaymentBill.amount).toFixed(2)}) has been officially confirmed and settled at Barangay Hall.`);
+    } else {
+      const err = await res.json().catch(() => ({ msg: 'Payment processing failed.' }));
+      if (errDiv) {
+        errDiv.textContent = err.msg || 'Unable to confirm payment. Please check server status.';
+        errDiv.style.display = 'block';
+      }
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Confirm Payment';
+      }
+    }
+  } catch (err) {
+    if (errDiv) {
+      errDiv.textContent = 'Network or server error while recording payment.';
+      errDiv.style.display = 'block';
+    }
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm Payment';
+    }
+  }
+});
+
 function renderBilling(records) {
   const tbody = document.getElementById('admin-billing-tbody');
   if (!tbody) return;
   tbody.innerHTML = '';
   if (!records || records.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:16px;">No billing statements recorded.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:16px;">No billing statements recorded.</td></tr>';
     return;
   }
   records.forEach(b => {
     const tr = document.createElement('tr');
+    const isPaid = b.status === 'Paid';
+    const actionCell = isPaid
+      ? `<span class="badge badge-success" style="opacity:0.85;display:inline-block;font-size:12px;padding:4px 10px;">Paid</span>`
+      : `<button type="button" class="btn btn-sm btn-mark-paid" style="padding:6px 14px;font-size:12px;border-radius:8px;background:linear-gradient(135deg,#10B981,#059669);color:white;cursor:pointer;border:none;font-weight:700;box-shadow:0 2px 6px rgba(16,185,129,0.3);" data-bill-id="${escapeHtml(b.bill_id)}" data-house-id="${escapeHtml(b.house_id)}" data-cycle="${escapeHtml(b.billing_month || '')}" data-amount="${b.total_due.toFixed(2)}" data-family-head="${escapeHtml(b.family_head_name || '')}">Mark as Paid</button>`;
+
     tr.innerHTML = DOMPurify.sanitize( `
       <td><strong>${escapeHtml(b.bill_id)}</strong></td>
-      <td>${escapeHtml(b.house_id)}</td>
+      <td>${escapeHtml(b.family_head_name ? b.family_head_name + ' (' + b.house_id + ')' : b.house_id)}</td>
       <td><code>${escapeHtml(b.account_number)}</code></td>
       <td>${escapeHtml(b.billing_month)}</td>
       <td>${b.consumption} m³</td>
       <td><strong>₱${b.total_due.toFixed(2)}</strong></td>
-      <td><span class="badge ${b.status === 'Paid' ? 'badge-success' : 'badge-warning'}">${escapeHtml(b.status)}</span></td>
+      <td><span class="badge ${isPaid ? 'badge-success' : 'badge-warning'}">${escapeHtml(b.status)}</span></td>
+      <td style="text-align:center;">${actionCell}</td>
     `);
     tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('.btn-mark-paid').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const billId = btn.getAttribute('data-bill-id');
+      const houseId = btn.getAttribute('data-house-id');
+      const cycle = btn.getAttribute('data-cycle');
+      const amount = btn.getAttribute('data-amount');
+      const familyHead = btn.getAttribute('data-family-head');
+      openMarkAsPaidModal({ billId, houseId, cycle, amount, familyHead });
+    });
   });
 }
 
@@ -1128,7 +1247,7 @@ document.getElementById('btn-save-payment-settings')?.addEventListener('click', 
     payment_location: loc || 'Barangay Tagpopongan Hall - Treasury Office',
     payment_method: method || 'In-Person Payment at Barangay Hall / Field Worker Collection',
     operating_hours: hours || 'Monday - Friday, 8:00 AM - 5:00 PM',
-    allow_worker_collection: worker || 'true',
+    allow_worker_collection: worker || 'false',
     payment_instructions: inst || 'Water bills are due on or before the 25th of each month.'
   };
 
@@ -1283,6 +1402,8 @@ async function loadRegistrations() {
 document.getElementById('registrations-tbody').addEventListener('click', async event => {
   const button = event.target.closest('[data-review-id]');
   if (!button || button.disabled) return;
+  const action = button.dataset.reviewStatus === 'approved' ? 'approve' : 'reject';
+  if (!window.confirm('Confirm you want to ' + action + ' registration ' + button.dataset.reviewId + '?')) return;
   const buttons = [...button.closest('tr').querySelectorAll('button')];
   buttons.forEach(item => item.disabled = true);
   const status = document.getElementById('registration-review-status');
@@ -1293,3 +1414,134 @@ document.getElementById('registrations-tbody').addEventListener('click', async e
   } catch (_) { status.textContent = 'Review was not confirmed. Check connection and refresh before retrying.'; }
   finally { buttons.forEach(item => item.disabled = false); }
 });
+
+// --- Reporting & Export Functionality ---
+async function triggerReportExport(reportType, format, filters = {}, triggerButton = null) {
+  if (!jwtToken) {
+    alert('Please sign in as Administrator to export records.');
+    return;
+  }
+  const originalText = triggerButton ? triggerButton.textContent : '';
+  if (triggerButton) {
+    triggerButton.textContent = 'Generating...';
+    triggerButton.disabled = true;
+  }
+  try {
+    const response = await apiFetch('/api/reports/export', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + jwtToken
+      },
+      body: JSON.stringify({
+        report_type: reportType,
+        format: format,
+        filters: filters
+      })
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => null);
+      throw new Error(err?.description || ('Export failed with status ' + response.status));
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    let filename = '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match && match[1]) {
+      filename = match[1];
+    } else {
+      const today = new Date().toISOString().split('T')[0];
+      filename = `WaterHall_${reportType}_${today}.${format}`;
+    }
+
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error('Export error:', err);
+    alert('Export error: ' + (err.message || 'Could not download report file.'));
+  } finally {
+    if (triggerButton) {
+      triggerButton.textContent = originalText;
+      triggerButton.disabled = false;
+    }
+  }
+}
+
+function initReportingEventListeners() {
+  // Directory exports
+  const btnDirCsv = document.getElementById('btn-export-dir-csv');
+  const btnDirXlsx = document.getElementById('btn-export-dir-xlsx');
+  const btnDirPdf = document.getElementById('btn-export-dir-pdf');
+  const btnDirPrint = document.getElementById('btn-print-dir');
+
+  const getDirFilters = () => ({
+    purok: document.getElementById('export-filter-dir-purok')?.value || 'All',
+    account_status: document.getElementById('export-filter-dir-status')?.value || 'All'
+  });
+
+  if (btnDirCsv) btnDirCsv.addEventListener('click', () => triggerReportExport('directory', 'csv', getDirFilters(), btnDirCsv));
+  if (btnDirXlsx) btnDirXlsx.addEventListener('click', () => triggerReportExport('directory', 'xlsx', getDirFilters(), btnDirXlsx));
+  if (btnDirPdf) btnDirPdf.addEventListener('click', () => triggerReportExport('directory', 'pdf', getDirFilters(), btnDirPdf));
+  if (btnDirPrint) btnDirPrint.addEventListener('click', () => window.print());
+
+  // Collections exports
+  const btnColCsv = document.getElementById('btn-export-col-csv');
+  const btnColXlsx = document.getElementById('btn-export-col-xlsx');
+  const btnColPdf = document.getElementById('btn-export-col-pdf');
+  const btnColPrint = document.getElementById('btn-print-col');
+
+  const getColFilters = () => ({
+    purok: document.getElementById('export-filter-col-purok')?.value || 'All',
+    payment_method: document.getElementById('export-filter-col-method')?.value || 'All'
+  });
+
+  if (btnColCsv) btnColCsv.addEventListener('click', () => triggerReportExport('collections', 'csv', getColFilters(), btnColCsv));
+  if (btnColXlsx) btnColXlsx.addEventListener('click', () => triggerReportExport('collections', 'xlsx', getColFilters(), btnColXlsx));
+  if (btnColPdf) btnColPdf.addEventListener('click', () => triggerReportExport('collections', 'pdf', getColFilters(), btnColPdf));
+  if (btnColPrint) btnColPrint.addEventListener('click', () => window.print());
+
+  // Billing exports
+  const btnBillCsv = document.getElementById('btn-export-bill-csv');
+  const btnBillXlsx = document.getElementById('btn-export-bill-xlsx');
+  const btnBillPdf = document.getElementById('btn-export-bill-pdf');
+  const btnBillPrint = document.getElementById('btn-print-bill');
+
+  const getBillFilters = () => ({
+    purok: document.getElementById('export-filter-bill-purok')?.value || 'All',
+    payment_status: document.getElementById('export-filter-bill-status')?.value || 'All',
+    billing_month: document.getElementById('export-filter-bill-month')?.value || 'All'
+  });
+
+  if (btnBillCsv) btnBillCsv.addEventListener('click', () => triggerReportExport('billing', 'csv', getBillFilters(), btnBillCsv));
+  if (btnBillXlsx) btnBillXlsx.addEventListener('click', () => triggerReportExport('billing', 'xlsx', getBillFilters(), btnBillXlsx));
+  if (btnBillPdf) btnBillPdf.addEventListener('click', () => triggerReportExport('billing', 'pdf', getBillFilters(), btnBillPdf));
+  if (btnBillPrint) btnBillPrint.addEventListener('click', () => window.print());
+
+  // Incident reports exports
+  const btnRepCsv = document.getElementById('btn-export-rep-csv');
+  const btnRepXlsx = document.getElementById('btn-export-rep-xlsx');
+  const btnRepPdf = document.getElementById('btn-export-rep-pdf');
+  const btnRepPrint = document.getElementById('btn-print-rep');
+
+  const getRepFilters = () => ({
+    report_status: document.getElementById('export-filter-rep-status')?.value || 'All',
+    report_category: document.getElementById('export-filter-rep-category')?.value || 'All'
+  });
+
+  if (btnRepCsv) btnRepCsv.addEventListener('click', () => triggerReportExport('incident_reports', 'csv', getRepFilters(), btnRepCsv));
+  if (btnRepXlsx) btnRepXlsx.addEventListener('click', () => triggerReportExport('incident_reports', 'xlsx', getRepFilters(), btnRepXlsx));
+  if (btnRepPdf) btnRepPdf.addEventListener('click', () => triggerReportExport('incident_reports', 'pdf', getRepFilters(), btnRepPdf));
+  if (btnRepPrint) btnRepPrint.addEventListener('click', () => window.print());
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initReportingEventListeners);
+} else {
+  initReportingEventListeners();
+}

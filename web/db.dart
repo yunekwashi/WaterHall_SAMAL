@@ -36,9 +36,9 @@ final Map<String, dynamic> seedCentralAssets = {
 
 final Map<String, String> defaultPaymentSettings = {
   'payment_location': 'Barangay Tagpopongan Hall - Treasury Office',
-  'payment_method': 'In-Person Payment at Barangay Hall / Field Worker Collection',
-  'allow_worker_collection': 'true',
-  'payment_instructions': 'Water bills are due on or before the 25th of each month. Payments can be settled in cash at the Barangay Hall Treasury Window or directly with your authorized Purok Field Collector during home visits.',
+  'payment_method': 'In-Person Payment at Barangay Hall',
+  'allow_worker_collection': 'false',
+  'payment_instructions': 'Water bills are due on or before the 25th of each month. Payments must be settled in-person at the Barangay Hall Treasury Window. Field workers are not authorized to collect payments.',
   'operating_hours': 'Monday - Friday, 8:00 AM - 5:00 PM',
   'emergency_contact': 'Not configured; contact the Barangay office'
 };
@@ -418,6 +418,10 @@ class Database {
     String paymentMethod = 'Cash'
   }) async {
     if (!checkSession()) throw const ApiFailure(sessionChanged: true);
+    final allowWorker = _paymentSettings['allow_worker_collection']?.toString().toLowerCase() == 'true';
+    if (!allowWorker) {
+      throw StateError('Field payment collection is disabled under the Barangay-only payment policy. All payments must be made at the Barangay Hall.');
+    }
     final now = DateTime.now().toUtc();
     final transactionId = operationId();
 
@@ -688,26 +692,75 @@ class Database {
     return filtered;
   }
 
-  bool hasBeenBilledThisMonth(String houseId, String monthYear) {
-    final records = getBillingRecords();
+  num? getApplicablePreviousReading(String houseId) {
     final cleanHouse = houseId.toUpperCase().trim();
-    return records.any((r) => 
-      (r['house_id'] ?? '').toString().toUpperCase().trim() == cleanHouse && 
-      r['billing_month'].toString().toLowerCase() == monthYear.toLowerCase()
-    );
+    final pending = pendingActions()
+        .where((a) => a['endpoint'] == '/api/billing-records/add')
+        .map((a) => Map<String, dynamic>.from(a['body']))
+        .where((b) => (b['house_id'] ?? '').toString().toUpperCase().trim() == cleanHouse)
+        .toList();
+    if (pending.isNotEmpty) {
+      pending.sort((a, b) => (b['date'] ?? '').toString().compareTo((a['date'] ?? '').toString()));
+      final curr = pending.first['current_reading'];
+      if (curr is num) return curr;
+    }
+    final household = getHousehold(houseId);
+    return household?['current_m3_usage'] as num?;
+  }
+
+  bool hasBeenBilledThisMonth(String houseId, String monthYear) {
+    final cleanHouse = houseId.toUpperCase().trim();
+    final targetMonth = monthYear.toLowerCase().trim();
+
+    if (_billingRecords.any((r) =>
+        (r['house_id'] ?? '').toString().toUpperCase().trim() == cleanHouse &&
+        (r['billing_month'] ?? '').toString().toLowerCase().trim() == targetMonth)) {
+      return true;
+    }
+
+    final pending = pendingActions()
+        .where((a) => a['endpoint'] == '/api/billing-records/add')
+        .map((a) => Map<String, dynamic>.from(a['body']));
+    if (pending.any((b) =>
+        (b['house_id'] ?? '').toString().toUpperCase().trim() == cleanHouse &&
+        (b['billing_month'] ?? '').toString().toLowerCase().trim() == targetMonth)) {
+      return true;
+    }
+
+    return false;
   }
 
   Future<Map<String, dynamic>> addBillingRecord(Map<String, dynamic> record) async {
+    final houseId = (record['house_id'] ?? '').toString().toUpperCase().trim();
+    final cycle = (record['billing_month'] ?? '').toString().toLowerCase().trim();
+
+    if (hasBeenBilledThisMonth(houseId, cycle)) {
+      throw StateError('A bill for this cycle ($cycle) already exists or is pending synchronization.');
+    }
+
+    final id = 'PENDING-${operationId()}';
     final newRecord = {
-      'bill_id': 'PENDING-${operationId()}',
-      'date': DateTime.now().toUtc().toIso8601String(),
-      'status': 'Pending',
+      'bill_id': id,
+      'date': record['date'] ?? DateTime.now().toUtc().toIso8601String(),
+      'status': 'Pending sync',
+      'is_synced': false,
       ...record
     };
-    await queueAction('/api/billing-records/add', newRecord);
-    if (checkSession()) await refreshData();
-    _saveToLocalCache();
 
+    await queueAction('/api/billing-records/add', newRecord);
+
+    if (isDatabaseOnline && checkSession()) {
+      await syncActions();
+      final isNowSynced = !pendingActions().any((a) => a['operation_id'] == newRecord['operation_id']);
+      if (isNowSynced) {
+        newRecord['is_synced'] = true;
+        newRecord['status'] = 'Unpaid';
+      }
+      if (checkSession()) await refreshData();
+    } else {
+      _saveToLocalCache();
+      _notifySyncStatus();
+    }
 
     return newRecord;
   }

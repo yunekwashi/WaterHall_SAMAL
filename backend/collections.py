@@ -51,8 +51,8 @@ def synchronize(data):
             if actor['role'] == 'worker':
                 db.execute("SELECT setting_value FROM payment_settings WHERE setting_key = 'allow_worker_collection'")
                 setting = db.fetchone()
-                if setting and setting['setting_value'].lower() != 'true':
-                    abort(403, description='Worker collection is disabled')
+                if not setting or setting['setting_value'].lower() != 'true':
+                    abort(403, description='Worker field collection is disabled under the Barangay-only payment policy. All payments must be made at the Barangay Hall.')
             sql = """SELECT b.bill_id, b.total_amount, b.payment_status FROM billing_records b
                      JOIN water_meters m ON m.meter_id = b.meter_id WHERE m.household_id = ?"""
             params = [hh]

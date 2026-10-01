@@ -86,15 +86,15 @@ def test_landing_page_iot_sensor_scope():
 
 
 def test_landing_page_project_team():
-    """Requirement: Exactly 3 team members with verified roles and image filenames."""
+    """Team names come from Assets/team filenames. Roles are omitted unless a project source defines them."""
     html = LANDING_HTML.read_text(encoding='utf-8')
     assert 'PROJECT TEAM' in html
     assert 'Meet the WaterHall Team' in html
-    assert 'Michael Jon Balaga' in html
-    assert 'Lead System Developer' in html
+    assert 'Michael Jon C. Balaga' in html
     assert 'Ryiel S. Banggat' in html
-    assert 'John Dave Chicote' in html
-    assert 'User Interface Developer & Technical Documentation' in html
+    assert 'John Dave A. Chicote' in html
+    assert 'Lead System Developer' not in html
+    assert 'User Interface Developer' not in html
     assert '/assets/team/michael-jon-balaga.jpg' in html
     assert '/assets/team/ryiel-s-banggat.jpg' in html
     assert '/assets/team/john-dave-chicote.jpg' in html
@@ -111,12 +111,26 @@ def test_landing_page_contact_and_footer():
 
 
 def test_team_asset_files_exist_and_are_valid():
-    """Requirement: Team images exist, are non-empty, and are copied into public static output."""
-    for filename in ['michael-jon-balaga.jpg', 'ryiel-s-banggat.jpg', 'john-dave-chicote.jpg']:
+    """Team images exist in Assets/team, are published under web/assets/team, and copy into public/."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('build_static', ROOT / 'scripts' / 'build_static.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.build()
+    originals = ROOT / 'Assets' / 'team'
+    mapping = {
+        'michael-jon-balaga.jpg': 'Michael Jon C. Balaga.jpg',
+        'ryiel-s-banggat.jpg': 'Ryiel S. Banggat.jpg',
+        'john-dave-chicote.jpg': 'John Dave A. Chicote.jpg',
+    }
+    for filename, original in mapping.items():
         src = TEAM_DIR / filename
         pub = PUBLIC_DIR / 'assets' / 'team' / filename
+        raw = originals / original
+        assert raw.is_file(), f"Original team photo missing: {raw}"
         assert src.is_file(), f"Source image missing: {src}"
         assert src.stat().st_size > 20000, f"Source image truncated: {src}"
+        assert src.stat().st_size == raw.stat().st_size
         assert pub.is_file(), f"Public static image missing: {pub}"
         assert pub.stat().st_size > 20000, f"Public static image truncated: {pub}"
 
@@ -142,6 +156,9 @@ def test_server_serves_landing_page_and_preserves_private_routes(system):
     res_img = client.get('/assets/team/michael-jon-balaga.jpg')
     assert res_img.status_code == 200
     assert res_img.content_type.startswith('image/')
+
+    assert 'WHAT WATERHALL PROVIDES' in root_html
+    assert 'JSN-SR04T' in root_html
 
     # Direct private routes MUST still work
     res_admin = client.get('/admin/')

@@ -764,3 +764,193 @@ body.server-offline > *:not(#admin-offline-overlay) {
 .reservoir-summary{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:28px 0}.reservoir-summary dd{margin:0;font-weight:700;color:var(--text-color)}
 
 #billing-config-form input{padding:10px 14px;border-radius:8px;border:1px solid var(--border-color);background:#f4f7f9;color:#12333a;font:inherit}#billing-config-status{font-size:13px;line-height:1.5;margin:14px 0}
+
+/* --- Reporting & Export Toolbar Styles --- */
+.export-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: rgba(15, 55, 82, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.export-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.export-filters select,
+.export-filters input {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(20, 60, 90, 0.85);
+  color: var(--text-main);
+  outline: none;
+}
+
+.export-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-export:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-export.btn-pdf {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+.btn-export.btn-pdf:hover {
+  background: rgba(239, 68, 68, 0.4);
+}
+
+.btn-export.btn-xlsx {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+}
+.btn-export.btn-xlsx:hover {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+.btn-export.btn-csv {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #93c5fd;
+}
+.btn-export.btn-csv:hover {
+  background: rgba(59, 130, 246, 0.4);
+}
+
+.btn-export.btn-print {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fde68a;
+}
+.btn-export.btn-print:hover {
+  background: rgba(245, 158, 11, 0.4);
+}
+
+/* --- Print Friendly Stylesheet --- */
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  .sidebar,
+  .brand,
+  .user-profile,
+  .export-toolbar,
+  .btn,
+  .btn-export,
+  #btn-logout,
+  #login-screen,
+  #admin-offline-overlay,
+  #loading-overlay,
+  .modal-overlay,
+  .nav-menu,
+  .date-badge,
+  th:last-child,
+  td:last-child {
+    display: none !important;
+  }
+
+  .main-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .tab-content {
+    display: none !important;
+  }
+
+  .tab-content.active {
+    display: block !important;
+  }
+
+  .glass-panel {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin-bottom: 24px !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    color: #000 !important;
+    font-size: 10pt !important;
+  }
+
+  th, td {
+    border: 1px solid #94a3b8 !important;
+    padding: 6px 8px !important;
+    color: #000 !important;
+    background: transparent !important;
+  }
+
+  th {
+    background-color: #f1f5f9 !important;
+    font-weight: bold !important;
+  }
+
+  tr:nth-child(even) {
+    background-color: #f8fafc !important;
+  }
+
+  .header {
+    margin-bottom: 16px !important;
+    border-bottom: 2px solid #0f172a !important;
+    padding-bottom: 8px !important;
+  }
+
+  .header h1 {
+    font-size: 16pt !important;
+    color: #0f172a !important;
+  }
+
+  .header::before {
+    content: "BARANGAY TAGPOPONGAN WATER SYSTEM (WATERHALL)";
+    display: block;
+    font-size: 11pt;
+    font-weight: bold;
+    color: #1e3a8a;
+    margin-bottom: 4px;
+  }
+}

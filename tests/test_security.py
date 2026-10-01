@@ -81,8 +81,11 @@ def test_telemetry_auth_validation_zero_and_alerts(system, monkeypatch):
     assert len(poll['new_announcements']) == 2
     data = client.get('/api/all-data', headers=headers['HH-1']).json
     assert data['centralAssets']['main_tank_level'] == 0
-    for value in [-1, 101, 'NaN', 'Infinity', None, True]:
+    for value in [-1, 101, 'NaN', 'Infinity', True]:
         assert client.post('/api/iot/telemetry', json={**payload, 'water_level_percentage': value}, headers=device).status_code == 400
+    disconnected = client.post('/api/iot/telemetry', json={**payload, 'water_level_percentage': None}, headers=device)
+    assert disconnected.status_code == 200
+    assert disconnected.json['water_level_percentage'] is None
     monkeypatch.setattr('backend.server.IOT_DEVICE_SECRET', '')
     assert client.post('/api/iot/telemetry', json=payload, headers=device).status_code == 503
 

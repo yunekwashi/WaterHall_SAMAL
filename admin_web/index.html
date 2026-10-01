@@ -180,7 +180,7 @@
         </div>
         <div class="stat-card">
           <div class="stat-header">Pending Collections</div>
-          <div class="stat-value" id="stat-bills">?0</div>
+          <div class="stat-value" id="stat-bills">PHP 0</div>
           <div class="stat-trend" id="trend-bills">Syncing...</div>
         </div>
       </div>
@@ -226,6 +226,33 @@
         <div class="panel-header">
           <div class="panel-title">Resident & Household Directory</div>
           <button class="btn" id="btn-add-resident">+ Register Resident</button>
+        </div>
+        <div class="export-toolbar">
+          <div class="export-filters">
+            <label style="font-size:12px; color:var(--text-muted);">Filter:</label>
+            <select id="export-filter-dir-purok" aria-label="Filter Directory by Purok">
+              <option value="All">All Puroks</option>
+              <option value="Purok 1">Purok 1</option>
+              <option value="Purok 2">Purok 2</option>
+              <option value="Purok 3">Purok 3</option>
+              <option value="Purok 4">Purok 4</option>
+              <option value="Purok 5">Purok 5</option>
+              <option value="Purok 6">Purok 6</option>
+              <option value="Purok 7">Purok 7</option>
+              <option value="Purok 8">Purok 8</option>
+            </select>
+            <select id="export-filter-dir-status" aria-label="Filter Directory by Status">
+              <option value="All">All Statuses</option>
+              <option value="approved">Approved</option>
+              <option value="pending">Pending</option>
+            </select>
+          </div>
+          <div class="export-buttons">
+            <button type="button" class="btn-export btn-csv" id="btn-export-dir-csv" title="Export CSV file">CSV</button>
+            <button type="button" class="btn-export btn-xlsx" id="btn-export-dir-xlsx" title="Export Excel spreadsheet">Excel (XLSX)</button>
+            <button type="button" class="btn-export btn-pdf" id="btn-export-dir-pdf" title="Export PDF document">PDF</button>
+            <button type="button" class="btn-export btn-print" id="btn-print-dir" title="Print-friendly view">Print</button>
+          </div>
         </div>
         <table>
           <thead>
@@ -330,6 +357,32 @@
         <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">
           Permanent ledger of all collections synced from field workers' offline/online mobile nodes. Every entry includes a unique transaction identifier.
         </p>
+        <div class="export-toolbar">
+          <div class="export-filters">
+            <label style="font-size:12px; color:var(--text-muted);">Filter:</label>
+            <select id="export-filter-col-purok" aria-label="Filter Collections by Purok">
+              <option value="All">All Puroks</option>
+              <option value="Purok 1">Purok 1</option>
+              <option value="Purok 2">Purok 2</option>
+              <option value="Purok 3">Purok 3</option>
+              <option value="Purok 4">Purok 4</option>
+              <option value="Purok 5">Purok 5</option>
+              <option value="Purok 6">Purok 6</option>
+              <option value="Purok 7">Purok 7</option>
+              <option value="Purok 8">Purok 8</option>
+            </select>
+            <select id="export-filter-col-method" aria-label="Filter Collections by Payment Method">
+              <option value="All">All Methods</option>
+              <option value="Cash">Cash</option>
+            </select>
+          </div>
+          <div class="export-buttons">
+            <button type="button" class="btn-export btn-csv" id="btn-export-col-csv" title="Export CSV file">CSV</button>
+            <button type="button" class="btn-export btn-xlsx" id="btn-export-col-xlsx" title="Export Excel spreadsheet">Excel (XLSX)</button>
+            <button type="button" class="btn-export btn-pdf" id="btn-export-col-pdf" title="Export PDF document">PDF</button>
+            <button type="button" class="btn-export btn-print" id="btn-print-col" title="Print-friendly view">Print</button>
+          </div>
+        </div>
         <table>
           <thead>
             <tr>
@@ -352,6 +405,34 @@
         <div class="panel-header">
           <div class="panel-title">All Billing Statements</div>
         </div>
+        <div class="export-toolbar">
+          <div class="export-filters">
+            <label style="font-size:12px; color:var(--text-muted);">Filter:</label>
+            <select id="export-filter-bill-purok" aria-label="Filter Billing by Purok">
+              <option value="All">All Puroks</option>
+              <option value="Purok 1">Purok 1</option>
+              <option value="Purok 2">Purok 2</option>
+              <option value="Purok 3">Purok 3</option>
+              <option value="Purok 4">Purok 4</option>
+              <option value="Purok 5">Purok 5</option>
+              <option value="Purok 6">Purok 6</option>
+              <option value="Purok 7">Purok 7</option>
+              <option value="Purok 8">Purok 8</option>
+            </select>
+            <select id="export-filter-bill-status" aria-label="Filter Billing by Status">
+              <option value="All">All Statuses</option>
+              <option value="Paid">Paid</option>
+              <option value="Unpaid">Unpaid</option>
+            </select>
+            <input type="month" id="export-filter-bill-month" aria-label="Filter by Billing Month" style="max-width:140px;">
+          </div>
+          <div class="export-buttons">
+            <button type="button" class="btn-export btn-csv" id="btn-export-bill-csv" title="Export CSV file">CSV</button>
+            <button type="button" class="btn-export btn-xlsx" id="btn-export-bill-xlsx" title="Export Excel spreadsheet">Excel (XLSX)</button>
+            <button type="button" class="btn-export btn-pdf" id="btn-export-bill-pdf" title="Export PDF document">PDF</button>
+            <button type="button" class="btn-export btn-print" id="btn-print-bill" title="Print-friendly view">Print</button>
+          </div>
+        </div>
         <table>
           <thead>
             <tr>
@@ -362,6 +443,7 @@
               <th>Usage</th>
               <th>Total Due</th>
               <th>Status</th>
+              <th style="text-align:center;">Action</th>
             </tr>
           </thead>
           <tbody id="admin-billing-tbody">
@@ -386,7 +468,7 @@
           <div class="panel-title">Barangay Payment & Collection Rules</div>
         </div>
         <p style="color:var(--text-muted); font-size:14px; margin-bottom:24px;">
-          Configure where and how residents settle their water bills. These settings are stored dynamically in the online database and immediately update both the <strong>Resident Portal</strong> and <strong>Worker App</strong> without modifying code.
+          Configure where and how residents settle their water bills. Payments are received in person at the Barangay Hall. Field workers record meter readings and do not collect payments.
         </p>
         
         <div class="form-group" style="margin-bottom: 18px;">
@@ -407,8 +489,8 @@
         <div class="form-group" style="margin-bottom: 18px;">
           <label for="admin-set-worker-collect" style="display:block; font-size:13px; font-weight:600; color:var(--text-muted); margin-bottom:6px;">Field Worker Collection Authorized?</label>
           <select id="admin-set-worker-collect" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-color);">
-            <option value="true">Yes — Field workers are authorized to collect bill payments in the field</option>
-            <option value="false">No — Payments must ONLY be paid directly at the Barangay Hall Treasury</option>
+            <option value="false" selected>No — Payments must ONLY be paid directly at the Barangay Hall Treasury</option>
+            <option value="true">Yes — Emergency override only (not used for normal Barangay Hall operations)</option>
           </select>
         </div>
 
@@ -431,6 +513,30 @@
       <div class="glass-panel">
         <div class="panel-header">
           <div class="panel-title">Citizen Incident & Service Reports</div>
+        </div>
+        <div class="export-toolbar">
+          <div class="export-filters">
+            <label style="font-size:12px; color:var(--text-muted);">Filter:</label>
+            <select id="export-filter-rep-status" aria-label="Filter Reports by Status">
+              <option value="All">All Statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="Investigating">Investigating</option>
+              <option value="Resolved">Resolved</option>
+            </select>
+            <select id="export-filter-rep-category" aria-label="Filter Reports by Category">
+              <option value="All">All Categories</option>
+              <option value="Leak">Leak</option>
+              <option value="Low Pressure">Low Pressure</option>
+              <option value="Meter Issue">Meter Issue</option>
+              <option value="Water Quality">Water Quality</option>
+            </select>
+          </div>
+          <div class="export-buttons">
+            <button type="button" class="btn-export btn-csv" id="btn-export-rep-csv" title="Export CSV file">CSV</button>
+            <button type="button" class="btn-export btn-xlsx" id="btn-export-rep-xlsx" title="Export Excel spreadsheet">Excel (XLSX)</button>
+            <button type="button" class="btn-export btn-pdf" id="btn-export-rep-pdf" title="Export PDF document">PDF</button>
+            <button type="button" class="btn-export btn-print" id="btn-print-rep" title="Print-friendly view">Print</button>
+          </div>
         </div>
         <table>
           <thead>
@@ -525,10 +631,65 @@
     </div>
   </div>
 
+  <!-- Mark Bill as Paid In-Office Confirmation Modal -->
+  <div class="modal-overlay" id="modal-mark-paid">
+    <div class="modal" style="max-width:480px; padding:32px;">
+      <h3 style="margin-bottom:8px; font-size:22px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+        <svg style="width:24px;height:24px;fill:var(--success)" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+        Confirm In-Office Payment
+      </h3>
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px; line-height:1.5;">
+        Confirm official payment receipt at the Barangay Hall. Only authorized Admins may confirm payments. This settlement is permanent and immediately updates the resident's account.
+      </p>
+
+      <div style="background:rgba(0,0,0,0.25); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;">
+          <span style="color:var(--text-muted);">Bill ID:</span>
+          <strong id="pay-modal-bill-id" style="color:var(--accent);">BILL-1</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;">
+          <span style="color:var(--text-muted);">Household:</span>
+          <strong id="pay-modal-household" style="color:var(--text-main);">HH-1</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;">
+          <span style="color:var(--text-muted);">Billing Cycle:</span>
+          <span id="pay-modal-cycle" style="color:var(--text-main); font-weight:600;">2026-09</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;">
+          <span style="color:var(--text-muted);">Payment Date:</span>
+          <span id="pay-modal-date" style="color:var(--text-main);">2026-09-30</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.1); font-size:15px;">
+          <span style="color:var(--text-muted); font-weight:600;">Amount Due:</span>
+          <strong id="pay-modal-amount" style="color:var(--success); font-size:20px;">₱0.00</strong>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:24px;">
+        <label for="pay-modal-method" style="display:block; font-size:13px; font-weight:600; color:var(--text-muted); margin-bottom:8px;">Payment Method</label>
+        <select id="pay-modal-method" style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border); background:rgba(0,0,0,0.3); color:var(--text-main); font-size:14px;">
+          <option value="Cash (Barangay Hall)" selected>Cash (Barangay Hall Official)</option>
+          <option value="Barangay Treasury Direct">Barangay Treasury Direct</option>
+          <option value="GCash (Barangay Office)">GCash (Barangay Office Verified)</option>
+        </select>
+      </div>
+
+      <div id="pay-modal-error" style="display:none; color:var(--danger); font-size:13px; margin-bottom:16px; padding:10px; background:rgba(255,74,74,0.1); border-radius:8px; border:1px solid rgba(255,74,74,0.3);"></div>
+
+      <div style="display:flex; justify-content:flex-end; gap:12px;">
+        <button type="button" class="btn btn-secondary" id="btn-pay-modal-cancel">Cancel</button>
+        <button type="button" class="btn" id="btn-pay-modal-confirm" style="background:linear-gradient(135deg, #10B981, #059669); color:white;">
+          Confirm Payment
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Account Recovery Modal -->
   <div class="modal-overlay" id="modal-forgot-pw" style="display: none;">
     <div class="modal" style="max-width: 400px; padding: 32px; border-radius: 16px; background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);">
       <h3 style="margin-bottom:24px; font-size:22px; font-weight:700; color: var(--text-color);">Account Password Recovery</h3>
+      <p style="font-size:13px;color:var(--text-muted);line-height:1.5;margin-bottom:16px;">WaterHall does not send SMS. A trusted operator issues a hashed, expiring, one-use recovery code with <code>python -m backend.manage issue-reset</code>. The code is not a password and cannot be recovered from the database.</p>
       <div class="form-group" style="margin-bottom: 16px;">
         <label for="recover-role" style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Role</label>
         <select id="recover-role" name="recover-role" aria-label="Role" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-color); font-weight: 500;">

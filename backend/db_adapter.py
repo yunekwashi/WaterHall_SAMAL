@@ -211,7 +211,7 @@ def init_db():
         db.execute(f'''
             CREATE TABLE IF NOT EXISTS reservoir_quality_readings (
                 reading_id {pk_auto},
-                water_level_percentage {int_type} NOT NULL CHECK (water_level_percentage BETWEEN 0 AND 100),
+                water_level_percentage {int_type} DEFAULT NULL CHECK (water_level_percentage IS NULL OR (water_level_percentage BETWEEN 0 AND 100)),
                 turbidity_ntu {real_type} NOT NULL,
                 ph_level {real_type} DEFAULT NULL,
                 tds_ppm {int_type} NOT NULL,
@@ -324,6 +324,10 @@ def init_db():
                 if (column['data_type'], column['numeric_precision'], column['numeric_scale']) != ('numeric', 14, 2):
                     db.execute(f'ALTER TABLE {table} ALTER COLUMN {field} TYPE NUMERIC(14,2) USING ROUND({field}::numeric, 2)')
             db.execute('ALTER TABLE reservoir_quality_readings ALTER COLUMN ph_level DROP DEFAULT')
+            try:
+                db.execute('ALTER TABLE reservoir_quality_readings ALTER COLUMN water_level_percentage DROP NOT NULL')
+            except Exception:
+                pass
 
         additions = {
             'billing_records': {'billed_at': 'TEXT', 'billed_by': 'INTEGER', 'billing_snapshot': 'TEXT'},

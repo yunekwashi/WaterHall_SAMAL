@@ -5,13 +5,15 @@ import hashlib
 import hmac
 import logging
 import re
+import secrets
+from decimal import Decimal
 from backend import config
 from backend.security import principal, require_role, claims_for, text, password, number, identifier, timestamp, validate_push
 from backend.photos import save_photo, photo_for_client
 from backend.collections import synchronize
 from backend.notifications import enqueue, drain
-from backend import operational_routes, accounts, billing, login_security
-from flask import Flask, jsonify, request, send_from_directory, send_file, abort
+from backend import operational_routes, accounts, billing, login_security, reporting
+from flask import Flask, jsonify, request, send_from_directory, send_file, abort, Response
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -105,7 +107,8 @@ PUBLIC = {'health_check', 'readiness', 'login', 'recover_account', 'get_vapid_pu
 STAFF = {'sync_offline_collections', 'get_collections_history', 'update_report_status',
          'update_household_status', 'add_maintenance_log', 'add_billing_record', 'add_announcement'}
 ADMIN = {'update_payment_settings', 'update_central_assets', 'add_household', 'add_worker',
-         'delete_household', 'delete_worker', 'get_registrations', 'review_registration', 'save_billing_config'}
+         'delete_household', 'delete_worker', 'get_registrations', 'review_registration', 'save_billing_config',
+         'admin_mark_bill_paid', 'export_reports'}
 AUTHENTICATED = {'get_all_data', 'get_puroks', 'get_latest_iot', 'get_payment_settings', 'handle_reports',
                  'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events', 'get_billing_config'}
 
@@ -344,10 +347,13 @@ def get_all_data():
 
         db.execute('''
             SELECT b.bill_id, b.previous_reading, b.present_reading, b.consumption_m3, b.total_amount, b.payment_status, b.payment_date, b.billed_at, b.billing_snapshot,
-                   u.username AS biller_username, m.serial_number, m.household_id
+                   b.collected_by, u_col.username AS collector_username,
+                   u.username AS biller_username, m.serial_number, m.household_id, h.family_head_name
             FROM billing_records b
             JOIN water_meters m ON b.meter_id = m.meter_id
+            LEFT JOIN households h ON m.household_id = h.household_id
             LEFT JOIN users u ON b.billed_by = u.user_id
+            LEFT JOIN users u_col ON b.collected_by = u_col.user_id
             ORDER BY b.bill_id DESC;
         ''')
         billing_records = []
@@ -359,6 +365,7 @@ def get_all_data():
             billing_records.append({
                 'bill_id': f"BILL-{b_row['bill_id']}",
                 'house_id': f"HH-{b_row['household_id']}",
+                'family_head_name': b_row.get('family_head_name') or '',
                 'account_number': b_row['serial_number'],
                 'billing_month': month_str,
                 'previous_reading': b_row['previous_reading'],
@@ -369,7 +376,9 @@ def get_all_data():
                 'billing_breakdown': snapshot,
                 'total_due': b_row['total_amount'],
                 'billed_by': b_row.get('biller_username') or 'Unknown',
+                'paid_to': b_row.get('collector_username') or '',
                 'date': dt or '',
+                'payment_date': b_row.get('payment_date') or '',
                 'status': b_row['payment_status']
             })
 
@@ -396,7 +405,9 @@ def get_all_data():
         collections_history = db.fetchall()
 
         # Load resident reports
-        db.execute("SELECT * FROM resident_reports ORDER BY report_id DESC;")
+        db.execute("""SELECT r.*, h.family_head_name, p.purok_name FROM resident_reports r
+            LEFT JOIN households h ON r.household_id = ('HH-' || h.household_id) OR r.household_id = CAST(h.household_id AS TEXT)
+            LEFT JOIN puroks p ON h.purok_id = p.purok_id ORDER BY r.report_id DESC;""")
         resident_reports = db.fetchall()
 
         who = principal()
@@ -434,6 +445,30 @@ def get_puroks():
         db.execute("SELECT purok_id, purok_name FROM puroks ORDER BY purok_id ASC;")
         return jsonify({'status': 'success', 'puroks': [p['purok_name'] for p in db.fetchall()]})
 
+@app.route('/api/reports/export', methods=['GET', 'POST'])
+@jwt_required()
+def export_reports():
+    require_role('admin')
+    if request.method == 'POST':
+        body = request.get_json(silent=True) or {}
+        report_type = body.get('report_type')
+        export_format = body.get('format', 'csv')
+        filters = body.get('filters', {})
+    else:
+        report_type = request.args.get('report_type')
+        export_format = request.args.get('format', 'csv')
+        filters = {k: v for k, v in request.args.items() if k not in ('report_type', 'format')}
+
+    if not report_type:
+        abort(400, description='report_type is required (billing, collections, directory, incident_reports)')
+
+    data, mimetype, filename = reporting.generate_export(report_type, export_format, filters)
+
+    response = Response(data, mimetype=mimetype)
+    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return response
+
 # ==============================================================================
 # IoT Real-time Telemetry Endpoints (ESP32 Integration)
 # ==============================================================================
@@ -447,8 +482,16 @@ def iot_telemetry():
     if not hmac.compare_digest(request.headers.get('X-IoT-Secret', ''), IOT_DEVICE_SECRET):
         app.logger.warning('Telemetry authentication failed')
         abort(401, description='Unauthorized device')
-    data = request.get_json()
-    water_level = int(number(data.get('water_level_percentage', data.get('tank_level')), 'water level', 0, 100))
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        abort(400, description='Invalid telemetry JSON payload')
+
+    raw_wl = data.get('water_level_percentage', data.get('tank_level'))
+    if raw_wl is None:
+        water_level = None
+    else:
+        water_level = int(number(raw_wl, 'water level', 0, 100))
+
     turbidity = number(data.get('turbidity_ntu', data.get('turbidity')), 'turbidity', 0, 10000)
     tds = int(number(data.get('tds_ppm', data.get('tds')), 'TDS', 0, 100000))
 
@@ -491,7 +534,7 @@ def iot_telemetry():
                 )
 
         # 2. Critically Low Water Level Check (<= 20%)
-        if water_level <= 20:
+        if water_level is not None and water_level <= 20:
             db.execute("""
                 SELECT COUNT(*) as cnt FROM announcements
                 WHERE author = 'System Sensor Alert'
@@ -619,6 +662,73 @@ def get_collections_history():
             records = [r for r in records if r['collected_by'] == principal()['id']]
         return jsonify({"status": "success", "collections": records})
 
+@app.route('/api/admin/billing/mark-paid', methods=['POST'])
+@jwt_required()
+@limiter.limit('60 per minute', override_defaults=True)
+def admin_mark_bill_paid():
+    """Allows Administrator to record in-person Barangay Hall payment for a specific bill."""
+    admin = require_role('admin')
+    data = request.get_json(silent=True) or {}
+    raw_bill = data.get('bill_id')
+    if not raw_bill:
+        abort(400, description='bill_id is required')
+    bill_id = identifier(raw_bill, 'BILL-')
+
+    payment_method = str(data.get('payment_method') or 'Cash (Barangay Hall)').strip()
+    if not payment_method or len(payment_method) > 100:
+        abort(400, description='Invalid payment method')
+
+    raw_date = data.get('payment_date')
+    if raw_date:
+        payment_date = timestamp(raw_date)
+    else:
+        payment_date = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+    admin_username = admin['id']
+    admin_user_id = admin['record']['user_id']
+
+    with get_db() as db:
+        if not db.is_pg:
+            db.execute('BEGIN IMMEDIATE')
+
+        db.execute('''
+            SELECT b.bill_id, b.total_amount, b.payment_status, b.payment_date, b.meter_id,
+                   m.household_id, h.family_head_name
+            FROM billing_records b
+            JOIN water_meters m ON b.meter_id = m.meter_id
+            JOIN households h ON m.household_id = h.household_id
+            WHERE b.bill_id = ?''' + (' FOR UPDATE' if db.is_pg else ''), (bill_id,))
+        bill = db.fetchone()
+        if not bill:
+            abort(404, description='Billing record not found')
+
+        if bill['payment_status'] == 'Paid':
+            abort(409, description='This bill has already been paid and settled.')
+
+        db.execute('''
+            UPDATE billing_records
+            SET payment_status = 'Paid', payment_date = ?, collected_by = ?, is_synced = 1
+            WHERE bill_id = ? AND payment_status = 'Unpaid'
+        ''', (payment_date, admin_user_id, bill_id))
+        if db.rowcount == 0:
+            abort(409, description='Conflict: Bill has already been marked as paid.')
+
+        amount = float(Decimal(str(bill['total_amount'])).quantize(Decimal('.01')))
+
+    return jsonify({
+        'status': 'success',
+        'message': f"Bill BILL-{bill_id} successfully marked as paid.",
+        'bill_id': f"BILL-{bill_id}",
+        'household_id': f"HH-{bill['household_id']}",
+        'family_head_name': bill['family_head_name'],
+        'amount_paid': amount,
+        'payment_status': 'Paid',
+        'payment_date': payment_date,
+        'payment_method': payment_method,
+        'confirmed_by': admin_username
+    })
+
+
 # ==============================================================================
 # Resident Reports Endpoints
 # ==============================================================================
@@ -705,10 +815,10 @@ def poll_notifications():
         is_low_level = False
         if telemetry_dict:
             turb = telemetry_dict.get('turbidity_ntu') or 0.0
-            wl = telemetry_dict.get('water_level_percentage', 100)
+            wl = telemetry_dict.get('water_level_percentage')
             if turb > 5.0:
                 is_contaminated = True
-            if wl <= 20:
+            if wl is not None and wl <= 20:
                 is_low_level = True
 
         return jsonify({

@@ -3,10 +3,15 @@
  * WATERHALL - BARANGAY TAGPOPONGAN IOT RESERVOIR MONITORING NODE
  * ==============================================================================
  * Hardware: ESP32 DevKit V1 (30-pin / 38-pin)
- * Sensors:
- *   1. JSN-SR04T Waterproof Ultrasonic Sensor (Water Level)
- *   2. Analog Turbidity Sensor (Turbidity NTU)
- *   3. Analog TDS Meter Sensor (Total Dissolved Solids ppm)
+ * Physical Sensors (Real Hardware Only):
+ *   1. JSN-SR04T Waterproof Ultrasonic Distance Sensor (TRIG=GPIO18, ECHO=GPIO19)
+ *   2. Gravity Analog Turbidity Sensor (AOUT=GPIO34 / ADC1_CH6)
+ *   3. Gravity Analog TDS Meter Sensor (AOUT=GPIO35 / ADC1_CH7)
+ * Status LED: Built-in LED (GPIO2)
+ *
+ * NOTE: Exactly three physical sensors are deployed at the central reservoir.
+ * There is NO pH sensor, NO pipe flow sensor (YF-S201), and NO temperature probe.
+ * Water level returns NULL if the JSN-SR04T times out or is disconnected.
  *
  * Backend Endpoint:
  *   POST <configured HTTPS origin>/api/iot/telemetry
@@ -21,7 +26,8 @@
 // ==============================================================================
 // 1. NETWORK & SERVER CONFIGURATION
 // ==============================================================================
-// Copy device_config.example.h to the ignored device_config.h and configure it.
+// Copy device_config.local.example.h (for testing) or device_config.production.example.h (for production)
+// to the ignored device_config.h and configure it before flashing.
 #include "device_config.h"
 const String SERVER_URL = String(SERVER_BASE_URL) + "/api/iot/telemetry";
 
@@ -75,8 +81,8 @@ int readWaterLevelPercentage() {
   long duration = pulseIn(PIN_ECHO, HIGH, 30000);
 
   if (duration == 0) {
-    Serial.println("[JSN-SR04T] Warning: No echo pulse detected (out of range or sensor disconnected).");
-    return 68; // Fallback baseline if disconnected during bench test
+    Serial.println("[JSN-SR04T] ERROR: Echo timeout or sensor disconnected. Water level reading unavailable.");
+    return -1;
   }
 
   // Speed of sound: ~0.0343 cm/microsecond (divide by 2 for round-trip)
@@ -228,7 +234,11 @@ void loop() {
 
     // 2. Format JSON Payload matching server schema
     String jsonPayload = "{";
-    jsonPayload += "\"water_level_percentage\":" + String(waterLevelPct) + ",";
+    if (waterLevelPct >= 0) {
+      jsonPayload += "\"water_level_percentage\":" + String(waterLevelPct) + ",";
+    } else {
+      jsonPayload += "\"water_level_percentage\":null,";
+    }
     jsonPayload += "\"turbidity_ntu\":" + String(turbidityNTU, 2) + ",";
     jsonPayload += "\"tds_ppm\":" + String(tdsPPM);
     jsonPayload += "}";

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'config.dart';
 import 'notification_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -39,7 +40,9 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late final WebViewController _controller;
+  final ImagePicker _imagePicker = ImagePicker();
   static const _secure = FlutterSecureStorage();
+  static const int _maxPhotoBytes = 2 * 1024 * 1024;
   String _activeServerUrl = AppConfig.serverBaseUrl;
   bool _isLoading = true;
   bool _initialized = false;
@@ -108,6 +111,10 @@ class _MainScreenState extends State<MainScreen> {
           }
         },
       )
+      ..addJavaScriptChannel(
+        'NativePhotoPicker',
+        onMessageReceived: _handleNativePhotoPickerRequest,
+      )
       ..addJavaScriptChannel('WaterHallAuth', onMessageReceived: (message) {
         _bridgeWrites = _bridgeWrites.catchError((_) {}).then((_) => _handleAuthMessage(message.message));
       })
@@ -151,6 +158,87 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _bridgeWrites = Future<void>.value();
+
+  Future<void> _handleNativePhotoPickerRequest(JavaScriptMessage message) async {
+    final currentUrl = Uri.tryParse(await _controller.currentUrl() ?? '');
+    final appOrigin = Uri.tryParse(_activeServerUrl)?.origin;
+    if (currentUrl?.origin != appOrigin || currentUrl?.queryParameters['role'] != 'resident') return;
+
+    late final Map<String, dynamic> request;
+    try {
+      request = json.decode(message.message) as Map<String, dynamic>;
+    } catch (_) {
+      return;
+    }
+
+    final requestId = request['request_id'];
+    final sourceName = request['source'];
+    if (requestId is! String || requestId.isEmpty || requestId.length > 100) return;
+    if (sourceName != 'gallery' && sourceName != 'camera') {
+      await _sendPhotoPickerResult(requestId, error: 'Choose a photo source and try again.');
+      return;
+    }
+
+    try {
+      final image = await _imagePicker.pickImage(
+        source: sourceName == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (image == null) {
+        await _sendPhotoPickerResult(requestId);
+        return;
+      }
+
+      final bytes = await image.readAsBytes();
+      if (bytes.length > _maxPhotoBytes) {
+        await _sendPhotoPickerResult(requestId, error: 'Photo must be at most 2 MiB.');
+        return;
+      }
+
+      final mimeType = image.mimeType?.toLowerCase() ?? _photoMimeType(image.name);
+      if (!const {'image/jpeg', 'image/png', 'image/webp'}.contains(mimeType)) {
+        await _sendPhotoPickerResult(requestId, error: 'Use a JPEG, PNG or WebP photo.');
+        return;
+      }
+
+      await _sendPhotoPickerResult(
+        requestId,
+        dataUrl: 'data:$mimeType;base64,${base64Encode(bytes)}',
+        fileName: image.name,
+      );
+    } catch (_) {
+      await _sendPhotoPickerResult(requestId, error: 'Could not load selected photo.');
+    }
+  }
+
+  String? _photoMimeType(String fileName) {
+    final extension = fileName.toLowerCase().split('.').last;
+    return switch (extension) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => null,
+    };
+  }
+
+  Future<void> _sendPhotoPickerResult(
+    String requestId, {
+    String? dataUrl,
+    String? fileName,
+    String? error,
+  }) async {
+    final jsRequestId = jsonEncode(requestId);
+    final jsDataUrl = jsonEncode(dataUrl);
+    final jsFileName = jsonEncode(fileName);
+    final jsError = jsonEncode(error);
+    await _controller.runJavaScript('''
+      if (typeof window.waterhallPhotoPickerResult === 'function') {
+        window.waterhallPhotoPickerResult($jsRequestId, $jsDataUrl, $jsFileName, $jsError);
+      }
+    ''');
+  }
 
   Future<void> _handleAuthMessage(String message) async {
     try {

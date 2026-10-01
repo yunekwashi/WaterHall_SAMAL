@@ -131,15 +131,18 @@ def add_billing_record():
         meter = db.fetchone()
         if not meter:
             abort(404, description='Meter not found')
-        if abs(Decimal(str(meter['last_reading'])) - previous) > Decimal('.0005'):
+        meter_last = Decimal(str(meter['last_reading'] if meter['last_reading'] is not None else 0))
+        if abs(meter_last - previous) > Decimal('.0005'):
             abort(409, description='Meter reading changed; refresh before billing')
-        db.execute('SELECT bill_id FROM billing_records WHERE meter_id = ? AND billed_at LIKE ?', (meter['meter_id'], date[:7] + '%'))
+        cycle = text(data.get('billing_month'), 'billing cycle', 20, 0) if data.get('billing_month') else date[:7]
+        db.execute('SELECT bill_id FROM billing_records WHERE meter_id = ? AND billed_at LIKE ?', (meter['meter_id'], cycle + '%'))
         if db.fetchone():
             abort(409, description='This meter already has a bill for the selected month')
+        billed_at = date if date.startswith(cycle) else f"{cycle}-01T00:00:00Z"
         db.execute('''INSERT INTO billing_records (meter_id, previous_reading, present_reading, consumption_m3, total_amount,
             payment_status, billed_at, billed_by, is_synced, billing_snapshot) VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?, 1, ?)''',
             (meter['meter_id'], float(previous), float(current), float(Decimal(snapshot['consumption'])),
-             str(total), date, who['record']['user_id'], json.dumps(snapshot)))
+             str(total), billed_at, who['record']['user_id'], json.dumps(snapshot)))
         bill_id = db.lastrowid
         db.execute('UPDATE water_meters SET last_reading = ? WHERE meter_id = ?', (float(current), meter['meter_id']))
         result = finish(db, operation, {'status': 'success', 'bill_id': f'BILL-{bill_id}', 'billing_breakdown': snapshot})

@@ -8,13 +8,22 @@ import time
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import expect
 from PIL import Image
 from werkzeug.serving import make_server
 from backend.server import app
 from backend.db_adapter import get_db
 
-pytestmark = pytest.mark.skipif(os.getenv('RUN_BROWSER_TESTS') != '1', reason='Opt-in real browser tests')
+try:
+    from playwright.sync_api import expect
+    _HAS_PLAYWRIGHT = True
+except ImportError:
+    expect = None
+    _HAS_PLAYWRIGHT = False
+
+pytestmark = pytest.mark.skipif(
+    os.getenv('RUN_BROWSER_TESTS') != '1' or not _HAS_PLAYWRIGHT,
+    reason='Opt-in real browser tests require Playwright and RUN_BROWSER_TESTS=1',
+)
 
 
 @pytest.fixture
