@@ -3,28 +3,31 @@ import datetime
 import json
 from decimal import Decimal
 
-from flask import abort, jsonify, request
+from flask import abort, jsonify, request, Response
 from backend.db_adapter import get_db
 from backend.security import principal, require_role, text, number, identifier, timestamp
-from backend.photos import save_photo, photo_for_client
+from backend.photos import save_photo, report_photo_metadata, read_report_photo
 from backend.operations import begin, finish
 from backend.notifications import enqueue
 from backend import billing
+
+
+REPORT_METADATA_COLUMNS = """r.report_id, r.household_id, r.report_type, r.description,
+    r.status, r.created_at, r.resolved_at,
+    CASE WHEN r.photo_base64 IS NOT NULL AND r.photo_base64 <> '' THEN 1 ELSE 0 END AS has_photo"""
 
 
 def handle_reports():
     who = principal()
     if request.method == 'GET':
         with get_db() as db:
-            db.execute("""SELECT r.*, h.family_head_name, p.purok_name FROM resident_reports r
+            own_filter = ' WHERE r.household_id IN (?, ?)' if who['role'] == 'resident' else ''
+            params = (who['id'], who['id'][3:]) if who['role'] == 'resident' else ()
+            db.execute(f"""SELECT {REPORT_METADATA_COLUMNS}, h.family_head_name, p.purok_name FROM resident_reports r
                 LEFT JOIN households h ON r.household_id = ('HH-' || h.household_id) OR r.household_id = CAST(h.household_id AS TEXT)
-                LEFT JOIN puroks p ON h.purok_id = p.purok_id ORDER BY r.report_id DESC""")
+                LEFT JOIN puroks p ON h.purok_id = p.purok_id{own_filter} ORDER BY r.report_id DESC LIMIT 50""", params)
             reports = db.fetchall()
-            if who['role'] == 'resident':
-                reports = [r for r in reports if str(r['household_id']) in (who['id'], who['id'][3:])]
-            for report in reports[:50]:
-                report['photo_base64'] = photo_for_client(report.get('photo_base64'))
-            return jsonify(status='success', reports=reports[:50])
+            return jsonify(status='success', reports=[report_photo_metadata(r) for r in reports])
     data = request.get_json()
     supplied = data.get('household_id')
     hh = identifier(who['id'] if who['role'] == 'resident' else supplied, 'HH-')
@@ -44,6 +47,24 @@ def handle_reports():
                    (f'HH-{hh}', kind, description, photo))
         result = finish(db, operation, {'status': 'success', 'report_id': db.lastrowid})
     return jsonify(result)
+
+
+def get_report_photo(report_id):
+    who = principal()
+    report_id = identifier(report_id)
+    with get_db() as db:
+        # Check ownership before selecting the potentially large private evidence.
+        db.execute('SELECT household_id FROM resident_reports WHERE report_id = ?', (report_id,))
+        report = db.fetchone()
+        if not report:
+            abort(404, description='Report not found')
+        if who['role'] == 'resident' and str(report['household_id']) not in (who['id'], who['id'][3:]):
+            abort(403, description='You may only view evidence for your own household')
+        # Admin and Worker retain their existing report access policy.
+        db.execute('SELECT photo_base64 FROM resident_reports WHERE report_id = ?', (report_id,))
+        photo = db.fetchone()
+    raw, mime = read_report_photo(photo['photo_base64'] if photo else None)
+    return Response(raw, mimetype=mime, headers={'Content-Disposition': f'inline; filename="report-{report_id}.jpg"'})
 
 
 def update_report_status():

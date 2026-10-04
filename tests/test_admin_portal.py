@@ -3,6 +3,7 @@ import json
 import re
 from pathlib import Path
 import pytest
+from backend.db_adapter import get_db
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN_WEB = ROOT / 'admin_web'
@@ -130,3 +131,23 @@ def test_admin_assets_served_by_backend(system):
     app_body = res_app.data.decode('utf-8')
     assert 'isFetchingData' in app_body
     assert 'checkServerHealth' in app_body
+
+
+def test_admin_all_data_uses_authoritative_collection_purok(system):
+    client, headers, _ = system
+    with get_db() as db:
+        db.execute("INSERT INTO puroks (purok_name) VALUES ('Purok 7')")
+        purok = db.lastrowid
+        db.execute('UPDATE households SET purok_id = ? WHERE household_id = 1', (purok,))
+        for transaction, household, collector in [('ACTUAL', 1, 'worker'), ('UNKNOWN', 9999, 'other-worker')]:
+            db.execute('INSERT INTO payment_collections (transaction_id, household_id, amount_collected, collection_date, collected_by) VALUES (?, ?, 170, ?, ?)', (transaction, household, '2026-01-01', collector))
+    response = client.get('/api/all-data?role=admin', headers=headers['admin'])
+    assert response.status_code == 200
+    records = {row['transaction_id']: row for row in response.json['collectionsHistory']}
+    assert records['ACTUAL']['purok_name'] == 'Purok 7'
+    assert records['UNKNOWN']['purok_name'] is None
+    reference = client.get('/api/collections/history', headers=headers['admin']).json['collections']
+    assert records['ACTUAL']['purok_name'] == next(row for row in reference if row['transaction_id'] == 'ACTUAL')['purok_name']
+    worker = client.get('/api/all-data', headers=headers['worker']).json['collectionsHistory']
+    assert [row['transaction_id'] for row in worker] == ['ACTUAL']
+    assert client.get('/api/all-data', headers=headers['HH-1']).json['collectionsHistory'] == []

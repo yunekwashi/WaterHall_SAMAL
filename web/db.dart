@@ -587,11 +587,17 @@ class Database {
   // ==============================================================================
   // Resident Incident / Service Reports
   // ==============================================================================
-  Future<bool> submitResidentReport(String householdId, String reportType, String description, {String? photo}) async {
-    try {
-      await queueAction('/api/reports/add', {'household_id': householdId, 'report_type': reportType, 'description': description, 'photo_base64': photo});
-      return true;
-    } catch (_) { return false; }
+  Future<bool> submitResidentReport(String householdId, String reportType, String description,
+      {String? photo, required String reportOperationId}) async {
+    // Resident reports succeed only after server acknowledgement. Worker queues
+    // and their offline synchronization retain their existing behavior.
+    final xhr = await apiRequest('/api/reports/add', method: 'POST',
+      requestHeaders: {'Content-Type': 'application/json'},
+      sendData: json.encode({'operation_id': reportOperationId,
+        'household_id': householdId, 'report_type': reportType,
+        'description': description, 'photo_base64': photo}));
+    final response = json.decode(xhr.responseText ?? '{}');
+    return response['status'] == 'success' && response['report_id'] != null;
   }
 
   // ==============================================================================

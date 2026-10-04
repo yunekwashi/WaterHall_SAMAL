@@ -23,6 +23,14 @@ class AppController {
   String? _reportPhoto;
   String? _pendingNativePhotoRequestId;
   int _photoRequestCounter = 0;
+  int _photoSelectionVersion = 0;
+  bool _processingReportPhoto = false;
+  bool _submittingResidentReport = false;
+  int _residentReportAttemptVersion = 0;
+  String? _residentReportOperationId;
+  void Function()? _restoreReportDraft;
+  Timer? _reportDraftTimer;
+  static const _reportDraftKey = 'waterhall_resident_report_draft';
 
   // Cached UI Elements
   late Element loginView;
@@ -109,6 +117,15 @@ class AppController {
       _closeRealtimeStream();
       currentWorker = null;
       currentResidentId = null;
+      _pendingNativePhotoRequestId = null;
+      _photoSelectionVersion++;
+      _processingReportPhoto = false;
+      _residentReportAttemptVersion++;
+      _submittingResidentReport = false;
+      residentViewSupport.querySelectorAll('[disabled]').forEach((field) => field.attributes.remove('disabled'));
+      _residentReportOperationId = null;
+      _reportDraftTimer?.cancel();
+      window.localStorage.remove(_reportDraftKey);
       activeHouseholdId = null;
       _reportPhoto = null;
       document.getElementById('collection-review-modal')?.remove();
@@ -693,6 +710,7 @@ class AppController {
     if (residentPhotoPreview != null) {
       residentPhotoPreview.style.display = 'none';
       residentPhotoPreview.style.backgroundImage = '';
+      residentPhotoPreview.children.clear();
     }
 
     // 3. Clear worker directory, billing, and announcement fields
@@ -1719,6 +1737,7 @@ class AppController {
     }
 
     switchTab('view-resident-home');
+    _restoreReportDraft?.call();
   }
 
   void renderResidentDashboard() {
@@ -2045,32 +2064,85 @@ class AppController {
     final galleryInput = document.getElementById('resident-gallery-input') as FileUploadInputElement?;
     final cameraInput = document.getElementById('resident-camera-input') as FileUploadInputElement?;
     final photoInput = document.getElementById('resident-photo-input') as FileUploadInputElement?;
+    final reportCategory = document.getElementById('resident-issue-category') as SelectElement?;
+    final reportDescription = document.getElementById('resident-log-desc') as TextAreaElement?;
+
+    void saveDraft() {
+      if (currentResidentId == null || !db.checkSession()) return;
+      try {
+        window.localStorage[_reportDraftKey] = json.encode({
+          'owner': currentAccount(), 'category': reportCategory?.value,
+          'description': reportDescription?.value, 'photo': _reportPhoto,
+          'file_name': document.getElementById('resident-photo-name')?.text,
+          'operation_id': _residentReportOperationId,
+          'picker_pending': _pendingNativePhotoRequestId != null,
+        });
+      } catch (_) {
+        showToast('Device storage is full. Keep this screen open to retain your draft.');
+      }
+    }
 
     void showSelectedPhoto(String dataUrl, String fileName) {
       _reportPhoto = dataUrl;
       document.getElementById('resident-photo-name')?.text = fileName;
       final preview = document.getElementById('resident-photo-preview');
       preview?.children.clear();
+      preview?.style.display = 'block';
       final image = ImageElement(src: dataUrl)..alt = 'Selected evidence preview';
       preview?.append(image);
       document.getElementById('resident-photo-preview-card')?.style.display = 'block';
       document.getElementById('resident-photo-pickers')?.style.display = 'none';
     }
 
+    Future<void> acceptPhoto(String dataUrl, String fileName) async {
+      final version = ++_photoSelectionVersion;
+      _processingReportPhoto = true;
+      final token = window.localStorage['waterhall_jwt'];
+      try {
+        final match = RegExp(r'^data:image/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$').firstMatch(dataUrl);
+        if (match == null) throw const FormatException();
+        if (dataUrl.length > 2 * 1024 * 1024 * 4 ~/ 3 + 100 ||
+            base64.decode(match.group(2)!).length > 2 * 1024 * 1024) {
+          throw StateError('Photo too large');
+        }
+        final image = ImageElement();
+        final loaded = Completer<void>();
+        final onLoad = image.onLoad.listen((_) { if (!loaded.isCompleted) loaded.complete(); });
+        final onError = image.onError.listen((_) { if (!loaded.isCompleted) loaded.completeError(const FormatException()); });
+        try {
+          image.src = dataUrl;
+          await loaded.future.timeout(const Duration(seconds: 10));
+          if (image.naturalWidth * image.naturalHeight > 12000000) throw const FormatException();
+        } finally { await onLoad.cancel(); await onError.cancel(); }
+        if (version != _photoSelectionVersion || token != window.localStorage['waterhall_jwt'] || currentResidentId == null) return;
+        _residentReportOperationId = null;
+        showSelectedPhoto(dataUrl, fileName);
+        saveDraft();
+      } catch (error) {
+        if (version != _photoSelectionVersion || token != window.localStorage['waterhall_jwt'] || currentResidentId == null) return;
+        showToast(error is StateError ? 'Photo must be at most 2 MiB.' : 'Invalid image. Use a JPEG, PNG or WebP photo.');
+      } finally {
+        if (version == _photoSelectionVersion) _processingReportPhoto = false;
+      }
+    }
+
     js.context['waterhallPhotoPickerResult'] = js.allowInterop((dynamic requestId, dynamic dataUrl, dynamic fileName, dynamic error) {
-      if (requestId != _pendingNativePhotoRequestId) return;
+      if (currentResidentId == null || requestId == null || requestId != _pendingNativePhotoRequestId) return;
       _pendingNativePhotoRequestId = null;
+      saveDraft();
       if (error is String && error.isNotEmpty) {
         showToast(error);
         return;
       }
       if (dataUrl is String && dataUrl.isNotEmpty) {
-        showSelectedPhoto(dataUrl, fileName is String && fileName.isNotEmpty ? fileName : 'Selected photo');
+        unawaited(acceptPhoto(dataUrl, fileName is String && fileName.isNotEmpty ? fileName : 'Selected photo'));
       }
     });
 
     void openPhotoPicker(FileUploadInputElement? fallbackInput, String source) {
+      if (currentResidentId == null || _submittingResidentReport || !db.checkSession()) return;
       if (!js.context.hasProperty('NativePhotoPicker')) {
+        fallbackInput?.value = '';
         fallbackInput?.click();
         return;
       }
@@ -2078,17 +2150,21 @@ class AppController {
 
       final requestId = '${DateTime.now().microsecondsSinceEpoch}-${++_photoRequestCounter}';
       _pendingNativePhotoRequestId = requestId;
+      saveDraft();
       try {
         js.context['NativePhotoPicker'].callMethod('postMessage', [
           json.encode({'request_id': requestId, 'source': source})
         ]);
       } catch (_) {
         _pendingNativePhotoRequestId = null;
-        fallbackInput?.click();
+        saveDraft();
+        showToast('Could not open the photo picker. Please try again.');
       }
     }
 
     void clearSelectedPhoto() {
+      _photoSelectionVersion++;
+      _processingReportPhoto = false;
       _reportPhoto = null;
       if (galleryInput != null) galleryInput.value = '';
       if (cameraInput != null) cameraInput.value = '';
@@ -2101,6 +2177,7 @@ class AppController {
     }
 
     Future<void> handleResidentPhotoFile(FileUploadInputElement? input) async {
+      if (currentResidentId == null || _submittingResidentReport) return;
       final files = input?.files;
       if (files == null || files.isEmpty) return;
       final file = files.first;
@@ -2108,28 +2185,29 @@ class AppController {
       // Validate size (max 2 MiB)
       if (file.size > 2 * 1024 * 1024) {
         showToast('Photo must be at most 2 MiB.');
-        clearSelectedPhoto();
         return;
       }
 
       // Validate mime type (JPEG, PNG, WebP)
       final type = file.type.toLowerCase();
-      final validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-      final ext = file.name.contains('.') ? file.name.split('.').last.toLowerCase() : '';
-      final validExts = ['jpg', 'jpeg', 'png', 'webp'];
-      if (!validTypes.contains(type) && !validExts.contains(ext)) {
+      final validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!validTypes.contains(type)) {
         showToast('Use a JPEG, PNG or WebP photo.');
-        clearSelectedPhoto();
         return;
       }
 
+      final token = window.localStorage['waterhall_jwt'];
+      final version = ++_photoSelectionVersion;
+      _processingReportPhoto = true;
       try {
         final reader = FileReader()..readAsDataUrl(file);
-        await reader.onLoad.first;
-        showSelectedPhoto(reader.result as String, file.name);
+        await reader.onLoad.first.timeout(const Duration(seconds: 10));
+        if (version != _photoSelectionVersion || token != window.localStorage['waterhall_jwt']) return;
+        await acceptPhoto(reader.result as String, file.name);
       } catch (_) {
-        showToast('Could not load selected photo.');
-        clearSelectedPhoto();
+        if (version == _photoSelectionVersion && token == window.localStorage['waterhall_jwt']) showToast('Could not load selected photo.');
+      } finally {
+        if (version == _photoSelectionVersion) _processingReportPhoto = false;
       }
     }
 
@@ -2141,17 +2219,44 @@ class AppController {
     // Button triggers
     document.getElementById('btn-resident-gallery-trigger')?.onClick.listen((_) => openPhotoPicker(galleryInput, 'gallery'));
     document.getElementById('btn-resident-camera-trigger')?.onClick.listen((_) => openPhotoPicker(cameraInput, 'camera'));
-    document.getElementById('btn-resident-photo-trigger')?.onClick.listen((_) => galleryInput?.click());
+    document.getElementById('btn-resident-photo-trigger')?.onClick.listen((_) => openPhotoPicker(galleryInput, 'gallery'));
     document.getElementById('btn-resident-photo-replace-gallery')?.onClick.listen((_) => openPhotoPicker(galleryInput, 'gallery'));
     document.getElementById('btn-resident-photo-replace-camera')?.onClick.listen((_) => openPhotoPicker(cameraInput, 'camera'));
     document.getElementById('btn-resident-photo-remove')?.onClick.listen((_) {
+      if (_submittingResidentReport) return;
+      _pendingNativePhotoRequestId = null;
+      _residentReportOperationId = null;
       clearSelectedPhoto();
+      saveDraft();
       showToast('Photo removed.');
     });
 
+    void draftChanged(Event _) {
+      _residentReportOperationId = null;
+      _reportDraftTimer?.cancel();
+      _reportDraftTimer = Timer(const Duration(milliseconds: 400), saveDraft);
+    }
+    reportDescription?.onInput.listen(draftChanged);
+    reportCategory?.onChange.listen(draftChanged);
+    _restoreReportDraft = () {
+      if (currentResidentId == null) return;
+      clearSelectedPhoto();
+      try {
+        final draft = json.decode(window.localStorage[_reportDraftKey] ?? '{}');
+        if (draft['owner'] != currentAccount()) return;
+        reportDescription?.value = draft['description'] as String? ?? '';
+        if (draft['category'] is String) reportCategory?.value = draft['category'];
+        _residentReportOperationId = draft['operation_id'] as String?;
+        if (draft['photo'] is String) showSelectedPhoto(draft['photo'], draft['file_name'] as String? ?? 'Selected photo');
+        if (draft['picker_pending'] == true) openPhotoPicker(null, 'recover');
+      } catch (_) { showToast('Draft could not be restored. Please select your photo again.'); }
+    };
+    _restoreReportDraft?.call();
+
     final btnSubmitReport = document.getElementById('btn-resident-submit-log');
     btnSubmitReport?.onClick.listen((e) async {
-      if (currentResidentId == null) return;
+      if (currentResidentId == null || _submittingResidentReport) return;
+      if (_pendingNativePhotoRequestId != null || _processingReportPhoto) { showToast('Finish or cancel the photo picker first.'); return; }
       final catSelect = document.getElementById('resident-issue-category') as SelectElement?;
       final descText = document.getElementById('resident-log-desc') as TextAreaElement?;
 
@@ -2162,13 +2267,39 @@ class AppController {
         return;
       }
 
-      final success = await db.submitResidentReport(currentResidentId!, cat, desc, photo: _reportPhoto);
-      if (success) {
-        showToast("Report saved. Pending reports sync when online.");
+      if (!db.checkSession()) return;
+      final token = window.localStorage['waterhall_jwt'];
+      _residentReportOperationId ??= operationId();
+      _reportDraftTimer?.cancel();
+      saveDraft();
+      _submittingResidentReport = true;
+      final attempt = ++_residentReportAttemptVersion;
+      final controls = residentViewSupport.querySelectorAll('button, input, textarea, select')
+          .where((element) => element.id != 'btn-resident-logout' && !element.attributes.containsKey('disabled')).toList();
+      for (final control in controls) { control.setAttribute('disabled', ''); }
+      try {
+        final success = await db.submitResidentReport(currentResidentId!, cat, desc,
+            photo: _reportPhoto, reportOperationId: _residentReportOperationId!);
+        if (token != window.localStorage['waterhall_jwt'] || currentResidentId == null) return;
+        if (!success) throw const ApiFailure();
+        showToast('Report submitted successfully.');
         if (descText != null) descText.value = '';
         clearSelectedPhoto();
-      } else {
-        showToast("Report was not saved. Please retry; keep your description.");
+        _residentReportOperationId = null;
+        window.localStorage.remove(_reportDraftKey);
+      } on ApiFailure catch (failure) {
+        if (failure.sessionChanged || token != window.localStorage['waterhall_jwt']) return;
+        showToast(failure.status == 413 ? 'Photo is too large. Choose a smaller photo; your draft is retained.'
+          : failure.status == 400 || failure.status == 422 ? 'Report or photo was rejected. Review your draft and retry.'
+          : failure.status == 403 ? 'This account cannot submit this report. Your draft is retained.'
+          : 'Report was not confirmed. Your draft and photo are retained; retry when connected.');
+      } catch (_) {
+        if (token == window.localStorage['waterhall_jwt']) showToast('Report was not confirmed. Your draft and photo are retained.');
+      } finally {
+        if (attempt == _residentReportAttemptVersion) {
+          _submittingResidentReport = false;
+          for (final control in controls) { control.attributes.remove('disabled'); }
+        }
       }
     });
 

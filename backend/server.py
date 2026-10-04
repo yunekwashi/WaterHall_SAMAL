@@ -9,7 +9,7 @@ import secrets
 from decimal import Decimal
 from backend import config
 from backend.security import principal, require_role, claims_for, text, password, number, identifier, timestamp, validate_push
-from backend.photos import save_photo, photo_for_client
+from backend.photos import save_photo, photo_for_client, report_photo_metadata
 from backend.collections import synchronize
 from backend.notifications import enqueue, drain
 from backend import operational_routes, accounts, billing, login_security, reporting
@@ -110,6 +110,7 @@ ADMIN = {'update_payment_settings', 'update_central_assets', 'add_household', 'a
          'delete_household', 'delete_worker', 'get_registrations', 'review_registration', 'save_billing_config',
          'admin_mark_bill_paid', 'export_reports'}
 AUTHENTICATED = {'get_all_data', 'get_puroks', 'get_latest_iot', 'get_payment_settings', 'handle_reports',
+                 'get_report_photo',
                  'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events', 'get_billing_config'}
 
 @app.before_request
@@ -397,15 +398,16 @@ def get_all_data():
 
         # Load recent synced collections for audit
         db.execute('''
-            SELECT c.*, h.family_head_name
+            SELECT c.*, h.family_head_name, p.purok_name
             FROM payment_collections c
             LEFT JOIN households h ON c.household_id = h.household_id
+            LEFT JOIN puroks p ON h.purok_id = p.purok_id
             ORDER BY c.collection_id DESC LIMIT 50;
         ''')
         collections_history = db.fetchall()
 
         # Load resident reports
-        db.execute("""SELECT r.*, h.family_head_name, p.purok_name FROM resident_reports r
+        db.execute(f"""SELECT {operational_routes.REPORT_METADATA_COLUMNS}, h.family_head_name, p.purok_name FROM resident_reports r
             LEFT JOIN households h ON r.household_id = ('HH-' || h.household_id) OR r.household_id = CAST(h.household_id AS TEXT)
             LEFT JOIN puroks p ON h.purok_id = p.purok_id ORDER BY r.report_id DESC;""")
         resident_reports = db.fetchall()
@@ -422,7 +424,7 @@ def get_all_data():
         elif who['role'] == 'worker':
             collections_history = [c for c in collections_history if c['collected_by'] == who['id']]
         for report in resident_reports:
-            report['photo_base64'] = photo_for_client(report.get('photo_base64'))
+            report_photo_metadata(report)
         db.execute("SELECT purok_id, purok_name FROM puroks ORDER BY purok_id ASC;")
         puroks = [p['purok_name'] for p in db.fetchall()]
         return jsonify({
@@ -736,6 +738,10 @@ def admin_mark_bill_paid():
 @app.route('/api/reports/add', methods=['POST'])
 def handle_reports():
     return operational_routes.handle_reports()
+
+@app.route('/api/reports/<int:report_id>/photo', methods=['GET'])
+def get_report_photo(report_id):
+    return operational_routes.get_report_photo(report_id)
 
 @app.route('/api/reports/update-status', methods=['POST'])
 @jwt_required()

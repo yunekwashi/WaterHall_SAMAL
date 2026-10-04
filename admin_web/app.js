@@ -1,6 +1,9 @@
 async function apiFetch(path, options = {}) {
   const token = jwtToken;
+  const generation = sessionGeneration;
   const authorized = !!options.headers?.Authorization;
+  const isCurrent = () => token === jwtToken && generation === sessionGeneration &&
+    (!options.isCurrent || options.isCurrent());
   const controller = new AbortController();
   const timeoutMs = options.timeout || 30000;
   const timer = setTimeout(() => controller.abort(new DOMException('Request timeout', 'AbortError')), timeoutMs);
@@ -18,17 +21,20 @@ async function apiFetch(path, options = {}) {
   try {
     const fetchOptions = { ...options, signal: controller.signal };
     delete fetchOptions.timeout;
+    delete fetchOptions.isCurrent;
     const response = await fetch(path, fetchOptions);
-    if (authorized && token !== jwtToken) throw new Error('Session changed');
-    if (authorized && response.status === 401) {
-      jwtToken = null;
-      try {
-        localStorage.removeItem('admin_jwt');
-        sessionStorage.clear();
-      } catch (_) {}
-      showLogin();
-      const error = document.getElementById('login-error');
-      if (error) { error.textContent = 'Session expired. Please sign in again.'; error.style.display = 'block'; }
+    if (authorized && !isCurrent()) throw new Error('Session changed');
+    if (controller.signal.aborted) throw controller.signal.reason;
+    let invalidToken = response.status === 401;
+    if (authorized && response.status === 422) {
+      const body = await response.clone().json().catch(() => ({}));
+      // JWT decoder messages only; unrelated form-validation 422s remain usable.
+      invalidToken = typeof body.msg === 'string' && /^(Not enough segments|Signature verification failed|Invalid (header|payload|crypto) (string|padding)|Invalid token type|Invalid (subject|audience|issuer|claim format in token)|Subject must be a string|JWT ID must be a string|Algorithm not (specified|supported)|The specified alg value is not allowed|Token is not yet valid|Token has expired|Missing claim:)/i.test(body.msg);
+      if (!isCurrent()) throw new Error('Session changed');
+      if (controller.signal.aborted) throw controller.signal.reason;
+    }
+    if (authorized && invalidToken) {
+      clearAdminSession('Session expired or invalid. Please sign in again.');
       throw new Error('Session expired');
     }
     return response;
@@ -43,8 +49,23 @@ async function apiFetch(path, options = {}) {
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 }
+
+function setTableRowHtml(row, html) {
+  // Standalone <td> fragments lose their cells when parsed outside a table.
+  const fragment = DOMPurify.sanitize('<table><tbody><tr>' + html + '</tr></tbody></table>', {
+    RETURN_DOM_FRAGMENT: true
+  });
+  const sanitizedRow = fragment.querySelector('tr');
+  row.replaceChildren(...(sanitizedRow ? sanitizedRow.childNodes : []));
+}
 let jwtToken = localStorage.getItem('admin_jwt');
+let sessionGeneration = 0;
+let dataRequestGeneration = 0;
+let loaderRequestGeneration = 0;
 let isServerOnline = false;
+let hasAdminData = false;
+let renderedDirectoryData = null;
+let renderedBillingData = null;
 let globalData = {
   households: [],
   workers: [],
@@ -56,6 +77,32 @@ let globalData = {
   residentReports: []
 };
 let charts = { collections: null, quality: null };
+const reportPhotoViews = new Set();
+
+function closeReportPhotoViews() {
+  for (const view of reportPhotoViews) {
+    view.controller.abort();
+    if (view.url) URL.revokeObjectURL(view.url);
+    view.popup.close();
+  }
+  reportPhotoViews.clear();
+}
+
+function invalidateAdminRequests() {
+  closeReportPhotoViews();
+  sessionGeneration++;
+  dataRequestGeneration++;
+  renderedDirectoryData = null;
+  renderedBillingData = null;
+  currentFetchController?.abort(new DOMException('Session ended', 'AbortError'));
+  currentFetchController = null;
+  isFetchingData = false;
+}
+
+function isCurrentAdminSession(token, generation) {
+  return !!token && token === jwtToken && generation === sessionGeneration &&
+    !document.body.classList.contains('server-offline');
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
@@ -69,7 +116,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Always verify server is alive first before displaying anything
+  const generation = sessionGeneration;
   const serverAlive = await checkServerHealth();
+  if (generation !== sessionGeneration) return;
 
   if (!serverAlive) {
     showAdminOfflineOverlay();
@@ -87,6 +136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function checkServerHealth() {
+  const generation = sessionGeneration;
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     isServerOnline = false;
     return false;
@@ -97,20 +147,22 @@ async function checkServerHealth() {
     const res = await fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeoutId);
     if (!res.ok) {
-      return await checkServerReadinessFallback();
+      return await checkServerReadinessFallback(generation);
     }
     const data = await res.json().catch(() => null);
+    if (generation !== sessionGeneration) return false;
     isServerOnline = !!(data && data.status === 'ok');
     if (!isServerOnline) {
-      return await checkServerReadinessFallback();
+      return await checkServerReadinessFallback(generation);
     }
     return true;
   } catch (e) {
-    return await checkServerReadinessFallback();
+    if (generation !== sessionGeneration) return false;
+    return await checkServerReadinessFallback(generation);
   }
 }
 
-async function checkServerReadinessFallback() {
+async function checkServerReadinessFallback(generation = sessionGeneration) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(new DOMException('Readiness check timeout', 'AbortError')), 5000);
@@ -118,14 +170,17 @@ async function checkServerReadinessFallback() {
     clearTimeout(timeoutId);
     if (res.ok) {
       const data = await res.json().catch(() => null);
+      if (generation !== sessionGeneration) return false;
       if (data && (data.status === 'ready' || data.status === 'ok')) {
         isServerOnline = true;
         return true;
       }
     }
+    if (generation !== sessionGeneration) return false;
     isServerOnline = false;
     return false;
   } catch (_) {
+    if (generation !== sessionGeneration) return false;
     isServerOnline = false;
     return false;
   }
@@ -137,7 +192,9 @@ window.addEventListener('offline', () => {
 });
 
 window.addEventListener('online', async () => {
+  const generation = sessionGeneration;
   const alive = await checkServerHealth();
+  if (generation !== sessionGeneration) return;
   if (alive) {
     hideAdminOfflineOverlay();
     showLogin();
@@ -150,15 +207,25 @@ window.addEventListener('online', async () => {
  */
 function performAutomaticLogoutDueToServerOffline() {
   const wasLoggedIn = !!jwtToken || !!localStorage.getItem('admin_jwt');
+  clearAdminSession(wasLoggedIn ? 'Server was turned off. For security, your session was automatically logged out. Please log in again.' : '');
+}
+
+function clearAdminSession(message = '') {
+  invalidateAdminRequests();
 
   // 1. Invalidate authentication credentials completely
   jwtToken = null;
+  const loginButton = document.getElementById('btn-login');
+  if (loginButton) { loginButton.disabled = false; loginButton.textContent = 'Login to Dashboard'; }
   try {
     localStorage.removeItem('admin_jwt');
     sessionStorage.clear();
   } catch (_) {}
 
   ratesDirty = false;
+  paymentSettingsDirty = false;
+  paymentSettingsRevision++;
+  hasAdminData = false;
   document.getElementById('billing-config-form')?.reset();
   // 2. Clear all sensitive in-memory data
   globalData = {
@@ -169,18 +236,16 @@ function performAutomaticLogoutDueToServerOffline() {
     maintenanceLogs: [],
     collectionsHistory: [],
     paymentSettings: {},
-    residentReports: []
+    residentReports: [], puroks: [], billingConfig: {}, centralAssets: {}
   };
 
   // 3. Clear sensitive dashboard tables from DOM
   const tables = [
     'maintenance-tbody',
-    'households-tbody',
-    'workers-tbody',
-    'billing-tbody',
-    'collections-audit-tbody',
+    'resident-tbody', 'worker-tbody', 'admin-billing-tbody',
+    'collections-history-tbody',
     'announcements-tbody',
-    'reports-tbody', 'registrations-tbody', 'resident-tbody', 'household-tbody', 'worker-tbody', 'admin-billing-tbody'
+    'reports-tbody', 'registrations-tbody'
   ];
   tables.forEach(id => {
     const el = document.getElementById(id);
@@ -206,6 +271,26 @@ function performAutomaticLogoutDueToServerOffline() {
     m.style.display = 'none';
     m.classList.remove('active');
   });
+  pendingPaymentBill = null;
+  document.querySelectorAll('.main-content input, .main-content textarea, .main-content select, .modal-overlay input, .modal-overlay textarea, .modal-overlay select').forEach(field => {
+    if (field.tagName === 'SELECT') field.selectedIndex = 0;
+    else field.value = '';
+  });
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-password').type = 'password';
+  document.getElementById('eye-show').style.display = 'block';
+  document.getElementById('eye-hide').style.display = 'none';
+  document.getElementById('btn-toggle-pw').style.color = 'var(--text-muted)';
+  for (const id of ['pay-modal-bill-id', 'pay-modal-household', 'pay-modal-cycle', 'pay-modal-date', 'pay-modal-amount', 'pay-modal-error', 'billing-config-status', 'registration-review-status']) {
+    document.getElementById(id).textContent = '';
+  }
+  for (const id of ['stat-households', 'stat-workers', 'stat-bills']) document.getElementById(id).textContent = '0';
+  for (const id of ['trend-households', 'trend-workers', 'trend-bills']) document.getElementById(id).textContent = '';
+  renderReservoir({});
+  for (const id of ['summary-level', 'summary-turbidity', 'summary-tds']) document.getElementById(id).textContent = 'Awaiting data';
+  document.getElementById('admin-db-offline-banner').style.display = 'none';
+  document.getElementById('btn-login-data-retry').style.display = 'none';
+  document.getElementById('registration-load-status').textContent = '';
 
   // 6. Ensure login screen is staged behind the overlay
   const loginScreen = document.getElementById('login-screen');
@@ -213,10 +298,11 @@ function performAutomaticLogoutDueToServerOffline() {
     loginScreen.style.display = 'flex';
   }
   const errEl = document.getElementById('login-error');
-  if (errEl && wasLoggedIn) {
-    errEl.textContent = 'Server was turned off. For security, your session was automatically logged out. Please log in again.';
-    errEl.style.display = 'block';
+  if (errEl) {
+    errEl.textContent = message;
+    errEl.style.display = message ? 'block' : 'none';
   }
+  showLogin();
 }
 
 function showAdminOfflineOverlay() {
@@ -229,6 +315,8 @@ function showAdminOfflineOverlay() {
   const overlay = document.getElementById('admin-offline-overlay');
   if (overlay) {
     overlay.style.display = 'flex';
+    const retryButton = document.getElementById('btn-admin-retry');
+    if (retryButton) retryButton.disabled = false;
     const statusText = document.getElementById('offline-status-text');
     if (statusText) statusText.textContent = 'Server is turned off. Access is locked.';
   }
@@ -242,12 +330,14 @@ function hideAdminOfflineOverlay() {
 }
 
 async function retryAdminConnection() {
+  const generation = sessionGeneration;
   const btn = document.getElementById('btn-admin-retry');
   const statusText = document.getElementById('offline-status-text');
   if (btn) { btn.textContent = 'Contacting server...'; btn.disabled = true; }
   if (statusText) statusText.textContent = 'Testing connection to server...';
 
   const alive = await checkServerHealth();
+  if (generation !== sessionGeneration) return;
   if (alive) {
     consecutiveHealthFailures = 0;
     if (statusText) statusText.textContent = 'Server is running! Unlocking login...';
@@ -274,7 +364,11 @@ setInterval(async () => {
   if (isHeartbeatRunning) return;
   isHeartbeatRunning = true;
   try {
+    const generation = sessionGeneration;
+    const requestGeneration = dataRequestGeneration;
+    const wasFetchingData = isFetchingData;
     const alive = await checkServerHealth();
+    if (generation !== sessionGeneration) return;
 
     if (!alive) {
       consecutiveHealthFailures++;
@@ -294,7 +388,7 @@ setInterval(async () => {
         showLogin(); // User was logged out; show login screen
       } else if (jwtToken && document.getElementById('login-screen')?.style.display === 'none') {
         // Trigger background data sync only if no fetch is currently running
-        if (!isFetchingData) {
+        if (!wasFetchingData && !isFetchingData && requestGeneration === dataRequestGeneration) {
           fetchData(true);
         }
       }
@@ -305,19 +399,29 @@ setInterval(async () => {
 }, 3500);
 
 function showLogin() {
+  const generation = sessionGeneration;
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('loading-overlay').style.opacity = '0';
-  setTimeout(() => { document.getElementById('loading-overlay').style.display = 'none'; }, 500);
+  setTimeout(() => {
+    if (generation === sessionGeneration) document.getElementById('loading-overlay').style.display = 'none';
+  }, 500);
 }
 
-function hideLoader() {
+function hideLoader(isCurrent) {
+  const generation = sessionGeneration;
+  if (!isCurrent) isCurrent = () => generation === sessionGeneration;
   setTimeout(() => {
+    if (!isCurrent()) return;
     document.getElementById('loading-overlay').style.opacity = '0';
-    setTimeout(() => { document.getElementById('loading-overlay').style.display = 'none'; }, 500);
-  }, 600);
+    setTimeout(() => {
+      if (isCurrent()) document.getElementById('loading-overlay').style.display = 'none';
+    }, 500);
+  }, 0);
 }
 
 document.getElementById('btn-login').addEventListener('click', async () => {
+  let generation = sessionGeneration;
+  const isCurrent = () => generation === sessionGeneration && !document.body.classList.contains('server-offline');
   const u = document.getElementById('login-username').value.trim();
   const p = document.getElementById('login-password').value.trim();
   const btn = document.getElementById('btn-login');
@@ -335,6 +439,7 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 
   // Strict check: if server is offline, abort immediately and lock portal
   const serverAlive = await checkServerHealth();
+  if (generation !== sessionGeneration) return;
   if (!serverAlive) {
     btn.textContent = 'Login to Dashboard';
     btn.disabled = false;
@@ -348,30 +453,37 @@ document.getElementById('btn-login').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: u, password: p })
     });
+    if (!isCurrent()) return;
     if (res.ok) {
       const data = await res.json();
+      if (!isCurrent()) return;
       if (data.role !== 'admin') {
         errEl.textContent = 'An administrator account is required.';
         errEl.style.display = 'block';
         return;
       }
+      invalidateAdminRequests();
+      generation = sessionGeneration;
       jwtToken = data.access_token;
       localStorage.setItem('admin_jwt', jwtToken);
       isServerOnline = true;
       document.getElementById('auth-name').textContent = data.name || 'Admin';
-      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('login-password').value = '';
       document.getElementById('loading-overlay').style.display = 'flex';
       document.getElementById('loading-overlay').style.opacity = '1';
       fetchData(false);
     } else {
       const errData = await res.json().catch(() => ({}));
+      if (!isCurrent()) return;
       errEl.textContent = errData.msg || 'Invalid credentials. Please try again.';
       errEl.style.display = 'block';
     }
   } catch (e) {
+    if (!isCurrent()) return;
     // Connection error during login attempt
     console.error('Login request failed:', e);
     const alive = await checkServerHealth();
+    if (!isCurrent()) return;
     if (!alive) {
       errEl.textContent = 'Cannot connect to server. Is it running?';
       errEl.style.display = 'block';
@@ -381,14 +493,15 @@ document.getElementById('btn-login').addEventListener('click', async () => {
       errEl.style.display = 'block';
     }
   } finally {
-    btn.textContent = 'Login to Dashboard';
-    btn.disabled = false;
+    if (generation === sessionGeneration) {
+      btn.textContent = 'Login to Dashboard';
+      btn.disabled = false;
+    }
   }
 });
 
 document.getElementById('btn-logout').addEventListener('click', () => {
-  localStorage.removeItem('admin_jwt');
-  jwtToken = null;
+  clearAdminSession();
   location.reload();
 });
 
@@ -434,8 +547,28 @@ document.querySelectorAll('.nav-item').forEach(item => {
 let currentFetchController = null;
 let isFetchingData = false;
 
+function showAdminDataError() {
+  const message = hasAdminData
+    ? 'Admin data could not refresh. Displayed data may be out of date. Please retry.'
+    : 'Admin data could not load. Please retry.';
+  document.getElementById('admin-data-status').textContent = message;
+  document.getElementById('admin-db-offline-banner').style.display = 'flex';
+  if (document.getElementById('login-screen').style.display !== 'none') {
+    const error = document.getElementById('login-error');
+    error.textContent = message;
+    error.style.display = 'block';
+    document.getElementById('btn-login-data-retry').style.display = 'block';
+  }
+}
+
+for (const id of ['btn-admin-data-retry', 'btn-login-data-retry']) {
+  document.getElementById(id).addEventListener('click', () => fetchData(false));
+}
+
 async function fetchData(silent = false) {
   const sessionToken = jwtToken;
+  const generation = sessionGeneration;
+  if (document.body.classList.contains('server-offline')) return;
   if (!jwtToken) {
     showLogin();
     if (!silent) hideLoader();
@@ -453,33 +586,34 @@ async function fetchData(silent = false) {
   }
 
   const fetchController = new AbortController();
+  const requestGeneration = ++dataRequestGeneration;
+  if (!silent) loaderRequestGeneration = requestGeneration;
+  const isCurrent = () => isCurrentAdminSession(sessionToken, generation) &&
+    requestGeneration === dataRequestGeneration;
+  const ownsLoader = () => isCurrentAdminSession(sessionToken, generation) &&
+    loaderRequestGeneration === requestGeneration;
+  const canRender = () => isCurrent() && !fetchController.signal.aborted;
   currentFetchController = fetchController;
   isFetchingData = true;
+  let loaded = false;
 
   try {
     const res = await apiFetch('/api/all-data?role=admin', {
-      headers: { 'Authorization': 'Bearer ' + jwtToken },
+      headers: { 'Authorization': 'Bearer ' + sessionToken },
       signal: fetchController.signal,
       timeout: 30000
     });
 
-    if (res.status === 401) {
-      localStorage.removeItem('admin_jwt');
-      jwtToken = null;
-      showLogin();
-      if (!silent) hideLoader();
-      return;
-    }
-
+    if (!canRender()) return;
     if (res.ok) {
-      isServerOnline = true;
-      hideAdminOfflineOverlay();
       const data = await res.json();
-      if (sessionToken !== jwtToken) return;
+      if (!canRender()) return;
+      if (!data || !['households', 'workers', 'billingRecords', 'maintenanceLogs', 'announcements', 'collectionsHistory', 'residentReports'].every(key => Array.isArray(data[key]))) {
+        throw new Error('Invalid Admin data response');
+      }
       globalData = data;
       renderBillingConfig(data.billingConfig || {});
       renderReservoir(data.centralAssets || {});
-      await loadRegistrations();
       renderDashboard(data);
       renderDirectory(data);
       renderAnnouncements(data.announcements || []);
@@ -487,21 +621,32 @@ async function fetchData(silent = false) {
       renderCollectionsHistory(data.collectionsHistory || []);
       renderPaymentSettings(data.paymentSettings || {});
       renderReports(data.residentReports || []);
+      hasAdminData = true;
+      loaded = true;
+      document.getElementById('admin-db-offline-banner').style.display = 'none';
+      document.getElementById('btn-login-data-retry').style.display = 'none';
+      document.getElementById('login-error').style.display = 'none';
+      loadRegistrations(canRender, fetchController.signal);
+      // The protected Admin-only response validates a stored or fresh session.
+      document.getElementById('login-screen').style.display = 'none';
+    } else if (res.status === 403) {
+      clearAdminSession('An administrator account is required. Please sign in again.');
     } else {
       // Non-ok response from server -> verify whether backend is truly down before showing offline overlay
       const alive = await checkServerHealth();
+      if (!canRender()) return;
       if (!alive) {
         showAdminOfflineOverlay();
       } else {
         console.warn('Backend responded with HTTP ' + res.status + ', but health check passed.');
+        showAdminDataError();
       }
     }
-    if (!silent) hideLoader();
+    if (!silent) hideLoader(ownsLoader);
+    return loaded;
   } catch (e) {
+    if (!isCurrent()) return;
     if (e.message === 'Session expired' || e.message === 'Session changed') {
-      hideAdminOfflineOverlay();
-      showLogin();
-      if (!silent) hideLoader();
       return;
     }
 
@@ -509,19 +654,22 @@ async function fetchData(silent = false) {
     const isAbort = e.name === 'AbortError' || fetchController.signal.aborted;
     if (isAbort) {
       console.info('fetchData request aborted/superseded without treating as server offline.');
-      if (!silent) hideLoader();
+      if (e.message === 'Request timeout') showAdminDataError();
+      if (!silent) hideLoader(ownsLoader);
       return;
     }
 
     // Network error: verify if server is actually offline before logging out
     console.warn('Backend server error during fetchData:', e);
     const alive = await checkServerHealth();
+    if (!isCurrent()) return;
     if (!alive) {
       showAdminOfflineOverlay();
     } else {
       console.info('Backend is alive (/api/health ok). Keeping admin session active despite transient fetchData error.');
+      showAdminDataError();
     }
-    if (!silent) hideLoader();
+    if (!silent) hideLoader(ownsLoader);
   } finally {
     if (currentFetchController === fetchController) {
       currentFetchController = null;
@@ -570,7 +718,7 @@ function renderDashboard(data) {
         ? `<br><div style="margin-top:6px;"><img src="${escapeHtml(log.photo_base64)}" style="max-width:140px; max-height:90px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:zoom-in;" data-report-photo="true" title="Click to view full image" /></div>`
         : '';
 
-      tr.innerHTML = DOMPurify.sanitize(
+      setTableRowHtml(tr,
         '<td>' + escapeHtml(log.task_id) + '</td>' +
         '<td>' + escapeHtml(log.purok) + '</td>' +
         '<td>' + escapeHtml(log.description) + photoHtml + '</td>' +
@@ -586,24 +734,32 @@ function renderCharts(data) {
   const ctxColl = document.getElementById('collectionsChart').getContext('2d');
   if (charts.collections) charts.collections.destroy();
 
-  const revByMonth = {};
+  // Five UTC calendar months, including the current month and zero receipts.
+  const now = new Date();
+  const labels = Array.from({length: 5}, (_, i) =>
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 4 + i, 1)).toISOString().slice(0, 7));
+  const revByMonth = Object.fromEntries(labels.map(month => [month, 0]));
   data.billingRecords.forEach(b => {
-    if (b.status === 'Paid') {
-      if (!revByMonth[b.billing_month]) revByMonth[b.billing_month] = 0;
-      revByMonth[b.billing_month] += b.total_due;
+    if (b.status === 'Paid' && b.payment_date) {
+      let timestamp = String(b.payment_date).replace(' ', 'T');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(timestamp)) timestamp += 'T00:00:00Z';
+      else if (!/(Z|[+-]\d{2}:\d{2})$/i.test(timestamp)) timestamp += 'Z';
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) return;
+      const month = date.toISOString().slice(0, 7);
+      if (Object.hasOwn(revByMonth, month)) revByMonth[month] += Number(b.total_due);
     }
   });
 
-  const labels = Object.keys(revByMonth).sort((a, b) => a.localeCompare(b)).slice(-5);
   const revData = labels.map(l => revByMonth[l]);
 
   charts.collections = new Chart(ctxColl, {
     type: 'line',
     data: {
-      labels: labels.length > 0 ? labels : ['No Data'],
+      labels,
       datasets: [{
         label: 'Collected Revenue',
-        data: revData.length > 0 ? revData : [0],
+        data: revData,
         borderColor: '#F4D03F',
         backgroundColor: 'rgba(244, 208, 63, 0.1)',
         borderWidth: 3,
@@ -632,6 +788,8 @@ function renderCharts(data) {
 }
 
 function renderDirectory(data) {
+  const signature = JSON.stringify({households:data.households, workers:data.workers, puroks:data.puroks});
+  if (signature === renderedDirectoryData) return;
   if (data.puroks && Array.isArray(data.puroks)) {
     populatePurokDropdown(data.puroks);
   }
@@ -639,16 +797,16 @@ function renderDirectory(data) {
   const resTbody = document.getElementById('resident-tbody');
   resTbody.innerHTML = '';
   if (!data.households || data.households.length === 0) {
-    resTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:32px;">No registered households yet. Click "+ Register Resident" to add one.</td></tr>';
+    resTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">No registered households yet. Click "+ Register Resident" to add one.</td></tr>';
   } else {
     data.households.forEach(h => {
       const tr = document.createElement('tr');
-      tr.innerHTML = DOMPurify.sanitize(
+      setTableRowHtml(tr,
         '<td><span class="badge" style="background:rgba(255,255,255,0.08);color:#fff;">' + escapeHtml(h.house_id) + '</span></td>' +
         '<td style="font-weight:600;">' + escapeHtml(h.owner_name) + '</td>' +
         '<td style="font-family:monospace;color:var(--text-muted);">' + escapeHtml(h.account_number) + '</td>' +
         '<td style="color:var(--text-muted);">' + (h.purok || '—') + '</td>' +
-        '<td style="text-align:center;"><button data-delete-household="' + escapeHtml(h.house_id) + '" style="background:none; border:none; color:var(--danger); cursor:pointer;" title="Remove Resident"><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></td>');
+        '<td class="no-print" style="text-align:center;"><button data-delete-household="' + escapeHtml(h.house_id) + '" style="background:none; border:none; color:var(--danger); cursor:pointer;" title="Remove Resident"><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></td>');
       resTbody.appendChild(tr);
     });
   }
@@ -657,25 +815,29 @@ function renderDirectory(data) {
   const workTbody = document.getElementById('worker-tbody');
   workTbody.innerHTML = '';
   if (!data.workers || data.workers.length === 0) {
-    workTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:32px;">No workers registered yet. Click "+ Register Worker" to add one.</td></tr>';
+    workTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">No workers registered yet. Click "+ Register Worker" to add one.</td></tr>';
   } else {
     data.workers.forEach(w => {
       const tr = document.createElement('tr');
       const deleteBtn = w.role === 'Admin' ? '' : '<button data-delete-worker="' + escapeHtml(w.worker_id) + '" style="background:none; border:none; color:var(--danger); cursor:pointer;" title="Remove Worker"><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>';
-      tr.innerHTML = DOMPurify.sanitize(
+      setTableRowHtml(tr,
         '<td><span class="badge worker">' + escapeHtml(w.worker_id) + '</span></td>' +
         '<td style="font-weight:600;">' + escapeHtml(w.name) + '</td>' +
         '<td>' + escapeHtml(w.role) + '</td>' +
         '<td style="color:var(--text-muted);">' + (w.zone || '—') + '</td>' +
-        '<td style="text-align:center;">' + deleteBtn + '</td>');
+        '<td class="no-print" style="text-align:center;">' + deleteBtn + '</td>');
       workTbody.appendChild(tr);
     });
   }
+  renderedDirectoryData = signature;
 }
 
 
 
 window.deleteHousehold = async function(id) {
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   if (confirm("Are you sure you want to remove this resident? This action cannot be undone.")) {
     try {
       const res = await apiFetch('/api/households/' + id, {
@@ -686,11 +848,14 @@ window.deleteHousehold = async function(id) {
         fetchData(false);
       } else {
         const body = await res.json().catch(() => ({}));
+        if (!isCurrent()) return;
         alert("Failed to delete resident.\nReason: " + (body.error || body.msg || res.status));
       }
     } catch (e) {
+      if (!isCurrent()) return;
       console.warn('deleteHousehold failed, checking server:', e);
       const alive = await checkServerHealth();
+      if (!isCurrent()) return;
       if (!alive) {
         showAdminOfflineOverlay();
       } else {
@@ -701,6 +866,9 @@ window.deleteHousehold = async function(id) {
 };
 
 window.deleteWorker = async function(id) {
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   if (confirm("Are you sure you want to remove this worker? This action cannot be undone.")) {
     try {
       const res = await apiFetch('/api/workers/' + id, {
@@ -711,11 +879,14 @@ window.deleteWorker = async function(id) {
         fetchData(false);
       } else {
         const body = await res.json().catch(() => ({}));
+        if (!isCurrent()) return;
         alert("Failed to delete worker.\nReason: " + (body.error || body.msg || res.status));
       }
     } catch (e) {
+      if (!isCurrent()) return;
       console.warn('deleteWorker failed, checking server:', e);
       const alive = await checkServerHealth();
+      if (!isCurrent()) return;
       if (!alive) {
         showAdminOfflineOverlay();
       } else {
@@ -751,6 +922,9 @@ document.getElementById('btn-res-cancel').addEventListener('click', () => {
   document.getElementById('modal-resident').classList.remove('active');
 });
 document.getElementById('btn-res-save').addEventListener('click', async () => {
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   const name = document.getElementById('res-name').value.trim();
   const contact = document.getElementById('res-contact').value.trim();
   const purok = document.getElementById('res-purok').value.trim();
@@ -794,6 +968,7 @@ document.getElementById('btn-res-save').addEventListener('click', async () => {
     });
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
+      if (!isCurrent()) return;
       document.getElementById('modal-resident').classList.remove('active');
       document.getElementById('res-name').value = '';
       document.getElementById('res-contact').value = '';
@@ -803,11 +978,14 @@ document.getElementById('btn-res-save').addEventListener('click', async () => {
       alert(`Household registered successfully!\nResident ID: ${data.account_number || data.house_id}`);
     } else {
       const err = await res.json().catch(() => ({}));
+      if (!isCurrent()) return;
       alert(err.msg || 'Failed to add household');
     }
   } catch (e) {
+    if (!isCurrent()) return;
     console.warn('Save resident failed, checking server:', e);
     const alive = await checkServerHealth();
+    if (!isCurrent()) return;
     if (!alive) {
       showAdminOfflineOverlay();
     } else {
@@ -827,6 +1005,9 @@ document.getElementById('btn-work-cancel').addEventListener('click', () => {
   document.getElementById('modal-worker').classList.remove('active');
 });
 document.getElementById('btn-work-save').addEventListener('click', async () => {
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   const name = document.getElementById('work-name').value.trim();
   const contact = document.getElementById('work-contact').value.trim();
   const role = document.getElementById('work-role').value.trim();
@@ -870,6 +1051,7 @@ document.getElementById('btn-work-save').addEventListener('click', async () => {
     });
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
+      if (!isCurrent()) return;
       document.getElementById('modal-worker').classList.remove('active');
       document.getElementById('work-name').value = '';
       document.getElementById('work-contact').value = '';
@@ -879,11 +1061,14 @@ document.getElementById('btn-work-save').addEventListener('click', async () => {
       alert(`Field worker registered successfully!\nEmployee ID: ${data.worker_id || data.employee_id}`);
     } else {
       const err = await res.json().catch(() => ({}));
+      if (!isCurrent()) return;
       alert(err.msg || 'Failed to add worker');
     }
   } catch (e) {
+    if (!isCurrent()) return;
     console.warn('Save worker failed, checking server:', e);
     const alive = await checkServerHealth();
+    if (!isCurrent()) return;
     if (!alive) {
       showAdminOfflineOverlay();
     } else {
@@ -982,7 +1167,7 @@ function renderAnnouncements(announcements) {
       authBadge = '<span class="badge alert" style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); padding:4px 8px; border-radius:4px; font-size:12px; font-weight:600;">' + escapeHtml(auth) + '</span>';
     }
 
-    tr.innerHTML = DOMPurify.sanitize(
+    setTableRowHtml(tr,
       '<td style="color:var(--text-muted); font-size:13px;">' + d + '</td>' +
       '<td>' + authBadge + '</td>' +
       '<td>' + audienceBadge + '</td>' +
@@ -992,6 +1177,9 @@ function renderAnnouncements(announcements) {
 }
 
 document.getElementById('btn-admin-broadcast')?.addEventListener('click', async () => {
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   const input = document.getElementById('admin-announcement-input');
   if (!input) return;
   const msg = input.value.trim();
@@ -1028,9 +1216,11 @@ document.getElementById('btn-admin-broadcast')?.addEventListener('click', async 
       fetchData(true);
     } else {
       const errData = await res.json().catch(() => ({}));
+      if (!isCurrent()) return;
       alert(errData.msg || 'Failed to broadcast announcement.');
     }
   } catch (err) {
+    if (!isCurrent()) return;
     // Network or connection error while broadcasting announcement
     console.error('Broadcast error:', err);
     alert('Connection error occurred while broadcasting.');
@@ -1091,6 +1281,10 @@ document.getElementById('btn-pay-modal-cancel')?.addEventListener('click', close
 
 document.getElementById('btn-pay-modal-confirm')?.addEventListener('click', async () => {
   if (!pendingPaymentBill) return;
+  const bill = { ...pendingPaymentBill };
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   const confirmBtn = document.getElementById('btn-pay-modal-confirm');
   const errDiv = document.getElementById('pay-modal-error');
   const methodSelect = document.getElementById('pay-modal-method');
@@ -1110,7 +1304,7 @@ document.getElementById('btn-pay-modal-confirm')?.addEventListener('click', asyn
         'Authorization': 'Bearer ' + jwtToken
       },
       body: JSON.stringify({
-        bill_id: pendingPaymentBill.billId,
+        bill_id: bill.billId,
         payment_method: paymentMethod,
         payment_date: new Date().toISOString()
       })
@@ -1118,11 +1312,16 @@ document.getElementById('btn-pay-modal-confirm')?.addEventListener('click', asyn
 
     if (res.ok) {
       const data = await res.json();
+      if (!isCurrent()) return;
+      const billId = data.bill_id ?? bill.billId;
+      const amount = data.amount_paid ?? bill.amount;
       closeMarkAsPaidModal();
       await fetchData();
-      alert(`Payment for ${pendingPaymentBill.billId} (₱${parseFloat(pendingPaymentBill.amount).toFixed(2)}) has been officially confirmed and settled at Barangay Hall.`);
+      if (!isCurrent()) return;
+      alert(`Payment for ${billId} (₱${parseFloat(amount).toFixed(2)}) has been officially confirmed and settled at Barangay Hall.`);
     } else {
       const err = await res.json().catch(() => ({ msg: 'Payment processing failed.' }));
+      if (!isCurrent()) return;
       if (errDiv) {
         errDiv.textContent = err.msg || 'Unable to confirm payment. Please check server status.';
         errDiv.style.display = 'block';
@@ -1133,6 +1332,7 @@ document.getElementById('btn-pay-modal-confirm')?.addEventListener('click', asyn
       }
     }
   } catch (err) {
+    if (!isCurrent()) return;
     if (errDiv) {
       errDiv.textContent = 'Network or server error while recording payment.';
       errDiv.style.display = 'block';
@@ -1145,11 +1345,14 @@ document.getElementById('btn-pay-modal-confirm')?.addEventListener('click', asyn
 });
 
 function renderBilling(records) {
+  const signature = JSON.stringify(records || []);
+  if (signature === renderedBillingData) return;
   const tbody = document.getElementById('admin-billing-tbody');
   if (!tbody) return;
   tbody.innerHTML = '';
   if (!records || records.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:16px;">No billing statements recorded.</td></tr>';
+    renderedBillingData = signature;
     return;
   }
   records.forEach(b => {
@@ -1159,7 +1362,7 @@ function renderBilling(records) {
       ? `<span class="badge badge-success" style="opacity:0.85;display:inline-block;font-size:12px;padding:4px 10px;">Paid</span>`
       : `<button type="button" class="btn btn-sm btn-mark-paid" style="padding:6px 14px;font-size:12px;border-radius:8px;background:linear-gradient(135deg,#10B981,#059669);color:white;cursor:pointer;border:none;font-weight:700;box-shadow:0 2px 6px rgba(16,185,129,0.3);" data-bill-id="${escapeHtml(b.bill_id)}" data-house-id="${escapeHtml(b.house_id)}" data-cycle="${escapeHtml(b.billing_month || '')}" data-amount="${b.total_due.toFixed(2)}" data-family-head="${escapeHtml(b.family_head_name || '')}">Mark as Paid</button>`;
 
-    tr.innerHTML = DOMPurify.sanitize( `
+    setTableRowHtml(tr, `
       <td><strong>${escapeHtml(b.bill_id)}</strong></td>
       <td>${escapeHtml(b.family_head_name ? b.family_head_name + ' (' + b.house_id + ')' : b.house_id)}</td>
       <td><code>${escapeHtml(b.account_number)}</code></td>
@@ -1167,7 +1370,7 @@ function renderBilling(records) {
       <td>${b.consumption} m³</td>
       <td><strong>₱${b.total_due.toFixed(2)}</strong></td>
       <td><span class="badge ${isPaid ? 'badge-success' : 'badge-warning'}">${escapeHtml(b.status)}</span></td>
-      <td style="text-align:center;">${actionCell}</td>
+      <td class="no-print" style="text-align:center;">${actionCell}</td>
     `);
     tbody.appendChild(tr);
   });
@@ -1183,6 +1386,7 @@ function renderBilling(records) {
       openMarkAsPaidModal({ billId, houseId, cycle, amount, familyHead });
     });
   });
+  renderedBillingData = signature;
 }
 
 function renderCollectionsHistory(collections) {
@@ -1196,10 +1400,10 @@ function renderCollectionsHistory(collections) {
   collections.forEach(c => {
     const tr = document.createElement('tr');
     const amt = parseFloat(c.amount_collected || 0).toFixed(2);
-    tr.innerHTML = DOMPurify.sanitize( `
+    setTableRowHtml(tr, `
       <td><code style="color:var(--accent-color);font-weight:700;">${escapeHtml(c.transaction_id)}</code></td>
       <td>${escapeHtml(c.family_head_name || 'HH-' + c.household_id)}</td>
-      <td>${escapeHtml(c.purok_name || 'Purok 1')}</td>
+      <td>${escapeHtml(c.purok_name || '—')}</td>
       <td><strong style="color:var(--success)">₱${amt}</strong></td>
       <td>${escapeHtml(c.payment_method || 'Cash')}</td>
       <td>${escapeHtml(c.collected_by)}</td>
@@ -1212,31 +1416,45 @@ function renderCollectionsHistory(collections) {
 // ==============================================================================
 // Dynamic Payment Configuration (Admin Portal)
 // ==============================================================================
+let paymentSettingsDirty = false;
+let paymentSettingsRevision = 0;
+for (const id of ['admin-set-location', 'admin-set-method', 'admin-set-hours', 'admin-set-worker-collect', 'admin-set-instructions']) {
+  for (const event of ['input', 'change']) document.getElementById(id).addEventListener(event, () => {
+    paymentSettingsDirty = true;
+    paymentSettingsRevision++;
+  });
+}
+
 function renderPaymentSettings(settings) {
+  if (paymentSettingsDirty) return;
   const locInput = document.getElementById('admin-set-location');
   const methodInput = document.getElementById('admin-set-method');
   const hoursInput = document.getElementById('admin-set-hours');
   const workerSelect = document.getElementById('admin-set-worker-collect');
   const instInput = document.getElementById('admin-set-instructions');
 
-  if (locInput && settings.payment_location && document.activeElement !== locInput) {
+  if (locInput && settings.payment_location != null) {
     locInput.value = settings.payment_location;
   }
-  if (methodInput && settings.payment_method && document.activeElement !== methodInput) {
+  if (methodInput && settings.payment_method != null) {
     methodInput.value = settings.payment_method;
   }
-  if (hoursInput && settings.operating_hours && document.activeElement !== hoursInput) {
+  if (hoursInput && settings.operating_hours != null) {
     hoursInput.value = settings.operating_hours;
   }
-  if (workerSelect && settings.allow_worker_collection && document.activeElement !== workerSelect) {
-    workerSelect.value = settings.allow_worker_collection;
+  if (workerSelect && settings.allow_worker_collection != null) {
+    workerSelect.value = String(settings.allow_worker_collection);
   }
-  if (instInput && settings.payment_instructions && document.activeElement !== instInput) {
+  if (instInput && settings.payment_instructions != null) {
     instInput.value = settings.payment_instructions;
   }
 }
 
 document.getElementById('btn-save-payment-settings')?.addEventListener('click', async () => {
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const revision = paymentSettingsRevision;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   const loc = document.getElementById('admin-set-location')?.value.trim();
   const method = document.getElementById('admin-set-method')?.value.trim();
   const hours = document.getElementById('admin-set-hours')?.value.trim();
@@ -1266,14 +1484,22 @@ document.getElementById('btn-save-payment-settings')?.addEventListener('click', 
     });
 
     if (res.ok) {
+      if (!isCurrent()) return;
+      const refreshed = await fetchData(false);
+      if (!isCurrent()) return;
+      if (refreshed && revision === paymentSettingsRevision) {
+        paymentSettingsDirty = false;
+        renderPaymentSettings(globalData.paymentSettings || {});
+      }
       alert('Payment configuration successfully saved to the online database!\nBoth Resident and Worker apps will now display the updated settings.');
-      fetchData(true);
     } else {
       alert('Failed to update payment settings.');
     }
   } catch (e) {
+    if (!isCurrent()) return;
     console.warn('Payment settings save failed, checking server:', e);
     const alive = await checkServerHealth();
+    if (!isCurrent()) return;
     if (!alive) {
       showAdminOfflineOverlay();
     } else {
@@ -1298,14 +1524,14 @@ function renderReports(reports) {
   }
   reports.forEach(r => {
     const tr = document.createElement('tr');
-    tr.innerHTML = DOMPurify.sanitize( `
+    setTableRowHtml(tr, `
       <td><strong>REP-${r.report_id}</strong></td>
       <td>${escapeHtml(r.family_head_name || r.household_id)} (${escapeHtml(r.purok_name || 'Purok 1')})</td>
       <td><span class="badge badge-warning">${escapeHtml(r.report_type)}</span></td>
-      <td>${escapeHtml(r.description)}${r.photo_base64 ? `<br><img data-report-photo="true" src="${escapeHtml(r.photo_base64)}" style="max-width:140px;max-height:100px" alt="Report evidence">` : ''}</td>
+      <td>${escapeHtml(r.description)}${r.has_photo ? `<br><button type="button" class="btn btn-secondary" data-view-report-photo="${escapeHtml(r.report_id)}" style="margin-top:6px;padding:4px 10px;font-size:11px;">View photo evidence</button>` : ''}</td>
       <td><small style="color:var(--text-muted)">${escapeHtml(r.created_at)}</small></td>
       <td><span class="badge ${r.status === 'Resolved' ? 'badge-success' : 'badge-danger'}">${escapeHtml(r.status)}</span></td>
-      <td>
+      <td class="no-print">
         ${r.status !== 'Resolved' ? `<button class="btn" style="background:#10B981;color:white;padding:4px 10px;font-size:11px;" data-resolve-report="${r.report_id}">Mark Resolved</button>` : '<span style="color:var(--text-muted);font-size:11px;">Resolved</span>'}
       </td>
     `);
@@ -1313,7 +1539,72 @@ function renderReports(reports) {
   });
 }
 
+async function openReportPhoto(button) {
+  const reportId = button.dataset.viewReportPhoto;
+  if (!/^[1-9][0-9]{0,9}$/.test(reportId) || button.disabled) return;
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  if (!isCurrentAdminSession(token, generation)) return;
+  const popup = window.open('', '_blank');
+  if (!popup) {
+    alert('Allow pop-ups for WaterHall to view report photo evidence.');
+    return;
+  }
+  popup.opener = null;
+  popup.document.title = 'WaterHall report REP-' + reportId;
+  const status = popup.document.createElement('p');
+  status.textContent = 'Loading photo evidence…';
+  popup.document.body.appendChild(status);
+  const view = { popup, controller: new AbortController(), url: null };
+  reportPhotoViews.add(view);
+  const isCurrent = () => isCurrentAdminSession(token, generation) && reportPhotoViews.has(view) && !popup.closed;
+  popup.addEventListener('pagehide', () => {
+    view.controller.abort();
+    if (view.url) URL.revokeObjectURL(view.url);
+    reportPhotoViews.delete(view);
+  }, { once: true });
+  button.disabled = true;
+  button.textContent = 'Loading photo…';
+  try {
+    const response = await apiFetch('/api/reports/' + reportId + '/photo', {
+      headers: { Authorization: 'Bearer ' + token }, signal: view.controller.signal, isCurrent
+    });
+    if (!isCurrent()) return;
+    if (!response.ok) throw new Error(response.status === 404 ? 'Photo evidence was not found.' :
+      response.status === 403 ? 'You do not have permission to view this photo.' :
+      'Photo evidence is unavailable. Close this window and try again.');
+    const blob = await response.blob();
+    if (!isCurrent()) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(blob.type) || blob.size > 3 * 1024 * 1024) {
+      throw new Error('The photo response could not be displayed safely.');
+    }
+    view.url = URL.createObjectURL(blob);
+    const photo = popup.document.createElement('img');
+    photo.alt = 'Report REP-' + reportId + ' evidence';
+    photo.style.maxWidth = '100%';
+    photo.src = view.url;
+    photo.addEventListener('error', () => {
+      if (isCurrent()) popup.document.body.replaceChildren(Object.assign(popup.document.createElement('p'), {
+        textContent: 'Photo evidence could not be displayed. Close this window and try again.'
+      }));
+    }, { once: true });
+    popup.document.body.replaceChildren(photo);
+  } catch (error) {
+    if (isCurrent()) status.textContent = error.name === 'AbortError'
+      ? 'Photo request timed out. Close this window and try again.'
+      : error.message === 'Failed to fetch' ? 'Check your connection and try opening the photo again.' : error.message;
+  } finally {
+    if (isCurrentAdminSession(token, generation) && button.isConnected) {
+      button.disabled = false;
+      button.textContent = 'View photo evidence';
+    }
+  }
+}
+
 window.resolveReport = async function(reportId) {
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   try {
     const res = await apiFetch('/api/reports/update-status', {
       method: 'POST',
@@ -1323,14 +1614,18 @@ window.resolveReport = async function(reportId) {
       },
       body: JSON.stringify({ report_id: reportId, status: 'Resolved' })
     });
-    if (res.ok) {
-      fetchData(true);
-    }
+    if (!isCurrent()) return;
+    if (res.ok) fetchData(true);
+    else alert('Unable to resolve this report. Refresh the current data and try again.');
   } catch (e) {
+    if (!isCurrent()) return;
     console.warn('Resolve report failed, checking server:', e);
     const alive = await checkServerHealth();
+    if (!isCurrent()) return;
     if (!alive) {
       showAdminOfflineOverlay();
+    } else {
+      alert('Unable to resolve this report. Check your connection and try again.');
     }
   }
 };
@@ -1338,11 +1633,12 @@ window.resolveReport = async function(reportId) {
 
 // Only trusted code handles actions; never execute handlers from stored report text.
 document.addEventListener('click', event => {
-  const button = event.target.closest('[data-delete-household], [data-delete-worker], [data-resolve-report]');
+  const button = event.target.closest('[data-delete-household], [data-delete-worker], [data-resolve-report], [data-view-report-photo]');
   if (!button) return;
   if (button.dataset.deleteHousehold) window.deleteHousehold(button.dataset.deleteHousehold);
   if (button.dataset.deleteWorker) window.deleteWorker(button.dataset.deleteWorker);
   if (button.dataset.resolveReport) window.resolveReport(Number(button.dataset.resolveReport));
+  if (button.dataset.viewReportPhoto) openReportPhoto(button);
 });
 
 document.addEventListener('click', event => {
@@ -1375,6 +1671,9 @@ function renderReservoir(data) {
 }
 document.getElementById('billing-config-form').addEventListener('submit', async event => {
   event.preventDefault();
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   const button = document.getElementById('save-billing-config');
   if (button.disabled || !event.target.reportValidity()) return;
   button.disabled = true;
@@ -1382,24 +1681,39 @@ document.getElementById('billing-config-form').addEventListener('submit', async 
   try {
     const body = Object.fromEntries(rateFields.map(field => [field, document.getElementById('rate-' + field).value]));
     const response = await apiFetch('/api/settings/billing', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken}, body: JSON.stringify(body)});
+    if (!isCurrent()) return;
     if (!response.ok) throw new Error('Rates were not saved. Check all four non-negative values.');
+    const data = await response.json();
+    if (!isCurrent()) return;
     ratesDirty = false;
-    renderBillingConfig((await response.json()).configuration);
-  } catch (_) { status.textContent = 'Rates were not confirmed. Check your session, connection and values, then retry.'; }
+    renderBillingConfig(data.configuration);
+  } catch (_) { if (isCurrent()) status.textContent = 'Rates were not confirmed. Check your session, connection and values, then retry.'; }
   finally { button.disabled = false; }
 });
-async function loadRegistrations() {
+async function loadRegistrations(isCurrentRequest = () => true, signal) {
   const token = jwtToken;
-  const response = await apiFetch('/api/residents/registrations', {headers: {Authorization: 'Bearer ' + token}});
-  if (!response.ok) return;
-  const data = await response.json();
-  if (token !== jwtToken) return;
-  document.getElementById('registrations-tbody').innerHTML = data.registrations.map(row => `<tr>
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation) && isCurrentRequest();
+  try {
+    const response = await apiFetch('/api/residents/registrations', {headers: {Authorization: 'Bearer ' + token}, signal, isCurrent});
+    if (!isCurrent()) return;
+    if (!response.ok) throw new Error('Registrations unavailable');
+    const data = await response.json();
+    if (!isCurrent()) return;
+    if (!Array.isArray(data.registrations)) throw new Error('Invalid registrations response');
+    document.getElementById('registrations-tbody').innerHTML = data.registrations.map(row => `<tr>
     <td>${escapeHtml(row.house_id)}</td><td>${escapeHtml(row.family_head_name)}${row.possible_same_name ? '<br><strong>Possible same name ? review</strong>' : ''}${row.possible_duplicate_contact ? '<br><strong>Legacy duplicate contact ? review</strong>' : ''}</td>
     <td>${escapeHtml(row.contact_no)}</td><td>${escapeHtml(row.purok_name)}</td><td>${escapeHtml(row.account_status)}</td>
-    <td>${row.account_status === 'pending' ? `<button type="button" class="btn" data-review-id="${escapeHtml(row.house_id)}" data-review-status="approved">Approve</button> <button type="button" data-review-id="${escapeHtml(row.house_id)}" data-review-status="rejected">Reject</button>` : 'Reviewed'}</td></tr>`).join('') || '<tr><td colspan="6">No resident registrations.</td></tr>';
+    <td class="no-print">${row.account_status === 'pending' ? `<button type="button" class="btn" data-review-id="${escapeHtml(row.house_id)}" data-review-status="approved">Approve</button> <button type="button" data-review-id="${escapeHtml(row.house_id)}" data-review-status="rejected">Reject</button>` : 'Reviewed'}</td></tr>`).join('') || '<tr><td colspan="6">No resident registrations.</td></tr>';
+    document.getElementById('registration-load-status').textContent = '';
+  } catch (_) {
+    if (isCurrent()) document.getElementById('registration-load-status').textContent = 'Registrations could not refresh. Any displayed registrations may be out of date. Retry by refreshing Admin data.';
+  }
 }
 document.getElementById('registrations-tbody').addEventListener('click', async event => {
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   const button = event.target.closest('[data-review-id]');
   if (!button || button.disabled) return;
   const action = button.dataset.reviewStatus === 'approved' ? 'approve' : 'reject';
@@ -1409,9 +1723,10 @@ document.getElementById('registrations-tbody').addEventListener('click', async e
   const status = document.getElementById('registration-review-status');
   try {
     const response = await apiFetch('/api/residents/review', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken}, body: JSON.stringify({house_id: button.dataset.reviewId, status: button.dataset.reviewStatus})});
+    if (!isCurrent()) return;
     status.textContent = response.ok ? 'Registration ' + button.dataset.reviewStatus + '.' : 'Review was not saved. Refresh and check the current status.';
     await fetchData(true);
-  } catch (_) { status.textContent = 'Review was not confirmed. Check connection and refresh before retrying.'; }
+  } catch (_) { if (isCurrent()) status.textContent = 'Review was not confirmed. Check connection and refresh before retrying.'; }
   finally { buttons.forEach(item => item.disabled = false); }
 });
 
@@ -1421,6 +1736,9 @@ async function triggerReportExport(reportType, format, filters = {}, triggerButt
     alert('Please sign in as Administrator to export records.');
     return;
   }
+  const token = jwtToken;
+  const generation = sessionGeneration;
+  const isCurrent = () => isCurrentAdminSession(token, generation);
   const originalText = triggerButton ? triggerButton.textContent : '';
   if (triggerButton) {
     triggerButton.textContent = 'Generating...';
@@ -1444,6 +1762,7 @@ async function triggerReportExport(reportType, format, filters = {}, triggerButt
       throw new Error(err?.description || ('Export failed with status ' + response.status));
     }
     const blob = await response.blob();
+    if (!isCurrent()) return;
     const disposition = response.headers.get('Content-Disposition') || '';
     let filename = '';
     const match = disposition.match(/filename="?([^"]+)"?/);
@@ -1463,6 +1782,7 @@ async function triggerReportExport(reportType, format, filters = {}, triggerButt
     document.body.removeChild(link);
     window.URL.revokeObjectURL(blobUrl);
   } catch (err) {
+    if (!isCurrent()) return;
     console.error('Export error:', err);
     alert('Export error: ' + (err.message || 'Could not download report file.'));
   } finally {

@@ -14,6 +14,7 @@ Tests:
 - Barangay-only payment policy enforcement for worker collection
 """
 import uuid
+import re
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from pathlib import Path
@@ -39,7 +40,7 @@ RATES = {
 def test_admin_table_alignment_and_elements():
     """Requirement: Add Action column and fix billing table alignment to 8 columns."""
     html = ADMIN_INDEX_HTML.read_text(encoding='utf-8')
-    assert '<th style="text-align:center;">Action</th>' in html or '<th>Action</th>' in html
+    assert re.search(r'<th\b[^>]*>\s*Action\s*</th>', html)
     assert 'modal-mark-paid' in html
     assert 'pay-modal-bill-id' in html
     assert 'pay-modal-household' in html

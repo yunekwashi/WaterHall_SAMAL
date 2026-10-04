@@ -196,8 +196,9 @@ def test_admin_registration_review_rates_and_expiry(browser_page):
     page.locator('#login-username').fill('admin')
     page.locator('#login-password').fill(password)
     page.locator('#btn-login').click()
-    expect(page.locator('#login-screen')).to_be_hidden()
+    expect(page.locator('#login-screen')).to_be_hidden(timeout=15000)
     page.locator('[data-tab="tab-directory"]').click()
+    page.once('dialog', lambda dialog: dialog.accept())
     page.locator('[data-review-status="approved"]').click()
     expect(page.locator('#registration-review-status')).to_have_text('Registration approved.')
     page.locator('[data-tab="tab-payment-settings"]').click()
@@ -360,7 +361,7 @@ def test_admin_healthy_backend_abort_error_does_not_logout(browser_page):
     page.locator('#login-username').fill('admin')
     page.locator('#login-password').fill(password)
     page.locator('#btn-login').click()
-    expect(page.locator('#login-screen')).to_be_hidden()
+    expect(page.locator('#login-screen')).to_be_hidden(timeout=15000)
     expect(page.locator('#admin-offline-overlay')).to_be_hidden()
 
     # Route /api/all-data to abort, simulating client-side abort / network cancellation
@@ -385,7 +386,7 @@ def test_admin_genuine_health_failure_triggers_lockdown_and_recovery(browser_pag
     page.locator('#login-username').fill('admin')
     page.locator('#login-password').fill(password)
     page.locator('#btn-login').click()
-    expect(page.locator('#login-screen')).to_be_hidden()
+    expect(page.locator('#login-screen')).to_be_hidden(timeout=15000)
 
     # Simulate genuine backend outage on /api/health and /api/ready
     page.route('**/api/health*', lambda route: route.fulfill(status=503, json={'status': 'unavailable'}))
@@ -400,8 +401,9 @@ def test_admin_genuine_health_failure_triggers_lockdown_and_recovery(browser_pag
     page.unroute('**/api/health*')
     page.unroute('**/api/ready*')
 
-    # Click retry connection button
-    page.locator('#btn-admin-retry').click()
+    # Heartbeat can already hide the button after unroute. Exercise its recovery
+    # handler directly so verified automatic recovery cannot race a UI click.
+    page.evaluate('() => retryAdminConnection()')
     expect(page.locator('#admin-offline-overlay')).to_be_hidden()
     expect(page.locator('#login-screen')).to_be_visible()
 

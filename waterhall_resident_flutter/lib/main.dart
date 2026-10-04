@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'config.dart';
+import 'report_photo_picker.dart';
 import 'notification_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -42,7 +43,17 @@ class _MainScreenState extends State<MainScreen> {
   late final WebViewController _controller;
   final ImagePicker _imagePicker = ImagePicker();
   static const _secure = FlutterSecureStorage();
-  static const int _maxPhotoBytes = 2 * 1024 * 1024;
+  late final ReportPhotoPicker _reportPhotoPicker = ReportPhotoPicker(
+    pickImage: (source) => _imagePicker.pickImage(
+      source: source, imageQuality: 85, maxWidth: 1920, maxHeight: 1920),
+    recoverImage: () async {
+      final lost = await _imagePicker.retrieveLostData();
+      if (lost.exception != null) throw lost.exception!;
+      return lost.files?.firstOrNull;
+    },
+  );
+  int _photoPageGeneration = 0;
+  bool _photoPickerActive = false;
   String _activeServerUrl = AppConfig.serverBaseUrl;
   bool _isLoading = true;
   bool _initialized = false;
@@ -127,6 +138,7 @@ class _MainScreenState extends State<MainScreen> {
                 ? NavigationDecision.navigate : NavigationDecision.prevent;
           },
           onPageStarted: (String url) {
+            _photoPageGeneration++;
             _errorTimer?.cancel();
             setState(() {
               _isLoading = true;
@@ -160,7 +172,9 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _bridgeWrites = Future<void>.value();
 
   Future<void> _handleNativePhotoPickerRequest(JavaScriptMessage message) async {
+    if (!mounted) return;
     final currentUrl = Uri.tryParse(await _controller.currentUrl() ?? '');
+    if (!mounted) return;
     final appOrigin = Uri.tryParse(_activeServerUrl)?.origin;
     if (currentUrl?.origin != appOrigin || currentUrl?.queryParameters['role'] != 'resident') return;
 
@@ -174,53 +188,25 @@ class _MainScreenState extends State<MainScreen> {
     final requestId = request['request_id'];
     final sourceName = request['source'];
     if (requestId is! String || requestId.isEmpty || requestId.length > 100) return;
-    if (sourceName != 'gallery' && sourceName != 'camera') {
-      await _sendPhotoPickerResult(requestId, error: 'Choose a photo source and try again.');
+    if (sourceName is! String) return;
+    if (_photoPickerActive) {
+      try {
+        await _sendPhotoPickerResult(requestId, error: 'A photo picker is already open. Finish or cancel it first.');
+      } catch (_) { debugPrint('Photo picker feedback unavailable.'); }
       return;
     }
-
+    final generation = _photoPageGeneration;
+    _photoPickerActive = true;
     try {
-      final image = await _imagePicker.pickImage(
-        source: sourceName == 'camera' ? ImageSource.camera : ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 1920,
-        maxHeight: 1920,
-      );
-      if (image == null) {
-        await _sendPhotoPickerResult(requestId);
-        return;
-      }
-
-      final bytes = await image.readAsBytes();
-      if (bytes.length > _maxPhotoBytes) {
-        await _sendPhotoPickerResult(requestId, error: 'Photo must be at most 2 MiB.');
-        return;
-      }
-
-      final mimeType = image.mimeType?.toLowerCase() ?? _photoMimeType(image.name);
-      if (!const {'image/jpeg', 'image/png', 'image/webp'}.contains(mimeType)) {
-        await _sendPhotoPickerResult(requestId, error: 'Use a JPEG, PNG or WebP photo.');
-        return;
-      }
-
-      await _sendPhotoPickerResult(
-        requestId,
-        dataUrl: 'data:$mimeType;base64,${base64Encode(bytes)}',
-        fileName: image.name,
-      );
+      final result = await _reportPhotoPicker.pick(sourceName);
+      if (!mounted || generation != _photoPageGeneration) return;
+      await _sendPhotoPickerResult(requestId,
+        dataUrl: result['data_url'], fileName: result['file_name'], error: result['error']);
     } catch (_) {
-      await _sendPhotoPickerResult(requestId, error: 'Could not load selected photo.');
+      debugPrint('Photo result could not reach the current page.');
+    } finally {
+      _photoPickerActive = false;
     }
-  }
-
-  String? _photoMimeType(String fileName) {
-    final extension = fileName.toLowerCase().split('.').last;
-    return switch (extension) {
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'png' => 'image/png',
-      'webp' => 'image/webp',
-      _ => null,
-    };
   }
 
   Future<void> _sendPhotoPickerResult(
@@ -229,6 +215,7 @@ class _MainScreenState extends State<MainScreen> {
     String? fileName,
     String? error,
   }) async {
+    if (!mounted) return;
     final jsRequestId = jsonEncode(requestId);
     final jsDataUrl = jsonEncode(dataUrl);
     final jsFileName = jsonEncode(fileName);
