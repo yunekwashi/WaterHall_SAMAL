@@ -57,6 +57,10 @@ class Database {
   bool isDatabaseOnline = false;
   String? lastSyncError;
   bool _refreshing = false;
+  String? _refreshOwner;
+  String? _lastDataPayload;
+  int dataVersion = 0;
+  final Map<String, List<Map<String, dynamic>>> _announcementLists = {};
   int _sessionVersion = 0;
   Future<void> _nativeAuthWrites = Future<void>.value();
   void Function(bool expired)? onSessionEnded;
@@ -83,6 +87,8 @@ class Database {
 
   Future<void> endSession({bool expired = false}) async {
     ++_sessionVersion;
+    _refreshing = false; _refreshOwner = null; _lastDataPayload = null;
+    _announcementLists.clear();
     window.dispatchEvent(Event('waterhall-session-ending'));
     isDatabaseOnline = false;
     window.localStorage.remove('waterhall_jwt');
@@ -320,27 +326,34 @@ class Database {
   }
 
   Future<bool> refreshData({String role = ''}) async {
-    if (_refreshing || !checkSession()) return false;
-    _refreshing = true;
+    if (!checkSession()) return false;
+    final owner = window.localStorage['waterhall_jwt'];
+    if (_refreshing && _refreshOwner == owner) return false;
+    _refreshing = true; _refreshOwner = owner;
     try {
       final url = role.isNotEmpty ? '/api/all-data?role=$role' : '/api/all-data';
       final xhr = await apiRequest(url);
-      final data = json.decode(xhr.responseText!) as Map<String, dynamic>;
-      
-      _billingConfig = Map<String, dynamic>.from(data['billingConfig'] ?? {});
-      _households = List<Map<String, dynamic>>.from(data['households']);
-      _centralAssets = Map<String, dynamic>.from(data['centralAssets']);
-      _maintenanceLogs = List<Map<String, dynamic>>.from(data['maintenanceLogs']);
-      _workers = List<Map<String, dynamic>>.from(data['workers']);
-      _billingRecords = List<Map<String, dynamic>>.from(data['billingRecords']);
-      if (data.containsKey('announcements')) {
-        _announcements = List<Map<String, dynamic>>.from(data['announcements']);
+      final payload = xhr.responseText!;
+      if (payload != _lastDataPayload) {
+        final data = json.decode(payload) as Map<String, dynamic>;
+
+        _billingConfig = Map<String, dynamic>.from(data['billingConfig'] ?? {});
+        _households = List<Map<String, dynamic>>.from(data['households']);
+        _centralAssets = Map<String, dynamic>.from(data['centralAssets']);
+        _maintenanceLogs = List<Map<String, dynamic>>.from(data['maintenanceLogs']);
+        _workers = List<Map<String, dynamic>>.from(data['workers']);
+        _billingRecords = List<Map<String, dynamic>>.from(data['billingRecords']);
+        if (data.containsKey('announcements')) {
+          _announcements = List<Map<String, dynamic>>.from(data['announcements']);
+        }
+        if (data.containsKey('paymentSettings')) {
+          _paymentSettings = Map<String, String>.from(data['paymentSettings']);
+        }
+
+        _lastDataPayload = payload;
+        dataVersion++; _announcementLists.clear();
+        _saveToLocalCache();
       }
-      if (data.containsKey('paymentSettings')) {
-        _paymentSettings = Map<String, String>.from(data['paymentSettings']);
-      }
-      
-      _saveToLocalCache();
       isDatabaseOnline = true;
       _notifySyncStatus();
 
@@ -351,7 +364,7 @@ class Database {
     } catch (e) {
       if (e is! ApiFailure || !e.sessionChanged) _markOffline();
       return false;
-    } finally { _refreshing = false; }
+    } finally { if (_refreshOwner == owner) { _refreshing = false; _refreshOwner = null; } }
   }
 
   Future<bool> init() async {
@@ -771,27 +784,16 @@ class Database {
     return newRecord;
   }
   
-  Map<String, dynamic>? getLatestAnnouncement({String role = ''}) {
-    if (_announcements.isEmpty) return null;
-    if (role.isEmpty) return _announcements.first;
+  List<Map<String, dynamic>> getAnnouncements({required String role}) =>
+      _announcementLists.putIfAbsent(role, () => _announcements.where((ann) =>
+          ann['target_audience'] == 'Everyone' || ann['target_audience'] ==
+          (role == 'resident' ? 'Residents only' : 'Workers only')).toList());
 
-    for (final ann in _announcements) {
-      final audience = (ann['target_audience'] as String?) ?? 'Everyone';
-      if (role == 'resident') {
-        if (audience == 'Everyone' || audience == 'Residents only') {
-          return ann;
-        }
-      } else if (role == 'worker') {
-        if (audience == 'Everyone' || audience == 'Workers only') {
-          return ann;
-        }
-      } else {
-        return ann;
-      }
-    }
-    return null;
+  Map<String, dynamic>? getLatestAnnouncement({String role = ''}) {
+    final rows = role.isEmpty ? _announcements : getAnnouncements(role: role);
+    return rows.isEmpty ? null : rows.first;
   }
-  
+
   Future<void> addAnnouncement(String message, String author, {String targetAudience = 'Everyone'}) async {
     final record = {
       'message': message,
@@ -801,6 +803,7 @@ class Database {
     };
     await queueAction('/api/announcements/add', record);
     _announcements.insert(0, record);
+    _announcementLists.clear();
     _saveToLocalCache();
 
   }

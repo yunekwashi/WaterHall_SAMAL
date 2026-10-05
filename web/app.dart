@@ -17,8 +17,6 @@ class AppController {
   String activeTab = 'view-dashboard';
   String? activeHouseholdId;
   String? currentResidentId;
-  String? _lastNotifiedAnnouncementId;
-  String? _lastNotifiedEmergency;
   EventSource? _sseSource;
   String? _reportPhoto;
   String? _pendingNativePhotoRequestId;
@@ -30,6 +28,7 @@ class AppController {
   String? _residentReportOperationId;
   void Function()? _restoreReportDraft;
   Timer? _reportDraftTimer;
+  bool _refreshingView = false;
   static const _reportDraftKey = 'waterhall_resident_report_draft';
 
   // Cached UI Elements
@@ -72,6 +71,8 @@ class AppController {
       'view-assets': assetsView,
       'view-profile': profileView,
       'view-billing': billingView,
+      'view-announcements': document.getElementById('view-announcements')!,
+      'view-resident-profile': document.getElementById('view-resident-profile')!,
       'view-resident-home': residentViewHome,
       'view-resident-ledger': residentViewLedger,
       'view-resident-support': residentViewSupport
@@ -113,6 +114,7 @@ class AppController {
     Timer.periodic(Duration(seconds: 10), (timer) => updateClock());
 
     // Subscribe before initialization, including expiry of a restored session.
+    document.getElementById('btn-resident-profile-logout')?.onClick.listen((_) => db.endSession());
     db.onSessionEnded = (expired) {
       _closeRealtimeStream();
       currentWorker = null;
@@ -127,6 +129,7 @@ class AppController {
       _reportDraftTimer?.cancel();
       window.localStorage.remove(_reportDraftKey);
       activeHouseholdId = null;
+      selectedBillHouseId = null;
       _reportPhoto = null;
       document.getElementById('collection-review-modal')?.remove();
       document.getElementById('modal-collect-payment')?.style.display = 'none';
@@ -139,24 +142,10 @@ class AppController {
     await db.init();
     _updateSyncStatusUI(db.getSyncStatus());
 
-    // Background Auto-Refresh Telemetry Loop (Every 10 seconds for near real-time IoT monitoring)
-    Timer.periodic(Duration(seconds: 10), (timer) async {
-      if (currentWorker != null || currentResidentId != null) {
-        final currentRole = currentResidentId != null ? 'resident' : 'worker';
-        await db.refreshData(role: currentRole);
-        if (!db.checkSession()) return;
-        if (currentResidentId != null) {
-          renderResidentDashboard();
-        } else {
-          if (activeTab == 'view-dashboard') {
-            renderDashboard();
-          } else if (activeTab == 'view-directory') {
-            renderDirectory();
-          } else if (activeTab == 'view-assets') {
-            renderAssets();
-          }
-        }
-      }
+    // Foreground fallback only; reconnect and foreground resume refresh promptly.
+    Timer.periodic(const Duration(seconds: 60), (_) => _refreshVisibleView());
+    document.onVisibilityChange.listen((_) {
+      if (document.visibilityState == 'visible') unawaited(_refreshVisibleView());
     });
 
     // Check existing session strictly isolated by application role (?role=resident or ?role=worker)
@@ -194,6 +183,23 @@ class AppController {
     if (db.lastSyncError == sessionExpiredMessage) {
       showLoginError(sessionExpiredMessage, document.getElementById('login-error-msg'));
     }
+  }
+
+  Future<void> _refreshVisibleView() async {
+    if (_refreshingView || document.visibilityState != 'visible' ||
+        (currentWorker == null && currentResidentId == null)) return;
+    _refreshingView = true;
+    final token = window.localStorage['waterhall_jwt'];
+    final previousVersion = db.dataVersion;
+    try {
+      await db.refreshData(role: currentResidentId != null ? 'resident' : 'worker');
+      if (token != window.localStorage['waterhall_jwt'] || !db.checkSession() ||
+          previousVersion == db.dataVersion) return;
+      if (currentResidentId != null) renderResidentDashboard();
+      else if (activeTab == 'view-dashboard') renderDashboard();
+      else if (activeTab == 'view-directory') renderDirectory();
+      if (activeTab == 'view-announcements') renderAnnouncementHistory();
+    } finally { _refreshingView = false; }
   }
 
   void _updateSyncStatusUI(Map<String, dynamic> status) {
@@ -533,27 +539,10 @@ class AppController {
       renderDashboard();
     });
 
-    // Profile Actions
-    final menuWorkorders = document.getElementById('menu-view-logs');
-    menuWorkorders?.onClick.listen((e) {
-      if (currentWorker == null) return;
-      final purokFilterEl = document.getElementById('filter-purok') as SelectElement?;
-      final statusFilterEl = document.getElementById('filter-status') as SelectElement?;
-      if (purokFilterEl != null) purokFilterEl.value = currentWorker!['selected_zone'];
-      if (statusFilterEl != null) statusFilterEl.value = 'leak';
-      switchTab('view-directory');
-      showToast("Showing leaks in your assigned patrol zone ${currentWorker!['selected_zone']}");
-    });
-
-    final menuEmergency = document.getElementById('menu-emergency-call');
-    menuEmergency?.onClick.listen((e) {
-      showToast(db.getPaymentSettings()['emergency_contact'] ?? 'Emergency contact is not configured; contact the Barangay office.', 6000);
-    });
-
     // Broadcast Announcement (Worker Profile)
-    final btnBroadcast = document.getElementById('btn-broadcast-announcement');
+    final btnBroadcast = document.getElementById('btn-broadcast-announcement') as ButtonElement?;
     btnBroadcast?.onClick.listen((e) async {
-      if (currentWorker == null) return;
+      if (currentWorker == null || btnBroadcast!.disabled) return;
       final inputEl = document.getElementById('worker-announcement-input') as TextAreaElement?;
       final audienceEl = document.getElementById('worker-announcement-audience') as SelectElement?;
       final msg = inputEl?.value?.trim() ?? '';
@@ -564,9 +553,16 @@ class AppController {
         return;
       }
 
-      await db.addAnnouncement(msg, currentWorker!['name'], targetAudience: audience);
-      if (inputEl != null) inputEl.value = '';
-      showToast('Announcement queued for $audience. Pending items retry when online.');
+      final token = window.localStorage['waterhall_jwt'];
+      btnBroadcast.disabled = true;
+      try {
+        await db.addAnnouncement(msg, currentWorker!['name'], targetAudience: audience);
+        if (token != window.localStorage['waterhall_jwt']) return;
+        if (inputEl != null) inputEl.value = '';
+        showToast('Announcement queued for $audience. Pending items retry when online.');
+      } catch (_) {
+        if (token == window.localStorage['waterhall_jwt']) showToast('Announcement was not saved. Check storage and retry.');
+      } finally { btnBroadcast.disabled = false; }
     });
 
     // --- Forgot Password Events ---
@@ -666,7 +662,7 @@ class AppController {
   // ==============================================================================
   void _initRealtimeStream(String currentRole) {
     _closeRealtimeStream();
-    // Authenticated 10-second polling works across independent Vercel instances.
+    // Authenticated foreground polling works across independent Vercel instances.
   }
 
   void _closeRealtimeStream() {
@@ -683,6 +679,10 @@ class AppController {
   }
 
   void enforceLoginGate() {
+    document.getElementById('announcement-history')?.children.clear();
+    for (final id in ['resident-profile-name', 'resident-profile-account', 'resident-profile-avatar']) {
+      document.getElementById(id)?.text = '--';
+    }
     views.values.forEach((v) => v.classes.remove('active'));
     loginView.classes.add('active');
     loginView.style.display = 'flex';
@@ -792,7 +792,7 @@ class AppController {
     // Strict tab boundary enforcement: Worker cannot access Resident tabs, Resident cannot access Worker tabs
     final uri = Uri.parse(window.location.href);
     final role = uri.queryParameters['role'];
-    if (role == 'worker' && (targetViewId == 'view-resident-home' || targetViewId == 'view-resident-ledger' || targetViewId == 'view-resident-support')) {
+    if (role == 'worker' && (targetViewId == 'view-resident-home' || targetViewId == 'view-resident-ledger' || targetViewId == 'view-resident-support' || targetViewId == 'view-resident-profile')) {
       print('[SECURITY] Worker application is forbidden from switching to Resident tab $targetViewId.');
       return;
     }
@@ -825,6 +825,10 @@ class AppController {
       renderDashboard();
     } else if (targetViewId == 'view-directory') {
       renderDirectory();
+    } else if (targetViewId == 'view-announcements') {
+      renderAnnouncementHistory();
+    } else if (targetViewId == 'view-resident-profile') {
+      renderResidentDashboard();
     } else if (targetViewId == 'view-assets') {
       renderAssets();
     } else if (targetViewId == 'view-profile') {
@@ -856,6 +860,7 @@ class AppController {
     }
 
     final latestAnnouncement = db.getLatestAnnouncement(role: 'worker');
+    if (db.isDatabaseOnline) _processAnnouncements(latestAnnouncement, 'worker');
     final workerBannerEl = document.getElementById('worker-announcement-banner');
     final workerMsgEl = document.getElementById('worker-announcement-message');
     final workerTagEl = document.getElementById('worker-announcement-tag');
@@ -870,11 +875,6 @@ class AppController {
         }
         workerBannerEl.style.display = 'flex';
 
-        final annKey = '${latestAnnouncement['timestamp']}_$annMsg';
-        if (_lastNotifiedAnnouncementId != annKey) {
-          _lastNotifiedAnnouncementId = annKey;
-          triggerDeviceNotification('WaterHall Announcement', annMsg, type: 'announcement');
-        }
       } else {
         workerBannerEl.style.display = 'none';
       }
@@ -890,19 +890,7 @@ class AppController {
     final workerTurbVal = document.getElementById('worker-turb-val');
     final workerTdsVal = document.getElementById('worker-tds-val');
 
-    if (workerTankVal != null) workerTankVal.text = (assets['has_reading'] == false || assets['main_tank_level'] == null) ? 'N/A' : '${assets['main_tank_level']}%';
-    if (workerTurbVal != null) workerTurbVal.text = assets['has_reading'] == false ? 'N/A' : (assets['turbidity'] as num).toStringAsFixed(1);
-    if (workerTdsVal != null) workerTdsVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['tds_ppm']}';
-
-    if (workerSafetyStatus != null) {
-      if (assets['turbidity_status'] == 'warning') {
-        workerSafetyStatus.text = 'ALERT';
-        workerSafetyStatus.style.color = 'var(--alert-red)';
-      } else {
-        workerSafetyStatus.text = assets['has_reading'] == false ? 'AWAITING DATA' : 'NO ALERT';
-        workerSafetyStatus.style.color = 'var(--alert-green)';
-      }
-    }
+    _renderTelemetry('worker', assets, workerTankVal, workerTurbVal, workerTdsVal, workerSafetyStatus);
 
     final activeLeaks = households.where((h) => h['current_leak_status'] == 'leak').toList();
 
@@ -935,7 +923,7 @@ class AppController {
             <div class="alert-item-icon">
               <svg style="fill: var(--alert-green)" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
             </div>
-            <div class="alert-item-text" style="color: var(--text-on-dark)">No active leaks or water quality issues in Brgy. Tagpopongan.</div>
+            <div class="alert-item-text" style="color: var(--text-on-dark)">${assets['has_reading'] == false ? 'No leak reports. Water quality is awaiting sensor readings.' : 'No leak reports or configured water-quality alerts in the latest data.'}</div>
           </div>
         ''';
       } else {
@@ -978,7 +966,8 @@ class AppController {
             </div>
           ''';
           item.onClick.listen((e) {
-            switchTab('view-assets');
+            switchTab('view-dashboard');
+            document.getElementById('worker-telemetry-freshness')?.scrollIntoView();
           });
           alertListEl.append(item);
         });
@@ -1180,6 +1169,15 @@ class AppController {
 
     if (nameEl != null) nameEl.text = h['owner_name'];
     if (acctEl != null) acctEl.text = h['account_number'];
+    final allowCollection = db.getPaymentSettings()['allow_worker_collection'] == 'true';
+    final collectButton = document.getElementById('btn-open-collect-modal') as ButtonElement?;
+    collectButton?.disabled = !allowCollection;
+    collectButton?.style.opacity = allowCollection ? '1' : '0.55';
+    collectButton?.style.cursor = allowCollection ? 'pointer' : 'default';
+    collectButton?.title = allowCollection ? 'Record an authorized collection' : 'Payments must be made at Barangay Hall.';
+    document.getElementById('worker-collection-policy')?.text = allowCollection
+        ? 'Field collection is enabled by Admin. Payments remain pending until the server confirms synchronization.'
+        : 'Barangay policy: make payments in person at Barangay Hall. Field collection is disabled.';
     // Synchronized billing calculations matching Resident Portal
     final bills = db.getBillingHistoryForHousehold(id);
     Map<String, dynamic>? latestBill;
@@ -1524,6 +1522,8 @@ class AppController {
     void put(String id, String value) { document.getElementById(id)?.text = value; }
     put('bill-calc-base', config['configured'] == true ? '${config['base_rate']}' : '--');
     put('bill-calc-fee', config['configured'] == true ? '${config['environmental_fee']}' : '--');
+    put('bill-preview-cycle', month);
+    put('bill-included-volume', config['configured'] == true ? '${config['included_m3']} m³' : '--');
     put('bill-rate-description', config['configured'] == true ? "Includes ${config['included_m3']} m³; excess at PHP ${config['excess_rate']}/m³." : 'Admin must confirm billing rates before a bill can be recorded.');
     put('bill-calc-consumption', draft == null ? '0.000' : (draft['consumption'] as num).toStringAsFixed(3));
     put('bill-calc-excess', draft == null ? '0.00' : (draft['excess_charge'] as num).toStringAsFixed(2));
@@ -1572,6 +1572,7 @@ class AppController {
     _savingBill = true;
     updateBillCalculations();
 
+    final token = window.localStorage['waterhall_jwt'];
     final isOnlineBeforeSave = db.isDatabaseOnline;
     try {
       final savedRecord = await db.addBillingRecord({
@@ -1582,6 +1583,8 @@ class AppController {
         'date': billDate,
         'billed_by': currentWorker!['worker_id']
       });
+
+      if (token != window.localStorage['waterhall_jwt'] || currentWorker == null) return;
 
       if (isOnlineBeforeSave && savedRecord['is_synced'] == true) {
         showToast("Bill successfully saved.");
@@ -1595,7 +1598,7 @@ class AppController {
       renderBillingView(selectedBillHouseId!);
       renderProfile();
     } catch (e) {
-      showToast('Unable to save the reading. Check storage and your session.');
+      if (token == window.localStorage['waterhall_jwt']) showToast('Unable to save the reading. Check storage and your session.');
     } finally {
       _savingBill = false;
       updateBillCalculations();
@@ -1638,36 +1641,25 @@ class AppController {
     }
   }
 
-  // --- Native Device Notification Helper ---
-  void triggerDeviceNotification(String title, String body, {String type = 'info'}) {
-    if (body.isEmpty) return;
-    try {
-      final jsObj = js.context['NativeNotificationChannel'];
-      if (jsObj != null) {
-        jsObj.callMethod('postMessage', [
-          json.encode({
-            'title': title,
-            'body': body,
-            'type': type,
-            'timestamp': DateTime.now().toIso8601String()
-          })
-        ]);
-      }
-    } catch (e) {
-      print("Native notification channel error: $e");
+  void _processAnnouncements(Map<String, dynamic>? latest, String role) {
+    if (js.context.hasProperty('WaterHallPush')) {
+      js.context['WaterHallPush'].callMethod('processAnnouncements', [js.JsObject.jsify(latest == null ? [] : [latest]), role]);
     }
+  }
 
-    try {
-      if (Notification.supported && Notification.permission == 'granted') {
-        Notification(title, body: body, icon: 'logo.png');
-      } else if (Notification.supported && Notification.permission != 'denied') {
-        Notification.requestPermission().then((perm) {
-          if (perm == 'granted') {
-            Notification(title, body: body, icon: 'logo.png');
-          }
-        });
-      }
-    } catch (_) {}
+  void renderAnnouncementHistory() {
+    final role = currentResidentId == null ? 'worker' : 'resident';
+    final list = document.getElementById('announcement-history');
+    if (list == null) return;
+    list.children.clear();
+    final records = db.getAnnouncements(role: role);
+    if (records.isEmpty) { list.append(ParagraphElement()..className = 'empty-state'..text = 'No announcements yet. New Barangay updates will appear here.'); return; }
+    for (final record in records) {
+      final card = DivElement()..className = 'announcement-history-card';
+      card.append(ParagraphElement()..className = 'announcement-meta'..text = '${record['author']} · ${record['timestamp']}');
+      card.append(ParagraphElement()..text = '${record['message']}');
+      list.append(card);
+    }
   }
 
   // --- UI Toast Notification Helper ---
@@ -1740,6 +1732,33 @@ class AppController {
     _restoreReportDraft?.call();
   }
 
+  void _renderTelemetry(String role, Map<String, dynamic> assets, Element? level,
+      Element? turbidity, Element? tds, Element? status) {
+    final available = assets['has_reading'] != false;
+    String reading(dynamic value, int digits) => available && value is num && value.isFinite
+        ? value.toStringAsFixed(digits) : 'N/A';
+    final rawLevel = assets['main_tank_level'];
+    level?.text = available && rawLevel is num ? '${reading(rawLevel, 0)}%' : 'N/A';
+    turbidity?.text = reading(assets['turbidity'], 1);
+    tds?.text = reading(assets['tds_ppm'], 0);
+    final rawDate = '${assets['last_updated'] ?? ''}';
+    final normalized = RegExp(r'(Z|[+-]\d\d:\d\d)$').hasMatch(rawDate) ? rawDate : '${rawDate}Z';
+    final recorded = DateTime.tryParse(normalized);
+    final age = recorded == null ? null : DateTime.now().toUtc().difference(recorded.toUtc());
+    final stale = age != null && (age.inMinutes >= 10 || age.isNegative);
+    final warning = assets['turbidity_status'] == 'warning';
+    status?.text = !available ? 'AWAITING DATA' : stale ? 'STALE DATA' : warning ? 'QUALITY ALERT' : 'NO ALERT';
+    status?.style.color = !available || stale ? 'var(--text-muted)' : warning ? 'var(--alert-red)' : 'var(--alert-green)';
+    final updated = !available ? 'Awaiting sensor readings. No measurement is available.'
+        : recorded == null ? 'Latest recorded measurements · update time unavailable.'
+        : stale ? 'Stale reading · last updated ${recorded.toLocal()}. Refresh when connected.'
+        : 'Updated ${age!.inMinutes == 0 ? 'just now' : '${age.inMinutes} min ago'} · sensor readings';
+    document.getElementById('$role-telemetry-freshness')?.text = updated;
+    final fill = document.getElementById('$role-water-level-fill');
+    fill?.style.width = available && rawLevel is num && rawLevel.isFinite ? '${rawLevel.clamp(0, 100)}%' : '0';
+    fill?.style.backgroundColor = stale ? 'var(--text-muted)' : 'var(--navy-primary)';
+  }
+
   void renderResidentDashboard() {
     if (currentResidentId == null) return;
 
@@ -1747,6 +1766,7 @@ class AppController {
     if (household == null) return;
 
     final latestAnnouncement = db.getLatestAnnouncement(role: 'resident');
+    if (db.isDatabaseOnline) _processAnnouncements(latestAnnouncement, 'resident');
     final bannerEl = document.getElementById('resident-announcement-banner');
     final messageEl = document.getElementById('resident-announcement-message');
     final tagEl = document.getElementById('resident-announcement-tag');
@@ -1761,11 +1781,6 @@ class AppController {
         }
         bannerEl.style.display = 'flex';
 
-        final annKey = '${latestAnnouncement['timestamp']}_$annMsg';
-        if (_lastNotifiedAnnouncementId != annKey) {
-          _lastNotifiedAnnouncementId = annKey;
-          triggerDeviceNotification('WaterHall Announcement', annMsg, type: 'announcement');
-        }
       } else {
         bannerEl.style.display = 'none';
       }
@@ -1777,43 +1792,7 @@ class AppController {
     final resTdsVal = document.getElementById('resident-tds-val');
     final resSafetyStatus = document.getElementById('resident-safety-status');
 
-    if (resTankVal != null) resTankVal.text = (assets['has_reading'] == false || assets['main_tank_level'] == null) ? 'N/A' : '${assets['main_tank_level']}%';
-    if (resTurbVal != null) resTurbVal.text = assets['has_reading'] == false ? 'N/A' : (assets['turbidity'] as num).toStringAsFixed(1);
-    if (resTdsVal != null) resTdsVal.text = assets['has_reading'] == false ? 'N/A' : '${assets['tds_ppm']}';
-
-    if (resSafetyStatus != null) {
-      if (assets['turbidity_status'] == 'warning') {
-        resSafetyStatus.text = 'ALERT';
-        resSafetyStatus.style.color = 'var(--alert-red)';
-
-        final turbVal = (assets['turbidity'] as num).toStringAsFixed(1);
-        final emergencyKey = 'turbidity_$turbVal';
-        if (_lastNotifiedEmergency != emergencyKey) {
-          _lastNotifiedEmergency = emergencyKey;
-          triggerDeviceNotification(
-            '⚠️ WATER QUALITY ALERT',
-            'Water quality abnormal (Turbidity: $turbVal NTU). Follow local water authority guidance before using this supply.',
-            type: 'critical'
-          );
-        }
-      } else {
-        resSafetyStatus.text = assets['has_reading'] == false ? 'AWAITING DATA' : 'NO ALERT';
-        resSafetyStatus.style.color = 'var(--alert-green)';
-      }
-    }
-
-    final tankLvl = assets['main_tank_level'] as num?;
-    if (assets['has_reading'] != false && tankLvl != null && tankLvl <= 20) {
-      final emergencyKey = 'low_water_$tankLvl';
-      if (_lastNotifiedEmergency != emergencyKey) {
-        _lastNotifiedEmergency = emergencyKey;
-        triggerDeviceNotification(
-          '⚠️ LOW WATER LEVEL ALERT',
-          'Reservoir is critically low ($tankLvl% remaining). Please conserve water.',
-          type: 'warning'
-        );
-      }
-    }
+    _renderTelemetry('resident', assets, resTankVal, resTurbVal, resTdsVal, resSafetyStatus);
 
     final resProfileName = document.getElementById('resident-profile-name-home');
     final resProfileMeta = document.getElementById('resident-profile-meta-home');
@@ -1829,6 +1808,10 @@ class AppController {
     final resLogoutAvatar = document.getElementById('resident-logout-avatar');
 
     final ownerName = (household['owner_name'] ?? '').toString();
+    document.getElementById('resident-profile-name')?.text = ownerName;
+    document.getElementById('resident-profile-account')?.text = '${household['house_id']} · Meter ${household['account_number']} · ${household['purok']}';
+    document.getElementById('resident-profile-avatar')?.text = ownerName.isEmpty ? 'R' : ownerName[0].toUpperCase();
+    document.getElementById('resident-report-context')?.text = 'Reporting for ${household['house_id']} · ${household['purok']}';
     if (resLogoutName != null) resLogoutName.text = ownerName.isNotEmpty ? ownerName : household['house_id'];
     if (resLogoutRole != null) resLogoutRole.text = '${household['house_id']} • ${household['purok']}';
 
@@ -2024,7 +2007,14 @@ class AppController {
     final methodSelect = document.getElementById('collect-payment-method') as SelectElement?;
 
     btnOpen?.onClick.listen((e) {
-      showToast("Field payment collection is disabled. Payments must be settled in-person at Barangay Hall.");
+      if (currentWorker == null || activeHouseholdId == null ||
+          db.getPaymentSettings()['allow_worker_collection'] != 'true') {
+        showToast('Field payment collection is disabled. Payments must be settled in person at Barangay Hall.');
+        return;
+      }
+      (document.getElementById('collect-hh-name') as InputElement?)?.value = db.getHousehold(activeHouseholdId!)?['owner_name']?.toString() ?? activeHouseholdId!;
+      amountInput?.value = '';
+      modal?.style.display = 'flex';
     });
 
     btnCancel?.onClick.listen((e) {
@@ -2032,7 +2022,7 @@ class AppController {
     });
 
     btnConfirm?.onClick.listen((e) async {
-      if (activeHouseholdId == null || currentWorker == null) return;
+      if (activeHouseholdId == null || currentWorker == null || btnConfirm.disabled) return;
       final amount = double.tryParse(amountInput?.value ?? '') ?? 0.0;
       if (amount <= 0) {
         showToast("Please enter a valid payment amount!");
@@ -2041,22 +2031,26 @@ class AppController {
 
       final method = methodSelect?.value ?? 'Cash';
       final workerId = (currentWorker!['worker_id'] ?? currentWorker!['name'] ?? 'Collector').toString();
+      final token = window.localStorage['waterhall_jwt'];
+      final houseId = activeHouseholdId!;
 
       btnConfirm.disabled = true;
       try {
       // Confirm only after durable local commit.
       final record = await db.recordBillCollectionOffline(
-        houseId: activeHouseholdId!,
+        houseId: houseId,
         amount: amount,
         collectedBy: workerId,
         paymentMethod: method
       );
 
+      if (token != window.localStorage['waterhall_jwt'] || currentWorker == null) return;
+
       modal?.style.display = 'none';
       showToast("Collection recorded! TxID: ${record['transaction_id']}");
-      openWorkerResidentDetails(activeHouseholdId!);
+      openWorkerResidentDetails(houseId);
       } catch (_) {
-        showToast('Collection not saved. Check device storage and existing pending payments.');
+        if (token == window.localStorage['waterhall_jwt']) showToast('Collection not saved. Check device storage and existing pending payments.');
       } finally { btnConfirm.disabled = false; }
     });
 

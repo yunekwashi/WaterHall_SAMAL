@@ -50,9 +50,27 @@ def drain(limit=10):
             db.execute('SELECT * FROM push_subscriptions WHERE sub_id = ? AND is_active = 1', (content['sub_id'],))
             subscription = db.fetchone()
         status, expired = 'sent', False
+        # A disconnected phone receives the newest applicable announcement only.
+        # Queued older notices stay in history; they are not new phone alerts.
+        tag = content['notification'].get('tag') or ''
+        if subscription and tag.startswith('announcement-'):
+            try:
+                announcement_id = int(tag[len('announcement-'):])
+            except ValueError:
+                announcement_id = None
+            if announcement_id is not None:
+                audience = 'Residents only' if subscription['role'] == 'resident' else 'Workers only'
+                with get_db() as db:
+                    db.execute("SELECT id FROM announcements WHERE target_audience IN ('Everyone', ?) ORDER BY id DESC LIMIT 1", (audience,))
+                    latest = db.fetchone()
+                if not latest or latest['id'] != announcement_id:
+                    subscription = None
         if subscription:
             try:
                 validate_push(subscription['endpoint'], subscription['p256dh'], subscription['auth'])
+                # Bind delayed push delivery to its authenticated subscription owner.
+                content['notification']['recipient'] = {
+                    'owner': subscription['username'], 'role': subscription['role']}
                 webpush(subscription_info={'endpoint': subscription['endpoint'], 'keys': {
                     'p256dh': subscription['p256dh'], 'auth': subscription['auth']}},
                     data=json.dumps(content['notification']),

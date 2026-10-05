@@ -4,14 +4,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'config.dart';
+import 'permission_setup.dart';
 import 'offline_store.dart';
 import 'notification_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.initialize();
   runApp(const MyApp());
+  unawaited(NotificationService.initialize());
 }
 
 class MyApp extends StatelessWidget {
@@ -23,10 +24,11 @@ class MyApp extends StatelessWidget {
       title: 'WATERHALL Field Worker',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.dark),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff126789)),
+        scaffoldBackgroundColor: const Color(0xfff3f7fa),
         useMaterial3: true,
       ),
-      home: const MainScreen(),
+      home: const PermissionGate(photos: false, child: MainScreen()),
     );
   }
 }
@@ -38,7 +40,7 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   late final WebViewController _controller;
   static const _secure = FlutterSecureStorage();
   final OfflineStore _offlineStore = OfflineStore();
@@ -66,14 +68,30 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _initAppConnection();
 
-    // Check notifications periodically while app is running
-    _pollTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+    WidgetsBinding.instance.addObserver(this);
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       NotificationService.checkAndNotify(role: AppConfig.appRole);
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startPolling();
+      NotificationService.checkAndNotify(role: AppConfig.appRole);
+    } else {
+      _pollTimer?.cancel();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _errorTimer?.cancel();
     _pollTimer?.cancel();
     super.dispose();
@@ -98,44 +116,47 @@ class _MainScreenState extends State<MainScreen> {
       ..addJavaScriptChannel(
         'NativeNotificationChannel',
         onMessageReceived: (JavaScriptMessage message) {
-          try {
-            final data = json.decode(message.message);
-            NotificationService.showNotification(
-              DateTime.now().millisecondsSinceEpoch ~/ 1000,
-              data['title'] ?? 'WaterHall Notice',
-              data['body'] ?? '',
-            );
-          } catch (e) {
-            debugPrint("Native notification could not be displayed.");
-          }
+          // UI rendering is not a notification event. All announcements and
+          // water alerts use the authenticated, durable native polling owner.
+          NotificationService.checkAndNotify(role: AppConfig.appRole);
         },
       )
       ..addJavaScriptChannel('WaterHallStorage', onMessageReceived: (message) {
-          _bridgeWrites = _bridgeWrites.catchError((_) {}).then((_) => _handleStorage(message.message));
-        })
+        _bridgeWrites = _bridgeWrites
+            .catchError((_) {})
+            .then((_) => _handleStorage(message.message));
+      })
       ..addJavaScriptChannel('WaterHallAuth', onMessageReceived: (message) {
-        _bridgeWrites = _bridgeWrites.catchError((_) {}).then((_) => _handleAuthMessage(message.message));
+        _bridgeWrites = _bridgeWrites
+            .catchError((_) {})
+            .then((_) => _handleAuthMessage(message.message));
       })
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (request) {
             final target = Uri.tryParse(request.url);
             final origin = Uri.parse(_activeServerUrl);
-            return target != null && target.origin == origin.origin && !target.path.startsWith('/admin')
-                ? NavigationDecision.navigate : NavigationDecision.prevent;
+            return target != null &&
+                    target.origin == origin.origin &&
+                    !target.path.startsWith('/admin')
+                ? NavigationDecision.navigate
+                : NavigationDecision.prevent;
           },
           onPageStarted: (String url) {
-            _errorTimer?.cancel();
+            _startErrorTimer();
             setState(() {
               _isLoading = true;
               _serverError = false;
             });
           },
           onPageFinished: (String url) async {
-            await _controller.runJavaScript("if(window.waterhallSetNativeSession) window.waterhallSetNativeSession(localStorage.getItem('waterhall_jwt'));");
-            if (_errorTimer == null || !_errorTimer!.isActive) {
+            await _controller.runJavaScript(
+                "if(window.waterhallSetNativeSession) window.waterhallSetNativeSession(localStorage.getItem('waterhall_jwt'));");
+            _errorTimer?.cancel();
+            if (mounted) {
               setState(() {
                 _isLoading = false;
+                _serverError = false;
               });
             }
           },
@@ -155,10 +176,12 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-
   Future<void> _handleStorage(String message) async {
     final current = Uri.tryParse(await _controller.currentUrl() ?? '');
-    if (current?.origin != Uri.parse(_activeServerUrl).origin || current!.path.startsWith('/admin')) return;
+    if (current?.origin != Uri.parse(_activeServerUrl).origin ||
+        current!.path.startsWith('/admin')) {
+      return;
+    }
     Map<String, dynamic>? request;
     try {
       request = json.decode(message) as Map<String, dynamic>;
@@ -166,27 +189,39 @@ class _MainScreenState extends State<MainScreen> {
       dynamic result;
       if (request['method'] == 'auth') {
         final token = data['token'] as String?;
+        await NotificationService.sessionChanged(token);
         if (token == null || token.isEmpty) {
           await _secure.delete(key: 'waterhall_jwt');
         } else {
           await _secure.write(key: 'waterhall_jwt', value: token);
+          unawaited(
+              NotificationService.checkAndNotify(role: AppConfig.appRole));
         }
       } else {
         final token = await _secure.read(key: 'waterhall_jwt');
         if (token == null) throw StateError('No active session');
-        final claims = json.decode(utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))));
+        final claims = json.decode(utf8.decode(
+            base64Url.decode(base64Url.normalize(token.split('.')[1]))));
         final owner = claims['sub'] as String;
         if (request['method'] == 'save') {
-          await _offlineStore.save(owner, data['type'] as String, data['rows'] as List<dynamic>);
+          await _offlineStore.save(
+              owner, data['type'] as String, data['rows'] as List<dynamic>);
         } else if (request['method'] == 'load') {
           result = await _offlineStore.load(owner, data['type'] as String);
         } else {
           throw StateError('Unknown storage operation');
         }
       }
-      await _controller.runJavaScript('window.waterhallNativeReply(${json.encode(request['id'])}, ${json.encode({'ok': true, 'data': result})});');
+      await _controller.runJavaScript(
+          'window.waterhallNativeReply(${json.encode(request['id'])}, ${json.encode({
+            'ok': true,
+            'data': result
+          })});');
     } catch (_) {
-      if (request != null) await _controller.runJavaScript('window.waterhallNativeReply(${json.encode(request['id'])}, {"ok":false});');
+      if (request != null) {
+        await _controller.runJavaScript(
+            'window.waterhallNativeReply(${json.encode(request['id'])}, {"ok":false});');
+      }
     }
   }
 
@@ -194,16 +229,20 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _handleAuthMessage(String message) async {
     try {
-        final current = Uri.tryParse(await _controller.currentUrl() ?? '');
-        if (current?.origin != Uri.parse(_activeServerUrl).origin) return;
-        final data = json.decode(message) as Map<String, dynamic>;
-        final token = data['token'] as String?;
-        if (token == null || token.isEmpty) {
-          await _secure.delete(key: 'waterhall_jwt');
-        } else {
-          await _secure.write(key: 'waterhall_jwt', value: token);
-        }
-    } catch (_) { debugPrint('Native session update unavailable.'); }
+      final current = Uri.tryParse(await _controller.currentUrl() ?? '');
+      if (current?.origin != Uri.parse(_activeServerUrl).origin) return;
+      final data = json.decode(message) as Map<String, dynamic>;
+      final token = data['token'] as String?;
+      await NotificationService.sessionChanged(token);
+      if (token == null || token.isEmpty) {
+        await _secure.delete(key: 'waterhall_jwt');
+      } else {
+        await _secure.write(key: 'waterhall_jwt', value: token);
+        unawaited(NotificationService.checkAndNotify(role: AppConfig.appRole));
+      }
+    } catch (_) {
+      debugPrint('Native session update unavailable.');
+    }
   }
 
   String _getAppUrl() {
@@ -255,18 +294,25 @@ class _MainScreenState extends State<MainScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.cloud_off, size: 90, color: Colors.blueGrey),
+                          const Icon(Icons.cloud_off,
+                              size: 90, color: Colors.blueGrey),
                           const SizedBox(height: 24),
                           const Text(
                             "Server Offline",
-                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xff183448)),
                           ),
                           const SizedBox(height: 16),
                           const Text(
                             "Cannot establish a connection to the WaterHall backend server.\n\n"
                             "Field workers can continue using local offline mode for collections once the terminal cache is loaded, or retry connecting when the server is online.",
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                            style: TextStyle(
+                                color: Color(0xff526877),
+                                fontSize: 14,
+                                height: 1.5),
                           ),
                           const SizedBox(height: 36),
                           ElevatedButton.icon(
@@ -276,7 +322,8 @@ class _MainScreenState extends State<MainScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.blue.shade700,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 12),
                             ),
                           ),
                         ],
@@ -285,11 +332,18 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 )
               else
-                const Center(child: CircularProgressIndicator()),
-
+                const Center(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.water_drop_rounded,
+                      size: 48, color: Color(0xff126789)),
+                  SizedBox(height: 16),
+                  Text('Opening WaterHall...'),
+                  SizedBox(height: 20),
+                  CircularProgressIndicator()
+                ])),
               if (_isLoading)
                 Container(
-                  color: Colors.black54,
+                  color: Colors.white70,
                   child: const Center(child: CircularProgressIndicator()),
                 ),
             ],

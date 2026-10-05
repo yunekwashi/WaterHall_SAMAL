@@ -89,6 +89,9 @@ def test_resident_photo_report_single_submission(browser_page):
 
 def test_worker_offline_collection_reconnect_and_reload(browser_page):
     page, origin, (_, _, password), errors = browser_page
+    # Collection policy defaults to disabled; opt in explicitly for this scenario.
+    with get_db() as db:
+        db.execute("UPDATE payment_settings SET setting_value = 'true' WHERE setting_key = 'allow_worker_collection'")
     page.goto(origin + '/index.html?role=worker')
     page.locator('#employee-id').fill('worker')
     page.locator('#login-password').fill(password)
@@ -158,7 +161,7 @@ def test_public_routes_and_mobile_registration_approval(browser_page):
     page, origin, (client, headers, password), errors = browser_page
     page.set_viewport_size({'width': 390, 'height': 844})
     page.goto(origin + '/')
-    expect(page.locator('h1')).to_contain_text('water service')
+    expect(page.locator('#hero-title')).to_contain_text('WaterHall')
     assert page.locator('#view-login').count() == 0
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     page.goto(origin + '/index.html?role=resident')
@@ -180,11 +183,11 @@ def test_public_routes_and_mobile_registration_approval(browser_page):
     assert client.post('/api/residents/review', headers=headers['admin'], json={'house_id': row['house_id'], 'status': 'approved'}).status_code == 200
     page.locator('#btn-login').click()
     expect(page.locator('#view-resident-home')).to_be_visible()
-    expect(page.locator('#resident-bill-status')).to_have_text('NO CURRENT BILLING RECORD')
+    expect(page.locator('#resident-bill-status')).to_have_text('No unpaid or current bill')
     expect(page.locator('#resident-calc-total')).to_have_text('--')
     expect(page.locator('#resident-calc-base')).to_have_text('--')
     expect(page.locator('#resident-calc-fee')).to_have_text('--')
-    expect(page.locator('#resident-rate-description')).to_contain_text('Awaiting a recorded meter reading')
+    expect(page.locator('#resident-rate-description')).to_contain_text('No billing record is on file yet')
     assert not errors
 
 
