@@ -77,7 +77,53 @@ let globalData = {
   residentReports: []
 };
 let charts = { collections: null, quality: null };
+let loginAttemptGeneration = 0;
+let loginController = null;
+let renderedCollectionData = null;
+let collectionDailyTotals = new Map();
+let collectionMonthlyTotals = new Map();
 const reportPhotoViews = new Set();
+
+function cancelAdminLogin() {
+  loginAttemptGeneration++;
+  loginController?.abort(new DOMException('Login superseded', 'AbortError'));
+  loginController = null;
+  const button = document.getElementById('btn-login');
+  if (button) { button.disabled = false; button.textContent = 'Login to Dashboard'; }
+  for (const id of ['login-username', 'login-password']) document.getElementById(id).disabled = false;
+}
+
+async function loginWithDeadline(operation, controller) {
+  let timer, onAbort;
+  const interrupted = new Promise((_, reject) => {
+    onAbort = () => reject(controller.signal.reason);
+    controller.signal.addEventListener('abort', onAbort, {once: true});
+    timer = setTimeout(() => controller.abort(new DOMException('Login timeout', 'TimeoutError')), 30000);
+  });
+  try {
+    // Covers health checks, headers AND body reads, even if a transport ignores abort.
+    return await Promise.race([operation(), interrupted]);
+  } finally {
+    clearTimeout(timer);
+    controller.signal.removeEventListener('abort', onAbort);
+  }
+}
+
+async function readAdminResponse(response, controller, timeoutMs) {
+  let timer, onAbort;
+  const interrupted = new Promise((_, reject) => {
+    onAbort = () => reject(controller.signal.reason);
+    if (controller.signal.aborted) onAbort();
+    else controller.signal.addEventListener('abort', onAbort, {once: true});
+    timer = setTimeout(() => controller.abort(new DOMException('Request timeout', 'AbortError')), timeoutMs);
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(() => response.json()), interrupted]);
+  } finally {
+    clearTimeout(timer);
+    controller.signal.removeEventListener('abort', onAbort);
+  }
+}
 
 function closeReportPhotoViews() {
   for (const view of reportPhotoViews) {
@@ -89,6 +135,7 @@ function closeReportPhotoViews() {
 }
 
 function invalidateAdminRequests() {
+  cancelAdminLogin();
   closeReportPhotoViews();
   sessionGeneration++;
   dataRequestGeneration++;
@@ -104,16 +151,18 @@ function isCurrentAdminSession(token, generation) {
     !document.body.classList.contains('server-offline');
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function initializeAdminPage() {
+  const storedToken = localStorage.getItem('admin_jwt');
+  clearAdminSession('', true);
+  jwtToken = storedToken;
+  document.getElementById('login-username').value = '';
+  document.getElementById('loading-overlay').style.display = 'none';
+  hideAdminOfflineOverlay();
+  isServerOnline = false;
+  consecutiveHealthFailures = 0;
   const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
   const dateEl = document.getElementById('current-date');
   if (dateEl) dateEl.textContent = new Date().toLocaleDateString('en-US', dateOptions);
-
-  // Bind offline retry button
-  const retryBtn = document.getElementById('btn-admin-retry');
-  if (retryBtn) {
-    retryBtn.addEventListener('click', retryAdminConnection);
-  }
 
   // Always verify server is alive first before displaying anything
   const generation = sessionGeneration;
@@ -133,10 +182,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else {
     fetchData(false);
   }
+}
+
+document.addEventListener('DOMContentLoaded', initializeAdminPage);
+document.getElementById('btn-admin-retry').addEventListener('click', retryAdminConnection);
+window.addEventListener('pagehide', () => {
+  // Keep only credentials for server validation; never cache private DOM in BFCache.
+  clearAdminSession('', true);
+});
+window.addEventListener('pageshow', event => {
+  if (event.persisted) initializeAdminPage();
 });
 
-async function checkServerHealth() {
+async function checkServerHealth(ownsRequest = () => true) {
   const generation = sessionGeneration;
+  const isCurrent = () => generation === sessionGeneration && ownsRequest();
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     isServerOnline = false;
     return false;
@@ -147,40 +207,42 @@ async function checkServerHealth() {
     const res = await fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeoutId);
     if (!res.ok) {
-      return await checkServerReadinessFallback(generation);
+      if (!isCurrent()) return false;
+      return await checkServerReadinessFallback(generation, ownsRequest);
     }
-    const data = await res.json().catch(() => null);
-    if (generation !== sessionGeneration) return false;
+    const data = await readAdminResponse(res, controller, 6000).catch(() => null);
+    if (!isCurrent()) return false;
     isServerOnline = !!(data && data.status === 'ok');
     if (!isServerOnline) {
-      return await checkServerReadinessFallback(generation);
+      return await checkServerReadinessFallback(generation, ownsRequest);
     }
     return true;
   } catch (e) {
-    if (generation !== sessionGeneration) return false;
-    return await checkServerReadinessFallback(generation);
+    if (!isCurrent()) return false;
+    return await checkServerReadinessFallback(generation, ownsRequest);
   }
 }
 
-async function checkServerReadinessFallback(generation = sessionGeneration) {
+async function checkServerReadinessFallback(generation = sessionGeneration, ownsRequest = () => true) {
+  const isCurrent = () => generation === sessionGeneration && ownsRequest();
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(new DOMException('Readiness check timeout', 'AbortError')), 5000);
     const res = await fetch('/api/ready', { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeoutId);
     if (res.ok) {
-      const data = await res.json().catch(() => null);
-      if (generation !== sessionGeneration) return false;
+      const data = await readAdminResponse(res, controller, 5000).catch(() => null);
+      if (!isCurrent()) return false;
       if (data && (data.status === 'ready' || data.status === 'ok')) {
         isServerOnline = true;
         return true;
       }
     }
-    if (generation !== sessionGeneration) return false;
+    if (!isCurrent()) return false;
     isServerOnline = false;
     return false;
   } catch (_) {
-    if (generation !== sessionGeneration) return false;
+    if (!isCurrent()) return false;
     isServerOnline = false;
     return false;
   }
@@ -210,7 +272,7 @@ function performAutomaticLogoutDueToServerOffline() {
   clearAdminSession(wasLoggedIn ? 'Server was turned off. For security, your session was automatically logged out. Please log in again.' : '');
 }
 
-function clearAdminSession(message = '') {
+function clearAdminSession(message = '', preserveStoredToken = false) {
   invalidateAdminRequests();
 
   // 1. Invalidate authentication credentials completely
@@ -218,7 +280,7 @@ function clearAdminSession(message = '') {
   const loginButton = document.getElementById('btn-login');
   if (loginButton) { loginButton.disabled = false; loginButton.textContent = 'Login to Dashboard'; }
   try {
-    localStorage.removeItem('admin_jwt');
+    if (!preserveStoredToken) localStorage.removeItem('admin_jwt');
     sessionStorage.clear();
   } catch (_) {}
 
@@ -254,7 +316,12 @@ function clearAdminSession(message = '') {
 
   // Reset user name display
   const authName = document.getElementById('auth-name');
-  if (authName) authName.textContent = 'Admin';
+  if (authName) authName.textContent = '';
+  renderedCollectionData = null;
+  collectionDailyTotals.clear();
+  collectionMonthlyTotals.clear();
+  document.getElementById('collection-range').value = 'this-month';
+  document.getElementById('collection-chart-title').textContent = 'Collection Overview — This Month';
 
   // 4. Destroy active chart instances
   if (charts.collections) {
@@ -420,12 +487,12 @@ function hideLoader(isCurrent) {
 }
 
 document.getElementById('btn-login').addEventListener('click', async () => {
-  let generation = sessionGeneration;
-  const isCurrent = () => generation === sessionGeneration && !document.body.classList.contains('server-offline');
+  const generation = sessionGeneration;
   const u = document.getElementById('login-username').value.trim();
   const p = document.getElementById('login-password').value.trim();
   const btn = document.getElementById('btn-login');
   const errEl = document.getElementById('login-error');
+  if (btn.disabled || jwtToken || document.body.classList.contains('server-offline')) return;
 
   if (!u || !p) {
     errEl.textContent = 'Please enter username and password.';
@@ -433,67 +500,71 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     return;
   }
 
+  const attempt = ++loginAttemptGeneration;
+  const controller = new AbortController();
+  loginController = controller;
+  const ownsAttempt = () => attempt === loginAttemptGeneration && generation === sessionGeneration;
+  const isCurrent = () => ownsAttempt() && !controller.signal.aborted &&
+    !document.body.classList.contains('server-offline');
   btn.textContent = 'Authenticating...';
   btn.disabled = true;
   errEl.style.display = 'none';
 
-  // Strict check: if server is offline, abort immediately and lock portal
-  const serverAlive = await checkServerHealth();
-  if (generation !== sessionGeneration) return;
-  if (!serverAlive) {
-    btn.textContent = 'Login to Dashboard';
-    btn.disabled = false;
-    showAdminOfflineOverlay();
-    return;
-  }
-
   try {
-    const res = await apiFetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: u, password: p })
-    });
-    if (!isCurrent()) return;
-    if (res.ok) {
+    const result = await loginWithDeadline(async () => {
+      const alive = await checkServerHealth(isCurrent);
+      if (!isCurrent()) return null;
+      if (!alive) return {offline: true};
+      const res = await apiFetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p }),
+        signal: controller.signal,
+        isCurrent
+      });
+      if (!isCurrent()) return null;
       const data = await res.json();
-      if (!isCurrent()) return;
+      return isCurrent() ? {ok: res.ok, data} : null;
+    }, controller);
+    if (!isCurrent()) return;
+    if (result.offline) { showAdminOfflineOverlay(); return; }
+    const data = result.data;
+    if (result.ok) {
       if (data.role !== 'admin') {
         errEl.textContent = 'An administrator account is required.';
         errEl.style.display = 'block';
         return;
       }
+      if (typeof data.access_token !== 'string' || !data.access_token || typeof data.id !== 'string') {
+        throw new Error('Invalid login response');
+      }
       invalidateAdminRequests();
-      generation = sessionGeneration;
       jwtToken = data.access_token;
       localStorage.setItem('admin_jwt', jwtToken);
       isServerOnline = true;
-      document.getElementById('auth-name').textContent = data.name || 'Admin';
+      document.getElementById('auth-name').textContent = data.id;
+      document.getElementById('collection-range').value = 'this-month';
       document.getElementById('login-password').value = '';
       document.getElementById('loading-overlay').style.display = 'flex';
       document.getElementById('loading-overlay').style.opacity = '1';
       fetchData(false);
     } else {
-      const errData = await res.json().catch(() => ({}));
-      if (!isCurrent()) return;
-      errEl.textContent = errData.msg || 'Invalid credentials. Please try again.';
+      errEl.textContent = data.msg || 'Invalid credentials. Please try again.';
       errEl.style.display = 'block';
     }
   } catch (e) {
-    if (!isCurrent()) return;
-    // Connection error during login attempt
-    console.error('Login request failed:', e);
-    const alive = await checkServerHealth();
-    if (!isCurrent()) return;
-    if (!alive) {
-      errEl.textContent = 'Cannot connect to server. Is it running?';
-      errEl.style.display = 'block';
-      showAdminOfflineOverlay();
-    } else {
-      errEl.textContent = 'Login attempt was interrupted. Please check connection and try again.';
-      errEl.style.display = 'block';
-    }
+    if (!ownsAttempt()) return;
+    controller.abort(e);
+    errEl.textContent = 'Login timed out or connection was interrupted. Please try again.';
+    errEl.style.display = 'block';
+    showLogin();
+    // Recovery is immediately usable; a late health callback cannot lock a retry.
+    checkServerHealth(ownsAttempt).then(alive => {
+      if (ownsAttempt() && !alive) showAdminOfflineOverlay();
+    });
   } finally {
-    if (generation === sessionGeneration) {
+    if (ownsAttempt()) {
+      loginController = null;
       btn.textContent = 'Login to Dashboard';
       btn.disabled = false;
     }
@@ -606,12 +677,15 @@ async function fetchData(silent = false) {
 
     if (!canRender()) return;
     if (res.ok) {
-      const data = await res.json();
+      const data = await readAdminResponse(res, fetchController, 30000);
       if (!canRender()) return;
       if (!data || !['households', 'workers', 'billingRecords', 'maintenanceLogs', 'announcements', 'collectionsHistory', 'residentReports'].every(key => Array.isArray(data[key]))) {
         throw new Error('Invalid Admin data response');
       }
       globalData = data;
+      if (data.adminIdentity?.role === 'admin' && typeof data.adminIdentity.username === 'string') {
+        document.getElementById('auth-name').textContent = data.adminIdentity.username;
+      }
       renderBillingConfig(data.billingConfig || {});
       renderReservoir(data.centralAssets || {});
       renderDashboard(data);
@@ -729,30 +803,40 @@ function renderDashboard(data) {
   }
 }
 
-function renderCharts(data) {
-  // Collections Line Chart
-  const ctxColl = document.getElementById('collectionsChart').getContext('2d');
-  if (charts.collections) charts.collections.destroy();
+const collectionPeso = new Intl.NumberFormat('en-PH', {
+  style: 'currency', currency: 'PHP', minimumFractionDigits: 0, maximumFractionDigits: 2
+});
 
-  // Five UTC calendar months, including the current month and zero receipts.
-  const now = new Date();
-  const labels = Array.from({length: 5}, (_, i) =>
-    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 4 + i, 1)).toISOString().slice(0, 7));
-  const revByMonth = Object.fromEntries(labels.map(month => [month, 0]));
-  data.billingRecords.forEach(b => {
-    if (b.status === 'Paid' && b.payment_date) {
-      let timestamp = String(b.payment_date).replace(' ', 'T');
-      if (/^\d{4}-\d{2}-\d{2}$/.test(timestamp)) timestamp += 'T00:00:00Z';
-      else if (!/(Z|[+-]\d{2}:\d{2})$/i.test(timestamp)) timestamp += 'Z';
-      const date = new Date(timestamp);
-      if (Number.isNaN(date.getTime())) return;
-      const month = date.toISOString().slice(0, 7);
-      if (Object.hasOwn(revByMonth, month)) revByMonth[month] += Number(b.total_due);
-    }
+function collectionDateLabel(key) {
+  return new Date(key + (key.length === 7 ? '-01' : '') + 'T00:00:00Z').toLocaleDateString('en-PH', {
+    timeZone: 'UTC', month: 'short', ...(key.length === 7 ? {year: 'numeric'} : {day: 'numeric'})
   });
+}
 
-  const revData = labels.map(l => revByMonth[l]);
-
+function updateCollectionChart() {
+  const select = document.getElementById('collection-range');
+  document.getElementById('collection-chart-title').textContent = 'Collection Overview — ' + select.selectedOptions[0].textContent;
+  const now = new Date();
+  const year = now.getUTCFullYear(), month = now.getUTCMonth();
+  const daily = ['this-month', 'last-month'].includes(select.value);
+  let labels;
+  if (daily) {
+    const selectedMonth = month - (select.value === 'last-month' ? 1 : 0);
+    const days = select.value === 'this-month' ? now.getUTCDate() : new Date(Date.UTC(year, month, 0)).getUTCDate();
+    labels = Array.from({length: days}, (_, i) => new Date(Date.UTC(year, selectedMonth, i + 1)).toISOString().slice(0, 10));
+  } else {
+    const count = select.value === 'this-year' ? month + 1 : Number(select.value);
+    labels = Array.from({length: count}, (_, i) => new Date(Date.UTC(year, month - count + 1 + i, 1)).toISOString().slice(0, 7));
+  }
+  const totals = daily ? collectionDailyTotals : collectionMonthlyTotals;
+  const revData = labels.map(key => (totals.get(key) || 0) / 100);
+  if (charts.collections) {
+    charts.collections.data.labels = labels;
+    charts.collections.data.datasets[0].data = revData;
+    charts.collections.update('none');
+    return;
+  }
+  const ctxColl = document.getElementById('collectionsChart').getContext('2d');
   charts.collections = new Chart(ctxColl, {
     type: 'line',
     data: {
@@ -772,13 +856,48 @@ function renderCharts(data) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: {
+          title: items => collectionDateLabel(items[0].label),
+          label: item => 'Collected Revenue: ' + collectionPeso.format(item.parsed.y)
+        } }
+      },
       scales: {
-        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#BDC9D4' } },
-        x: { grid: { display: false }, ticks: { color: '#BDC9D4' } }
+        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#BDC9D4', callback: value => collectionPeso.format(value) } },
+        x: { grid: { display: false }, ticks: { color: '#BDC9D4', callback: function(value) { return collectionDateLabel(this.getLabelForValue(value)); } } }
       }
     }
   });
+}
+
+document.getElementById('collection-range').addEventListener('change', () => {
+  if (jwtToken && hasAdminData) updateCollectionChart();
+});
+
+function renderCharts(data) {
+  // Preserve the existing UTC payment calendar. Index Paid receipts once per changed dataset.
+  const today = new Date().toISOString().slice(0, 10);
+  const signature = today + JSON.stringify(data.billingRecords);
+  if (signature !== renderedCollectionData) {
+    collectionDailyTotals.clear();
+    collectionMonthlyTotals.clear();
+    for (const bill of data.billingRecords) {
+      if (bill.status !== 'Paid' || !bill.payment_date) continue;
+      let timestamp = String(bill.payment_date).replace(' ', 'T');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(timestamp)) timestamp += 'T00:00:00Z';
+      else if (!/(Z|[+-]\d{2}:\d{2})$/i.test(timestamp)) timestamp += 'Z';
+      const date = new Date(timestamp), amount = Number(bill.total_due);
+      if (Number.isNaN(date.getTime()) || !Number.isFinite(amount) || amount < 0) continue;
+      const day = date.toISOString().slice(0, 10);
+      if (day > today) continue;
+      const month = day.slice(0, 7), cents = Math.round(amount * 100);
+      collectionDailyTotals.set(day, (collectionDailyTotals.get(day) || 0) + cents);
+      collectionMonthlyTotals.set(month, (collectionMonthlyTotals.get(month) || 0) + cents);
+    }
+    renderedCollectionData = signature;
+  }
+  updateCollectionChart();
 
   // Measurements have different units; show values without a misleading part-to-whole chart.
   const ca = data.centralAssets || {has_reading: false};

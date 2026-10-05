@@ -306,6 +306,7 @@ def test_admin_superseded_registrations_cannot_expire_current_request(browser_pa
 
 def test_admin_collection_chart_uses_payment_calendar_and_recorded_totals(browser_page):
     page = login_admin(browser_page)
+    page.locator('#collection-range').select_option('5')
     result = page.evaluate("""() => {
       const now = new Date();
       const current = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 2)).toISOString();

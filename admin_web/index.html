@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WATERHALL | Admin Portal</title>
   <link rel="icon" type="image/png" href="/admin/logo.png" />
-  <link rel="stylesheet" href="/admin/styles.css?v=23" />
+  <link rel="stylesheet" href="/admin/styles.css?v=24" />
   <script src="/admin/vendor/purify.min.js"></script>
   <!-- Chart.js for premium data visualization (vendored locally to satisfy strict CSP connect-src) -->
   <script src="/admin/vendor/chart.umd.min.js"></script>
@@ -131,7 +131,7 @@
     <div class="user-profile">
       <div class="avatar">A</div>
       <div class="user-info">
-        <h4 id="auth-name">Admin</h4>
+        <h4 id="auth-name"></h4>
         <p>System Administrator</p>
       </div>
       <button style="margin-left:auto; background:transparent; border:none; color:var(--danger); cursor:pointer;" id="btn-logout" title="Logout">
@@ -189,7 +189,21 @@
       
       <div class="charts-grid">
         <div class="chart-container">
-          <h3>Collection Overview (Last 5 Months)</h3>
+          <div class="collection-chart-header">
+            <h3 id="collection-chart-title">Collection Overview — This Month</h3>
+            <label for="collection-range">Range
+              <select id="collection-range">
+                <option value="this-month">This Month</option>
+                <option value="last-month">Last Month</option>
+                <option value="2">Last 2 Months</option>
+                <option value="3">Last 3 Months</option>
+                <option value="5">Last 5 Months</option>
+                <option value="6">Last 6 Months</option>
+                <option value="12">Last 12 Months</option>
+                <option value="this-year">This Year</option>
+              </select>
+            </label>
+          </div>
           <div class="chart-body"><canvas id="collectionsChart"></canvas></div>
         </div>
         <div class="chart-container chart-summary">
@@ -733,6 +747,6 @@
     </div>
   </div>
 
-  <script src="/admin/app.js?v=27"></script>
+  <script src="/admin/app.js?v=28"></script>
 </body>
 </html>

@@ -428,6 +428,8 @@ def get_all_data():
         db.execute("SELECT purok_id, purok_name FROM puroks ORDER BY purok_id ASC;")
         puroks = [p['purok_name'] for p in db.fetchall()]
         return jsonify({
+            **({'adminIdentity': {'username': principal()['id'], 'role': 'admin'}}
+               if principal()['role'] == 'admin' else {}),
             'households': households,
             'puroks': puroks,
             'centralAssets': central_assets,
