@@ -677,6 +677,63 @@ tr:hover td {
 }
 
 /* Modals */
+/* Report evidence uses one native dialog, separate from the existing forms. */
+body.report-photo-open,
+body.report-photo-open .main-content,
+body.report-photo-open .sidebar {
+  overflow: hidden;
+}
+.report-photo-modal {
+  margin: auto;
+  padding: 16px;
+  width: fit-content;
+  max-width: 90vw;
+  max-height: 85vh;
+  max-height: 85dvh;
+  overflow: hidden;
+  color: var(--text-main);
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.report-photo-modal::backdrop {
+  background: rgba(0, 0, 0, 0.8);
+}
+.report-photo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.report-photo-header h2 {
+  font-family: var(--font-title);
+  font-size: 18px;
+}
+#report-photo-close {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 28px;
+  color: var(--text-main);
+}
+#report-photo-close:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+#report-photo-image {
+  max-width: 100%;
+  max-height: calc(85vh - 120px);
+  max-height: calc(85dvh - 120px);
+  object-fit: contain;
+}
+#report-photo-image:not([hidden]) {
+  display: block;
+  margin: auto;
+}
+
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -1339,6 +1396,7 @@ body.server-offline > *:not(#admin-offline-overlay) {
   #admin-offline-overlay,
   #loading-overlay,
   .modal-overlay,
+  .report-photo-modal,
   .nav-menu,
   .date-badge,
   .no-print {

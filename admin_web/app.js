@@ -82,7 +82,7 @@ let loginController = null;
 let renderedCollectionData = null;
 let collectionDailyTotals = new Map();
 let collectionMonthlyTotals = new Map();
-const reportPhotoViews = new Set();
+let reportPhotoView = null;
 
 function cancelAdminLogin() {
   loginAttemptGeneration++;
@@ -126,12 +126,21 @@ async function readAdminResponse(response, controller, timeoutMs) {
 }
 
 function closeReportPhotoViews() {
-  for (const view of reportPhotoViews) {
-    view.controller.abort();
-    if (view.url) URL.revokeObjectURL(view.url);
-    view.popup.close();
-  }
-  reportPhotoViews.clear();
+  const view = reportPhotoView;
+  if (!view) return;
+  reportPhotoView = null;
+  view.controller.abort();
+  const photo = document.getElementById('report-photo-image');
+  photo.onload = photo.onerror = null;
+  photo.removeAttribute('src');
+  photo.hidden = true;
+  if (view.url) URL.revokeObjectURL(view.url);
+  document.getElementById('report-photo-modal').close();
+  document.body.classList.remove('report-photo-open');
+  // The normal refresh may have replaced the row while its image was open.
+  const button = view.button.isConnected ? view.button : document.querySelector(
+    '[data-view-report-photo="' + view.button.dataset.viewReportPhoto + '"]');
+  button?.focus({ preventScroll: true });
 }
 
 function invalidateAdminRequests() {
@@ -1664,61 +1673,66 @@ async function openReportPhoto(button) {
   const token = jwtToken;
   const generation = sessionGeneration;
   if (!isCurrentAdminSession(token, generation)) return;
-  const popup = window.open('', '_blank');
-  if (!popup) {
-    alert('Allow pop-ups for WaterHall to view report photo evidence.');
-    return;
-  }
-  popup.opener = null;
-  popup.document.title = 'WaterHall report REP-' + reportId;
-  const status = popup.document.createElement('p');
+  closeReportPhotoViews();
+  const modal = document.getElementById('report-photo-modal');
+  const photo = document.getElementById('report-photo-image');
+  const status = document.getElementById('report-photo-status');
+  const view = { button, controller: new AbortController(), url: null };
+  reportPhotoView = view;
+  const isCurrent = () => isCurrentAdminSession(token, generation) && reportPhotoView === view && modal.open;
+  document.getElementById('report-photo-title').textContent = 'Report REP-' + reportId + ' evidence';
+  photo.alt = 'Report REP-' + reportId + ' evidence';
   status.textContent = 'Loading photo evidence…';
-  popup.document.body.appendChild(status);
-  const view = { popup, controller: new AbortController(), url: null };
-  reportPhotoViews.add(view);
-  const isCurrent = () => isCurrentAdminSession(token, generation) && reportPhotoViews.has(view) && !popup.closed;
-  popup.addEventListener('pagehide', () => {
-    view.controller.abort();
-    if (view.url) URL.revokeObjectURL(view.url);
-    reportPhotoViews.delete(view);
-  }, { once: true });
-  button.disabled = true;
-  button.textContent = 'Loading photo…';
+  status.hidden = false;
+  document.body.classList.add('report-photo-open');
+  modal.showModal();
+  document.getElementById('report-photo-close').focus({ preventScroll: true });
+  const showError = () => {
+    if (!isCurrent()) return;
+    photo.hidden = true;
+    status.textContent = 'Unable to load image.';
+    status.hidden = false;
+  };
   try {
     const response = await apiFetch('/api/reports/' + reportId + '/photo', {
       headers: { Authorization: 'Bearer ' + token }, signal: view.controller.signal, isCurrent
     });
     if (!isCurrent()) return;
-    if (!response.ok) throw new Error(response.status === 404 ? 'Photo evidence was not found.' :
-      response.status === 403 ? 'You do not have permission to view this photo.' :
-      'Photo evidence is unavailable. Close this window and try again.');
+    if (!response.ok) throw new Error('Unable to load image.');
     const blob = await response.blob();
     if (!isCurrent()) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(blob.type) || blob.size > 3 * 1024 * 1024) {
       throw new Error('The photo response could not be displayed safely.');
     }
     view.url = URL.createObjectURL(blob);
-    const photo = popup.document.createElement('img');
-    photo.alt = 'Report REP-' + reportId + ' evidence';
-    photo.style.maxWidth = '100%';
+    photo.onload = () => {
+      if (!isCurrent()) return;
+      photo.hidden = false;
+      status.hidden = true;
+    };
+    photo.onerror = showError;
     photo.src = view.url;
-    photo.addEventListener('error', () => {
-      if (isCurrent()) popup.document.body.replaceChildren(Object.assign(popup.document.createElement('p'), {
-        textContent: 'Photo evidence could not be displayed. Close this window and try again.'
-      }));
-    }, { once: true });
-    popup.document.body.replaceChildren(photo);
-  } catch (error) {
-    if (isCurrent()) status.textContent = error.name === 'AbortError'
-      ? 'Photo request timed out. Close this window and try again.'
-      : error.message === 'Failed to fetch' ? 'Check your connection and try opening the photo again.' : error.message;
-  } finally {
-    if (isCurrentAdminSession(token, generation) && button.isConnected) {
-      button.disabled = false;
-      button.textContent = 'View photo evidence';
-    }
+  } catch (_) {
+    showError();
   }
 }
+
+// Installed once: native dialog focus containment also keeps the page inert.
+const reportPhotoModal = document.getElementById('report-photo-modal');
+document.getElementById('report-photo-close').addEventListener('click', closeReportPhotoViews);
+reportPhotoModal.addEventListener('cancel', event => {
+  event.preventDefault();
+  closeReportPhotoViews();
+});
+reportPhotoModal.addEventListener('close', () => {
+  if (!reportPhotoModal.open) closeReportPhotoViews();
+});
+reportPhotoModal.addEventListener('click', event => {
+  if (event.target !== reportPhotoModal) return;
+  const bounds = reportPhotoModal.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom) closeReportPhotoViews();
+});
 
 window.resolveReport = async function(reportId) {
   const token = jwtToken;

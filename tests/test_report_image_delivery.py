@@ -21,9 +21,9 @@ from tests.test_admin_repairs import login_admin
 browser_test = pytest.mark.skipif(os.getenv('RUN_BROWSER_TESTS') != '1', reason='Opt-in browser test')
 
 
-def photo_data():
+def photo_data(size=(18, 12)):
     output = io.BytesIO()
-    Image.new('RGB', (18, 12), 'blue').save(output, 'PNG')
+    Image.new('RGB', size, 'blue').save(output, 'PNG')
     return 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode()
 
 
@@ -179,9 +179,10 @@ def test_photo_list_payload_and_upload_envelope_at_scale(system, monkeypatch):
 
 @browser_test
 @pytest.mark.parametrize('width,height', [(1920, 1080), (1366, 768), (768, 1024), (390, 844)])
-def test_admin_lazy_photo_same_bytes_and_responsive_view(browser_page, monkeypatch, width, height):
+@pytest.mark.parametrize('image_size', [(1600, 1200), (600, 1800)])
+def test_admin_lazy_photo_same_bytes_and_responsive_view(browser_page, monkeypatch, width, height, image_size):
     monkeypatch.setenv('PHOTO_STORAGE', 'database')
-    report_id = create_report(browser_page[2], photo_data())
+    report_id = create_report(browser_page[2], photo_data(image_size))
     page = login_admin(browser_page)
     page.evaluate('''() => {
       const create = URL.createObjectURL.bind(URL);
@@ -195,21 +196,32 @@ def test_admin_lazy_photo_same_bytes_and_responsive_view(browser_page, monkeypat
     expect(button).to_be_visible()
     assert requests == []
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-    with page.expect_popup() as opened:
-        button.click()
-    popup = opened.value
-    expect(popup.locator('img')).to_be_visible()
-    popup.wait_for_function('() => document.querySelector("img").naturalWidth === 18')
+    button.click()
+    expect(page.locator('#report-photo-modal')).to_be_visible()
+    expect(page.locator('#report-photo-image')).to_be_visible()
+    page.wait_for_function('(width) => document.querySelector("#report-photo-image").naturalWidth === width', arg=image_size[0])
     client, headers, _ = browser_page[2]
     actual = page.evaluate('async () => Array.from(new Uint8Array(await deliveredReportBlob.arrayBuffer()))')
     assert bytes(actual) == client.get(f'/api/reports/{report_id}/photo', headers=headers['admin']).data
     assert len(requests) == 1 and requests[0].headers.get('authorization', '').startswith('Bearer ')
-    assert '?' not in requests[0].url and popup.evaluate('opener === null')
-    assert popup.evaluate('document.documentElement.scrollWidth <= innerWidth')
-    page.locator('#btn-logout').click()
+    assert '?' not in requests[0].url and len(page.context.pages) == 1
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    modal = page.locator('#report-photo-modal').bounding_box()
+    image = page.locator('#report-photo-image').bounding_box()
+    close = page.locator('#report-photo-close').bounding_box()
+    assert 0 <= modal['x'] and modal['x'] + modal['width'] <= width
+    assert 0 <= modal['y'] and modal['y'] + modal['height'] <= height
+    assert modal['width'] <= width * .9 + 1 and modal['height'] <= height * .85 + 1
+    assert abs(image['width'] / image['height'] - image_size[0] / image_size[1]) < .01
+    assert close['y'] + close['height'] <= modal['y'] + modal['height']
+    assert page.locator('#report-photo-modal').evaluate('el => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight')
+    if os.getenv('MODAL_SCREENSHOT_DIR'):
+        page.screenshot(path=str(Path(os.environ['MODAL_SCREENSHOT_DIR']) / f'modal-{width}-{image_size[0]}.png'))
+    # Session invalidation must close the private dialog even while background controls are inert.
+    page.evaluate('clearAdminSession()')
     expect(page.locator('#login-screen')).to_be_visible()
-    page.wait_for_function('() => typeof reportPhotoViews !== "undefined" && reportPhotoViews.size === 0')
-    assert popup.is_closed()
+    assert page.evaluate('reportPhotoView === null')
+    expect(page.locator('#report-photo-modal')).to_be_hidden()
     assert not browser_page[3]
 
 
@@ -223,10 +235,13 @@ def test_admin_photo_error_is_actionable_and_retry_available(browser_page, monke
                else route.fulfill(status=status, json={'msg': 'Photo unavailable'}))
     page.locator('[data-tab="tab-reports"]').click()
     button = page.locator('[data-view-report-photo]')
-    with page.expect_popup() as opened:
-        button.click()
-    expect(opened.value.locator('p')).not_to_contain_text('Loading')
-    assert opened.value.locator('img').count() == 0
+    button.click()
+    expect(page.locator('#report-photo-status')).to_have_text('Unable to load image.')
+    expect(page.locator('#report-photo-image')).to_be_hidden()
+    page.locator('#report-photo-close').click()
+    page.unroute('**/api/reports/*/photo')
+    button.click()
+    expect(page.locator('#report-photo-image')).to_be_visible()
     expect(button).to_be_enabled()
     expect(page.locator('#login-screen')).to_be_hidden()
     assert not browser_page[3]
@@ -240,12 +255,11 @@ def test_admin_photo_invalid_session_closes_private_view(browser_page, monkeypat
     page = login_admin(browser_page)
     page.route('**/api/reports/*/photo', lambda route: route.fulfill(status=status, json={'msg': message}))
     page.locator('[data-tab="tab-reports"]').click()
-    with page.expect_popup() as opened:
-        page.locator('[data-view-report-photo]').click()
+    page.locator('[data-view-report-photo]').click()
     expect(page.locator('#login-screen')).to_be_visible()
-    assert opened.value.is_closed()
+    expect(page.locator('#report-photo-modal')).to_be_hidden()
     assert page.evaluate('jwtToken') is None
-    assert page.evaluate('reportPhotoViews.size') == 0
+    assert page.evaluate('reportPhotoView === null')
     assert not browser_page[3]
 
 
@@ -275,8 +289,7 @@ def test_admin_late_photo_does_not_outlive_session(browser_page, monkeypatch, st
       URL.createObjectURL = blob => {window.photoURLs.push(blob.size); return create(blob);};
     }""", stage)
     page.locator('[data-tab="tab-reports"]').click()
-    with page.expect_popup() as opened:
-        page.locator('[data-view-report-photo]').click()
+    page.locator('[data-view-report-photo]').click()
     page.wait_for_function('() => typeof releasePhoto === "function"')
     if ending == 'logout':
         # Exercise the same cleanup without reloading away the held old callback.
@@ -284,7 +297,8 @@ def test_admin_late_photo_does_not_outlive_session(browser_page, monkeypatch, st
     else:
         page.evaluate('showAdminOfflineOverlay()')
     page.evaluate('releasePhoto()')
-    page.wait_for_function('() => photoFinished && reportPhotoViews.size === 0')
-    assert opened.value.is_closed() and page.evaluate('photoURLs.length') == 0
+    page.wait_for_function('() => photoFinished && reportPhotoView === null')
+    expect(page.locator('#report-photo-modal')).to_be_hidden()
+    assert page.evaluate('photoURLs.length') == 0
     assert page.evaluate('jwtToken') is None
     assert not browser_page[3]

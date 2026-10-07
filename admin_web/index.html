@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WATERHALL | Admin Portal</title>
   <link rel="icon" type="image/png" href="/admin/logo.png" />
-  <link rel="stylesheet" href="/admin/styles.css?v=24" />
+  <link rel="stylesheet" href="/admin/styles.css?v=25" />
   <script src="/admin/vendor/purify.min.js"></script>
   <!-- Chart.js for premium data visualization (vendored locally to satisfy strict CSP connect-src) -->
   <script src="/admin/vendor/chart.umd.min.js"></script>
@@ -589,6 +589,15 @@
   </main>
 
   <!-- Modals -->
+  <dialog id="report-photo-modal" class="report-photo-modal" aria-labelledby="report-photo-title">
+    <div class="report-photo-header">
+      <h2 id="report-photo-title">Report photo evidence</h2>
+      <button type="button" id="report-photo-close" class="btn btn-secondary" aria-label="Close photo evidence" autofocus>×</button>
+    </div>
+    <p id="report-photo-status" role="status" aria-live="polite">Loading photo evidence…</p>
+    <img id="report-photo-image" alt="Report photo evidence" hidden />
+  </dialog>
+
   <div class="modal-overlay" id="modal-resident">
     <div class="modal">
       <h3 style="margin-bottom:24px; font-size:24px; font-weight:700;">Register New Household</h3>
@@ -747,6 +756,6 @@
     </div>
   </div>
 
-  <script src="/admin/app.js?v=28"></script>
+  <script src="/admin/app.js?v=29"></script>
 </body>
 </html>
