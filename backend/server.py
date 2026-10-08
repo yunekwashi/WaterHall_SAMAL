@@ -308,12 +308,12 @@ def get_all_data():
         db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         row = db.fetchone()
         if row:
-            turb_val = float(row['turbidity_ntu'])
+            turb_val = None if row['turbidity_ntu'] is None else float(row['turbidity_ntu'])
             central_assets = {
                 'main_tank_level': row['water_level_percentage'], 'turbidity': turb_val,
                 'tds_ppm': row['tds_ppm'], 'has_reading': True,
-                'turbidity_status': 'warning' if turb_val > 5 else 'normal',
-                'turbidity_desc': 'Elevated turbidity; follow local water authority guidance.' if turb_val > 5 else 'No turbidity alert.',
+                'turbidity_status': 'unknown' if turb_val is None else ('warning' if turb_val > 5 else 'normal'),
+                'turbidity_desc': 'Awaiting turbidity readings' if turb_val is None else ('Elevated turbidity; follow local water authority guidance.' if turb_val > 5 else 'No turbidity alert.'),
                 'last_updated': row.get('recorded_at')
             }
         else:
@@ -496,7 +496,11 @@ def iot_telemetry():
     else:
         water_level = int(number(raw_wl, 'water level', 0, 100))
 
-    turbidity = number(data.get('turbidity_ntu', data.get('turbidity')), 'turbidity', 0, 10000)
+    # Only explicit null represents unavailable turbidity; omission stays invalid.
+    if 'turbidity_ntu' not in data and 'turbidity' not in data:
+        abort(400, description='Invalid turbidity')
+    raw_turbidity = data.get('turbidity_ntu', data.get('turbidity'))
+    turbidity = None if raw_turbidity is None else number(raw_turbidity, 'turbidity', 0, 10000)
     # Only explicit null represents unavailable TDS; omission stays invalid.
     if 'tds_ppm' not in data and 'tds' not in data:
         abort(400, description='Invalid TDS')
@@ -516,7 +520,7 @@ def iot_telemetry():
         one_hour_ago = (now_dt - datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
 
         # 1. Elevated turbidity alert (not a drinking-water safety certification)
-        if turbidity > 5.0:
+        if turbidity is not None and turbidity > 5.0:
             db.execute("""
                 SELECT COUNT(*) as cnt FROM announcements
                 WHERE author = 'System Sensor Alert'

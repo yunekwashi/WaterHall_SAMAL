@@ -212,7 +212,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS reservoir_quality_readings (
                 reading_id {pk_auto},
                 water_level_percentage {int_type} DEFAULT NULL CHECK (water_level_percentage IS NULL OR (water_level_percentage BETWEEN 0 AND 100)),
-                turbidity_ntu {real_type} NOT NULL,
+                turbidity_ntu {real_type} DEFAULT NULL,
                 ph_level {real_type} DEFAULT NULL,
                 tds_ppm {int_type} DEFAULT NULL,
                 recorded_at {text_type} DEFAULT CURRENT_TIMESTAMP

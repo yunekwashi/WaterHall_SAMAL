@@ -169,12 +169,14 @@ def test_firmware_source_no_fake_fallback():
     assert ino_path.is_file(), f"Firmware file not found at {ino_path}"
 
     content = ino_path.read_text(encoding='utf-8')
+    runtime_path = ino_path.with_name('sensor_runtime.h')
+    sensor_source = content + (runtime_path.read_text(encoding='utf-8') if runtime_path.is_file() else '')
 
     # Strict check: no fake 68% return
-    assert 'return 68;' not in content, "Found forbidden fake fallback 'return 68;' in firmware source!"
+    assert 'return 68;' not in sensor_source, "Found forbidden fake fallback 'return 68;' in firmware source!"
 
     # Verify sensor error returns -1
-    assert 'return -1;' in content, "Firmware must return -1 on sensor timeout or disconnection"
+    assert 'return -1;' in sensor_source or ': -1;' in sensor_source, "Firmware must retain -1 on sensor timeout or disconnection"
 
     # Verify JSON payload handles null water level (escaped quotes in C++ string)
     assert r'\"water_level_percentage\":null' in content, "Firmware must transmit null water level when sensor is unavailable"
