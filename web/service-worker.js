@@ -1,5 +1,5 @@
-const CACHE_NAME = 'waterhall-shell-v7';
-const SHELL = ['/landing.html', '/landing.css', '/push-client.js', '/index.html', '/app.js', '/styles.css', '/mobile.css', '/native-store.js', '/logo.png', '/manifest.json'];
+const CACHE_NAME = 'waterhall-shell-v8';
+const SHELL = ['/ui-display.js', '/monitoring.css', '/landing.html', '/landing.css', '/push-client.js', '/index.html', '/app.js', '/styles.css', '/mobile.css', '/native-store.js', '/logo.png', '/manifest.json'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

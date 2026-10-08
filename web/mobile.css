@@ -195,3 +195,24 @@ button:disabled { opacity: .55; cursor: default; }
   .metric-card-val { font-size: 23px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Corresponding monitoring cards retain each role's surrounding home layout. */
+.service-monitor .reservoir-title { margin-bottom: 18px; }
+.monitor-hero { display: grid; grid-template-columns: 136px minmax(0,1fr); gap: 16px; align-items: center; }
+.monitor-level { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.monitor-level > strong { font-family: var(--font-title); font-size: 38px; line-height: 1.2; margin-bottom: 16px; }
+.monitor-level .metric-card-lbl { margin-bottom: 4px; }
+.monitor-status { font-size: 11px; line-height: 1.5; font-weight: 700; padding: 4px 8px; border-radius: 8px; background: #edf5f8; overflow-wrap: anywhere; }
+.monitor-metrics { margin-top: 18px; }
+.monitor-updated { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--navy-border); display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
+.monitor-updated > span:last-child { font-weight: 600; }
+.service-monitor .telemetry-freshness { padding-top: 4px; font-size: 12px; }
+.monitor-disclaimer { font-size: 11px; line-height: 1.6; color: var(--text-muted); margin-top: 8px; }
+.announcement-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; line-height: 1.6; }
+.announcement-author { font-weight: 700; color: var(--navy-primary); }
+.announcement-history-card > p:last-child { font-size: 14px; line-height: 1.65; white-space: pre-line; }
+@media (max-width: 374px) {
+  .monitor-hero { grid-template-columns: 116px minmax(0,1fr); gap: 10px; }
+  .monitor-hero .water-tank { width: 78px; }
+  .monitor-level > strong { font-size: 32px; }
+}

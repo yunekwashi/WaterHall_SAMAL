@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="logo.png" />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=3.1.0">
-  <link rel="stylesheet" href="mobile.css?v=1.1.0">
+  <link rel="stylesheet" href="mobile.css?v=1.2.0">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#126789">
   <script src="/native-store.js"></script>
@@ -36,6 +36,7 @@
       border: none !important;
     }
   </style>
+  <link rel="stylesheet" href="monitoring.css?v=1.2.0">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -208,33 +209,22 @@
             </div>
 
             <!-- Central Reservoir Telemetry Card for Workers (Live IoT) -->
-            <div class="reservoir-card" style="border: 1.5px solid var(--navy-border); background-color: var(--white); margin: 16px 16px 0 16px;">
-              <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
-                Water service monitoring
-              </span>
-              <div class="metrics-row" style="grid-template-columns: 1fr 1fr; gap: 8px;">
-                <div class="metric-card">
-                  <span class="metric-card-lbl">Water Level</span>
-                  <div class="metric-card-val"><span id="worker-tank-val">--%</span></div>
-                </div>
-                <div class="metric-card">
-                  <span class="metric-card-lbl">Water status</span>
-                  <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="worker-safety-status">AWAITING DATA</div>
+            <section class="reservoir-card service-monitor" aria-labelledby="worker-monitor-title">
+              <h3 class="reservoir-title" id="worker-monitor-title">Water service monitoring</h3>
+              <div class="monitor-hero">
+                <div class="tank-visual"><div id="worker-water-tank" class="water-tank tank-unavailable" role="progressbar" aria-label="Water level" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Water level unavailable"><div class="tank-water"></div><div class="tank-ticks"></div></div><div class="tank-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div></div>
+                <div class="monitor-level"><span class="metric-card-lbl">Water Level</span><strong id="worker-tank-val">N/A</strong>
+                  <span class="metric-card-lbl">Water Status</span><span class="monitor-status" id="worker-safety-status">AWAITING DATA</span>
                 </div>
               </div>
-              <div class="metrics-row" style="margin-top: 8px; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px;">
-                <div class="metric-card">
-                  <span class="metric-card-lbl">Turbidity</span>
-                  <div class="metric-card-val"><span id="worker-turb-val">--</span> <small style="font-size:10px;">NTU</small></div>
-                </div>
-                <div class="metric-card">
-                  <span class="metric-card-lbl">Dissolved solids</span>
-                  <div class="metric-card-val"><span id="worker-tds-val">--</span> <small style="font-size:10px;">ppm</small></div>
-                </div>
+              <div class="metrics-row monitor-metrics">
+                <div class="metric-card"><span class="metric-card-lbl">Turbidity</span><div class="metric-card-val"><span id="worker-turb-val">N/A</span> <small>NTU</small></div></div>
+                <div class="metric-card"><span class="metric-card-lbl">Dissolved Solids / TDS</span><div class="metric-card-val"><span id="worker-tds-val">N/A</span> <small>ppm</small></div></div>
               </div>
-<div class="water-level-track" aria-hidden="true"><div class="water-level-fill" id="worker-water-level-fill"></div></div><p class="telemetry-freshness" id="worker-telemetry-freshness" aria-live="polite">Awaiting sensor readings.</p>
-
-            </div>
+              <div class="monitor-updated"><span>Last Updated</span><span id="worker-reading-time">Awaiting data</span></div>
+              <p class="telemetry-freshness" id="worker-telemetry-freshness" aria-live="polite">Awaiting sensor readings.</p>
+              <p class="monitor-disclaimer">Provisional measurements; manual calibration required. These values do not certify drinking-water safety.</p>
+            </section>
 
             <!-- High-Priority Alert Widget -->
             <div class="alert-widget" id="dashboard-alert-widget">
@@ -503,33 +493,22 @@
           
           <div class="assets-scroll" style="padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1;">
             
-            <div class="reservoir-card" style="border: 1.5px solid var(--navy-border); background-color: var(--white);">
-              <span class="reservoir-title" style="font-size: 12px; font-weight: 800; text-transform: uppercase; text-align: center; display: block; border-bottom: 1.5px solid var(--off-white); padding-bottom: 8px; margin-bottom: 8px; color: var(--navy-primary)">
-                Water service monitoring
-              </span>
-              <div class="metrics-row" style="grid-template-columns: 1fr 1fr; gap: 8px;">
-                <div class="metric-card">
-                  <span class="metric-card-lbl">Water Level</span>
-                  <div class="metric-card-val"><span id="resident-tank-val">N/A</span></div>
-                </div>
-                <div class="metric-card">
-                  <span class="metric-card-lbl">Water status</span>
-                  <div class="metric-card-val" style="font-size: 13px; font-weight: 700; color: var(--alert-green);" id="resident-safety-status">AWAITING DATA</div>
+            <section class="reservoir-card service-monitor" aria-labelledby="resident-monitor-title">
+              <h3 class="reservoir-title" id="resident-monitor-title">Water service monitoring</h3>
+              <div class="monitor-hero">
+                <div class="tank-visual"><div id="resident-water-tank" class="water-tank tank-unavailable" role="progressbar" aria-label="Water level" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Water level unavailable"><div class="tank-water"></div><div class="tank-ticks"></div></div><div class="tank-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div></div>
+                <div class="monitor-level"><span class="metric-card-lbl">Water Level</span><strong id="resident-tank-val">N/A</strong>
+                  <span class="metric-card-lbl">Water Status</span><span class="monitor-status" id="resident-safety-status">AWAITING DATA</span>
                 </div>
               </div>
-              <div class="metrics-row" style="margin-top: 8px; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px;">
-                <div class="metric-card">
-                  <span class="metric-card-lbl">Turbidity</span>
-                  <div class="metric-card-val"><span id="resident-turb-val">--</span> <small style="font-size:10px;">NTU</small></div>
-                </div>
-                <div class="metric-card">
-                  <span class="metric-card-lbl">Dissolved solids</span>
-                  <div class="metric-card-val"><span id="resident-tds-val">--</span> <small style="font-size:10px;">ppm</small></div>
-                </div>
+              <div class="metrics-row monitor-metrics">
+                <div class="metric-card"><span class="metric-card-lbl">Turbidity</span><div class="metric-card-val"><span id="resident-turb-val">N/A</span> <small>NTU</small></div></div>
+                <div class="metric-card"><span class="metric-card-lbl">Dissolved Solids / TDS</span><div class="metric-card-val"><span id="resident-tds-val">N/A</span> <small>ppm</small></div></div>
               </div>
-<div class="water-level-track" aria-hidden="true"><div class="water-level-fill" id="resident-water-level-fill"></div></div><p class="telemetry-freshness" id="resident-telemetry-freshness" aria-live="polite">Awaiting sensor readings.</p>
-
-            </div>
+              <div class="monitor-updated"><span>Last Updated</span><span id="resident-reading-time">Awaiting data</span></div>
+              <p class="telemetry-freshness" id="resident-telemetry-freshness" aria-live="polite">Awaiting sensor readings.</p>
+              <p class="monitor-disclaimer">Provisional measurements; manual calibration required. These values do not certify drinking-water safety.</p>
+            </section>
 
             <div id="resident-announcement-banner" class="announcement-banner" style="display: none;">
             <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
@@ -997,6 +976,7 @@
     </div> <!-- Close app-screen -->
     </div> <!-- Close device-container -->
   <script src="push-client.js?v=1.1.0"></script>
-  <script src="app.js?v=1.1.0"></script>
+  <script src="ui-display.js?v=1.2.0"></script>
+  <script src="app.js?v=1.2.0"></script>
 </body>
 </html>

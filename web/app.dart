@@ -199,7 +199,7 @@ class AppController {
       else if (activeTab == 'view-dashboard') renderDashboard();
       else if (activeTab == 'view-directory') renderDirectory();
       if (activeTab == 'view-announcements') renderAnnouncementHistory();
-    } finally { _refreshingView = false; }
+    } finally { _refreshingView = false; _refreshTelemetryDisplay(); }
   }
 
   void _updateSyncStatusUI(Map<String, dynamic> status) {
@@ -871,7 +871,7 @@ class AppController {
         if (workerTagEl != null) {
           final aud = latestAnnouncement['target_audience'] ?? 'Everyone';
           final auth = latestAnnouncement['author'] ?? 'Admin';
-          workerTagEl.text = '$auth • $aud';
+          workerTagEl.text = '$auth • ${_formatTimestamp(latestAnnouncement['timestamp'])} • $aud';
         }
         workerBannerEl.style.display = 'flex';
 
@@ -1063,8 +1063,7 @@ class AppController {
           card.className = 'log-card ${log['status_resolved'] == true ? 'resolved' : 'pending'}';
 
           // Format date
-          final logDate = DateTime.tryParse((log['date'] ?? '').toString())?.toLocal();
-          final formattedDate = logDate == null ? 'Unknown date' : _formatDateTime(logDate);
+          final formattedDate = _formatTimestamp(log['date']);
 
           card.innerHtml = '''
             <div class="log-card-header">
@@ -1080,13 +1079,9 @@ class AppController {
   }
 
   // Helper date formatter
-  String _formatDateTime(DateTime dt) {
-    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-    return '${months[dt.month - 1]} ${dt.day} $hour:$minute $ampm';
-  }
+  String _formatTimestamp(dynamic stamp) => js.context['WaterHallDisplay']
+      .callMethod('formatTimestamp', [stamp?.toString() ?? '', 'Unknown date']).toString();
+
 
   // --- Directory & Search Controller ---
   void renderDirectory() {
@@ -1317,8 +1312,7 @@ class AppController {
         final item = document.createElement('div');
         item.className = 'log-card ${log['status_resolved'] == true ? 'resolved' : 'pending'}';
 
-        final logDate = DateTime.tryParse((log['date'] ?? '').toString())?.toLocal();
-        final formatted = logDate == null ? 'Unknown date' : '${logDate.month}/${logDate.day}/${logDate.year} @ ${_pad(logDate.hour)}:${_pad(logDate.minute)}';
+        final formatted = _formatTimestamp(log['date']);
 
         item.innerHtml = '''
           <div class="log-card-header">
@@ -1335,7 +1329,6 @@ class AppController {
     }
   }
 
-  String _pad(int val) => val.toString().padLeft(2, '0');
 
   // Reservoir measurements are read-only; no simulated readings.
   void renderAssets() {}
@@ -1619,8 +1612,7 @@ class AppController {
         final item = document.createElement('div');
         item.className = 'bill-record-card ${bill['status']}';
 
-        final billDate = DateTime.tryParse((bill['date'] ?? '').toString())?.toLocal();
-        final formattedDate = billDate == null ? 'Unknown date' : '${billDate.month}/${billDate.day}/${billDate.year} ${_pad(billDate.hour)}:${_pad(billDate.minute)}';
+        final formattedDate = _formatTimestamp(bill['date']);
 
         item.innerHtml = '''
           <div class="bill-record-header">
@@ -1656,7 +1648,10 @@ class AppController {
     if (records.isEmpty) { list.append(ParagraphElement()..className = 'empty-state'..text = 'No announcements yet. New Barangay updates will appear here.'); return; }
     for (final record in records) {
       final card = DivElement()..className = 'announcement-history-card';
-      card.append(ParagraphElement()..className = 'announcement-meta'..text = '${record['author']} · ${record['timestamp']}');
+      final meta = ParagraphElement()..className = 'announcement-meta';
+      meta.append(SpanElement()..className = 'announcement-author'..text = '${record['author']}');
+      meta.append(SpanElement()..text = '• ${_formatTimestamp(record['timestamp'])}');
+      card.append(meta);
       card.append(ParagraphElement()..text = '${record['message']}');
       list.append(card);
     }
@@ -1732,31 +1727,46 @@ class AppController {
     _restoreReportDraft?.call();
   }
 
+  void _refreshTelemetryDisplay() {
+    if (!hasUsableSession()) return;
+    final role = currentResidentId != null ? 'resident' : currentWorker != null ? 'worker' : null;
+    if (role == null) return;
+    _renderTelemetry(role, db.getCentralAssets(), document.getElementById('$role-tank-val'),
+        document.getElementById('$role-turb-val'), document.getElementById('$role-tds-val'),
+        document.getElementById('$role-safety-status'));
+  }
+
   void _renderTelemetry(String role, Map<String, dynamic> assets, Element? level,
       Element? turbidity, Element? tds, Element? status) {
     final available = assets['has_reading'] != false;
-    String reading(dynamic value, int digits) => available && value is num && value.isFinite
-        ? value.toStringAsFixed(digits) : 'N/A';
-    final rawLevel = assets['main_tank_level'];
-    level?.text = available && rawLevel is num ? '${reading(rawLevel, 0)}%' : 'N/A';
-    turbidity?.text = reading(assets['turbidity'], 1);
-    tds?.text = reading(assets['tds_ppm'], 0);
     final rawDate = '${assets['last_updated'] ?? ''}';
     final normalized = RegExp(r'(Z|[+-]\d\d:\d\d)$').hasMatch(rawDate) ? rawDate : '${rawDate}Z';
     final recorded = DateTime.tryParse(normalized);
     final age = recorded == null ? null : DateTime.now().toUtc().difference(recorded.toUtc());
     final stale = age != null && (age.inMinutes >= 10 || age.isNegative);
+    void reading(Element? element, dynamic value, int digits, [String unit = '']) {
+      final valid = available && value is num && value.isFinite;
+      final text = valid ? '${value.toStringAsFixed(digits)}$unit' : 'N/A';
+      if (element?.text != text) element?.text = text;
+      element?.parent?.querySelector('small')?.style.display = valid ? '' : 'none';
+    }
+    final rawLevel = assets['main_tank_level'];
+    reading(level, rawLevel, 0, '%');
+    reading(turbidity, assets['turbidity'], 1);
+    reading(tds, assets['tds_ppm'], 0);
     final warning = assets['turbidity_status'] == 'warning';
-    status?.text = !available ? 'AWAITING DATA' : stale ? 'STALE DATA' : warning ? 'QUALITY ALERT' : 'NO ALERT';
-    status?.style.color = !available || stale ? 'var(--text-muted)' : warning ? 'var(--alert-red)' : 'var(--alert-green)';
-    final updated = !available ? 'Awaiting sensor readings. No measurement is available.'
-        : recorded == null ? 'Latest recorded measurements · update time unavailable.'
-        : stale ? 'Stale reading · last updated ${recorded.toLocal()}. Refresh when connected.'
-        : 'Updated ${age!.inMinutes == 0 ? 'just now' : '${age.inMinutes} min ago'} · sensor readings';
-    document.getElementById('$role-telemetry-freshness')?.text = updated;
-    final fill = document.getElementById('$role-water-level-fill');
-    fill?.style.width = available && rawLevel is num && rawLevel.isFinite ? '${rawLevel.clamp(0, 100)}%' : '0';
-    fill?.style.backgroundColor = stale ? 'var(--text-muted)' : 'var(--navy-primary)';
+    final statusText = !available ? 'AWAITING DATA' : stale ? 'STALE DATA' : warning ? 'QUALITY ALERT' : 'NO ALERT';
+    if (status?.text != statusText) status?.text = statusText;
+    status?.style.color = !available || stale ? 'var(--text-muted)' : warning ? 'var(--alert-red)' : 'var(--text-muted)';
+    final updated = !available ? 'Awaiting current sensor readings.'
+        : recorded == null ? 'Update time unavailable.'
+        : stale ? 'Stale reading. Refresh when connected.' : 'Current sensor readings.';
+    final freshness = document.getElementById('$role-telemetry-freshness');
+    if (freshness?.text != updated) freshness?.text = updated;
+    final dateElement = document.getElementById('$role-reading-time');
+    final displayDate = _formatTimestamp(rawDate);
+    if (dateElement?.text != displayDate) dateElement?.text = displayDate;
+    js.context['WaterHallDisplay'].callMethod('renderTank', ['$role-water-tank', rawLevel, available && !stale && recorded != null]);
   }
 
   void renderResidentDashboard() {
@@ -1777,7 +1787,7 @@ class AppController {
         if (tagEl != null) {
           final aud = latestAnnouncement['target_audience'] ?? 'Everyone';
           final auth = latestAnnouncement['author'] ?? 'Admin';
-          tagEl.text = '$auth • $aud';
+          tagEl.text = '$auth • ${_formatTimestamp(latestAnnouncement['timestamp'])} • $aud';
         }
         bannerEl.style.display = 'flex';
 
@@ -1873,7 +1883,7 @@ class AppController {
     put('resident-calc-fee', value(snapshot?['environmental_fee'], 2));
     put('resident-calc-excess', value(snapshot?['excess_charge'], 2));
     final paidAt = statement?['payment_date']?.toString() ?? '';
-    put('resident-payment-date', (statement != null && '${statement['status']}'.toLowerCase() == 'paid' && paidAt.isNotEmpty) ? paidAt : 'Not paid');
+    put('resident-payment-date', (statement != null && '${statement['status']}'.toLowerCase() == 'paid' && paidAt.isNotEmpty) ? _formatTimestamp(paidAt) : 'Not paid');
     put('resident-rate-description', statement == null ? 'No billing record is on file yet. Amounts appear here after a Worker saves a meter reading.' : snapshot == null
       ? 'Legacy bill: original total preserved; rate breakdown unavailable.'
       : "Recorded rates: first ${snapshot['included_m3']} m³ included; excess PHP ${snapshot['excess_rate']}/m³.");
@@ -1916,8 +1926,7 @@ class AppController {
       final item = document.createElement('div');
       item.className = 'bill-record-card ${bill['status']}';
 
-      final billDate = DateTime.tryParse((bill['date'] ?? '').toString())?.toLocal();
-      final formatted = billDate == null ? 'Unknown date' : '${billDate.month}/${billDate.day}/${billDate.year} ${_pad(billDate.hour)}:${_pad(billDate.minute)}';
+      final formatted = _formatTimestamp(bill['date']);
 
       item.innerHtml = '''
         <div class="bill-record-header">
@@ -1929,7 +1938,7 @@ class AppController {
           <strong>₱${(bill['total_due'] as num).toStringAsFixed(2)}</strong>
         </div>
         <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">
-          Bill Ref ID: ${bill['bill_id']} | Issued: $formatted${bill['status'] == 'Paid' && (bill['payment_date'] ?? '').toString().isNotEmpty ? ' | Paid: ${bill['payment_date']}' : ''}
+          Bill Ref ID: ${bill['bill_id']} | Issued: $formatted${bill['status'] == 'Paid' && (bill['payment_date'] ?? '').toString().isNotEmpty ? ' | Paid: ${_formatTimestamp(bill['payment_date'])}' : ''}
         </div>
       ''';
       final breakdown = bill['billing_breakdown'] as Map?;

@@ -1,0 +1,13 @@
+/* Shared lightweight reservoir shape; fill height comes from real telemetry. */
+.tank-visual { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.water-tank { --water-level: 0%; position: relative; width: 94px; height: 140px;
+  flex-shrink: 0; border: 2px solid var(--tank-outline, #8faebe); border-radius: 14px;
+  overflow: hidden; background: var(--tank-empty, #eaf2f6); }
+.water-tank > .tank-water { position: absolute; bottom: 0; left: 0; width: 100%; height: var(--water-level);
+  background: var(--tank-water, #2191bd); transition: none; }
+.tank-ticks { position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(to top, transparent 0, transparent calc(25% - 1px), #ffffff80 calc(25% - 1px), #ffffff80 25%); }
+.tank-scale { display: flex; flex-direction: column; justify-content: space-between;
+  height: 140px; font-size: 11px; color: var(--text-muted); }
+.tank-unavailable .tank-water { background: var(--text-muted); }
+.tank-unavailable { border-style: dashed; }

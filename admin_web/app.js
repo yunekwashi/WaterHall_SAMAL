@@ -795,7 +795,7 @@ function renderDashboard(data) {
       const statusBadge = log.status_resolved
         ? '<span class="badge success">Resolved</span>'
         : '<span class="badge warning">Pending</span>';
-      const d = log.date ? new Date(log.date).toLocaleDateString() : 'N/A';
+      const d = WaterHallDisplay.formatTimestamp(log.date, 'N/A');
       
       const photoHtml = log.photo_base64
         ? `<br><div style="margin-top:6px;"><img src="${escapeHtml(log.photo_base64)}" style="max-width:140px; max-height:90px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:zoom-in;" data-report-photo="true" title="Click to view full image" /></div>`
@@ -1278,7 +1278,7 @@ function renderAnnouncements(announcements) {
   }
   announcements.forEach(item => {
     const tr = document.createElement('tr');
-    const d = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Just now';
+    const d = WaterHallDisplay.formatTimestamp(item.timestamp);
     const auth = item.author || 'Barangay Admin';
     const msg = item.message || '';
     const audience = item.target_audience || 'Everyone';
@@ -1535,7 +1535,7 @@ function renderCollectionsHistory(collections) {
       <td><strong style="color:var(--success)">₱${amt}</strong></td>
       <td>${escapeHtml(c.payment_method || 'Cash')}</td>
       <td>${escapeHtml(c.collected_by)}</td>
-      <td><small style="color:var(--text-muted)">${escapeHtml(c.collection_date)}</small></td>
+      <td><small style="color:var(--text-muted)">${escapeHtml(WaterHallDisplay.formatTimestamp(c.collection_date))}</small></td>
     `);
     tbody.appendChild(tr);
   });
@@ -1657,7 +1657,7 @@ function renderReports(reports) {
       <td>${escapeHtml(r.family_head_name || r.household_id)} (${escapeHtml(r.purok_name || 'Purok 1')})</td>
       <td><span class="badge badge-warning">${escapeHtml(r.report_type)}</span></td>
       <td>${escapeHtml(r.description)}${r.has_photo ? `<br><button type="button" class="btn btn-secondary" data-view-report-photo="${escapeHtml(r.report_id)}" style="margin-top:6px;padding:4px 10px;font-size:11px;">View photo evidence</button>` : ''}</td>
-      <td><small style="color:var(--text-muted)">${escapeHtml(r.created_at)}</small></td>
+      <td><small style="color:var(--text-muted)">${escapeHtml(WaterHallDisplay.formatTimestamp(r.created_at))}</small></td>
       <td><span class="badge ${r.status === 'Resolved' ? 'badge-success' : 'badge-danger'}">${escapeHtml(r.status)}</span></td>
       <td class="no-print">
         ${r.status !== 'Resolved' ? `<button class="btn" style="background:#10B981;color:white;padding:4px 10px;font-size:11px;" data-resolve-report="${r.report_id}">Mark Resolved</button>` : '<span style="color:var(--text-muted);font-size:11px;">Resolved</span>'}
@@ -1797,10 +1797,14 @@ function renderBillingConfig(config) {
     : 'Unconfirmed sample rates. Admin must enter and confirm the official rates.';
 }
 function renderReservoir(data) {
-  const present = data.has_reading === true;
-  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['admin-turbidity', 'turbidity', ' NTU'], ['admin-tds', 'tds_ppm', ' ppm'], ['admin-reading-time', 'last_updated', '']]) {
-    document.getElementById(id).textContent = present && data[key] != null ? String(data[key]) + unit : 'Awaiting data';
+  const present = typeof telemetryIsFresh === 'function' ? telemetryIsFresh(data) : data.has_reading === true;
+  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['admin-turbidity', 'turbidity', ' NTU'], ['admin-tds', 'tds_ppm', ' ppm']]) {
+    const element = document.getElementById(id);
+    element.textContent = present && typeof data[key] === 'number' && Number.isFinite(data[key]) ? String(data[key]) + unit : 'Awaiting data';
   }
+  document.getElementById('admin-reading-time').textContent = WaterHallDisplay.formatTimestamp(data.last_updated);
+  WaterHallDisplay.renderTank('admin-water-tank', data.main_tank_level, present);
+  WaterHallDisplay.renderTank('summary-water-tank', data.main_tank_level, present);
 }
 document.getElementById('billing-config-form').addEventListener('submit', async event => {
   event.preventDefault();
