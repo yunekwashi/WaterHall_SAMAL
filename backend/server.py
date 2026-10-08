@@ -497,7 +497,11 @@ def iot_telemetry():
         water_level = int(number(raw_wl, 'water level', 0, 100))
 
     turbidity = number(data.get('turbidity_ntu', data.get('turbidity')), 'turbidity', 0, 10000)
-    tds = int(number(data.get('tds_ppm', data.get('tds')), 'TDS', 0, 100000))
+    # Only explicit null represents unavailable TDS; omission stays invalid.
+    if 'tds_ppm' not in data and 'tds' not in data:
+        abort(400, description='Invalid TDS')
+    raw_tds = data.get('tds_ppm', data.get('tds'))
+    tds = None if raw_tds is None else int(number(raw_tds, 'TDS', 0, 100000))
 
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
 
