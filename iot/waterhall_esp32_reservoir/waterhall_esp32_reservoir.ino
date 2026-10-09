@@ -80,8 +80,8 @@ void setup() {
   Serial.println("[BOOT] ESP32 started");
   Serial.println("[BOOT] Firmware: WaterHall HC-SR04 intended reservoir geometry / sensor validity");
   Serial.println("[BOOT] No synthetic telemetry; sensor_config.h controls hardware gates.");
-  if (PROVISIONAL_DEMO_MODE)
-    Serial.println("[DEMO] Existing NTU/ppm approximations; MANUAL CALIBRATION REQUIRED. Water level uses intended 4-ft / 5-in geometry; physical accuracy verification required.");
+  Serial.println("[TURBIDITY] Numeric NTU requires approved reference calibration; raw diagnostics remain available.");
+  Serial.println("[SAFETY] Measurements do not certify drinking-water safety.");
   Serial.printf("[WATER] Full distance: %.2f cm | Empty distance: %.2f cm | Max depth: %.2f cm\n",
                 FULL_DISTANCE_CM, EMPTY_DISTANCE_CM, EMPTY_DISTANCE_CM - FULL_DISTANCE_CM);
   if (!SENSOR_WIRING_CONFIRMED) Serial.println("[HARDWARE] Wiring/voltage confirmation pending; all POSTs disabled.");

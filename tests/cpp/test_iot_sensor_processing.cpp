@@ -66,7 +66,7 @@ static void runtime_individual_invalid_and_recovery() {
   tdsOnlyInvalid = true;
   for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
   const SensorSnapshot missing = readSensors(clockMs);
-  assert(missing.waterLevel == 100 && isfinite(missing.turbidity) && isnan(missing.tds));
+  assert(missing.waterLevel == 100 && isfinite(missing.turbidityAdc) && isnan(missing.turbidity) && isnan(missing.tds));
   tdsOnlyInvalid = false;
   for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
   assert(isfinite(readSensors(clockMs).tds));
@@ -83,7 +83,7 @@ static void runtime_hc_noise_and_invalid_confirmation() {
   for (int i = 0; i < 3; ++i) { clockMs += 70; serviceSensors(clockMs); }
   assert(readSensors(clockMs).waterLevel == -1);
   assert(isnan(lastDistanceCm));
-  assert(isfinite(readSensors(clockMs).tds) && isfinite(readSensors(clockMs).turbidity));
+  assert(isfinite(readSensors(clockMs).tds) && isfinite(readSensors(clockMs).turbidityAdc) && isnan(readSensors(clockMs).turbidity));
   echoUs = 583;
   for (int i = 0; i < 3; ++i) { clockMs += 70; serviceSensors(clockMs); }
   assert(readSensors(clockMs).waterLevel == 100);
@@ -381,9 +381,9 @@ static void runtime_demo_profile() {
   assert(sample.waterLevel == 100);
   assert(closeTo(sample.turbidityVoltage, 1.665f));
   assert(closeTo(sample.tdsVoltage, 2.0f));
-  assert(closeTo(sample.turbidity, legacyDemoTurbidityNtu(sample.turbidityVoltage)));
+  assert(!TURBIDITY_REFERENCE_CALIBRATION_APPROVED && isnan(sample.turbidity));
   assert(closeTo(sample.tds, sen0244Ppm(sample.tdsVoltage, 1, 25)));
-  assert(validTelemetry(sample.turbidity, sample.tds));
+  assert(isfinite(sample.turbidityAdc) && !validTelemetry(sample.turbidity, sample.tds));
   assert(!validTelemetry(readSensors(clockMs, false).turbidity, readSensors(clockMs, false).tds));
   adcRaw = 4095; adcMv = 3300; echoUs = 0;
   for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
@@ -398,7 +398,7 @@ static void runtime_demo_level_bounds() {
     for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
     const SensorSnapshot sample = readSensors(clockMs, true);
     assert(sample.waterLevel == -1);
-    assert(validTelemetry(sample.turbidity, sample.tds));
+    assert(isfinite(sample.turbidityAdc) && !validTelemetry(sample.turbidity, sample.tds));
   }
   echoUs = 583;
   for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
@@ -426,8 +426,8 @@ static void runtime_demo_tracks_changed_physical_inputs() {
   assert(after.distance > before.distance);
   assert(closeTo(before.turbidityAdc, 0.6f) && closeTo(after.turbidityAdc, 0.75f));
   assert(closeTo(before.tdsVoltage, 1.2f) && closeTo(after.tdsVoltage, 1.5f));
-  assert(after.turbidity != before.turbidity && after.tds > before.tds);
-  assert(validTelemetry(before.turbidity, before.tds) && validTelemetry(after.turbidity, after.tds));
+  assert(isnan(before.turbidity) && isnan(after.turbidity) && after.tds > before.tds);
+  assert(!validTelemetry(before.turbidity, before.tds) && !validTelemetry(after.turbidity, after.tds));
 }
 
 int main(int argc, char** argv) {

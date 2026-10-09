@@ -167,9 +167,9 @@ def test_tds_partial_production(tds_partial_production_executable, case):
     assert result.stdout.strip() == case
 
 
-def test_tds_calibration_approved_path(tds_partial_production_executable):
+def test_tds_calibration_approved_path(nullable_turbidity_production_executable):
     case = 'tds_approved_reference_numeric_null_and_recovery'
-    result = subprocess.run([str(tds_partial_production_executable), case],
+    result = subprocess.run([str(nullable_turbidity_production_executable), case],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.strip() == case

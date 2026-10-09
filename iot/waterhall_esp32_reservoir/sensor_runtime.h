@@ -155,11 +155,10 @@ SensorSnapshot readSensors(uint32_t now, bool provisionalDemo = PROVISIONAL_DEMO
   sample.turbidityVoltage = waterhall::moduleVoltage(sample.turbidityAdc, TURBIDITY_DIVIDER_GAIN);
   sample.tdsVoltage = waterhall::tdsModuleVoltage(sample.tdsAdc, TDS_DIVIDER_GAIN,
                                                 TDS_LOW_RANGE);
-  sample.turbidity = provisionalDemo
-      ? waterhall::legacyDemoTurbidityNtu(sample.turbidityVoltage)
-      : waterhall::referenceValue(sample.turbidityVoltage,
+  sample.turbidity = TURBIDITY_REFERENCE_CALIBRATION_APPROVED
+      ? waterhall::referenceValue(sample.turbidityVoltage,
       TURBIDITY_REFERENCE_1_VOLTS, TURBIDITY_REFERENCE_1_NTU,
-      TURBIDITY_REFERENCE_2_VOLTS, TURBIDITY_REFERENCE_2_NTU, 10000);
+      TURBIDITY_REFERENCE_2_VOLTS, TURBIDITY_REFERENCE_2_NTU, 10000) : NAN;
   // This polynomial already existed in WaterHall's readTDSppm. Demo opt-in
   // does not assert that the unknown generic module is a SEN0244.
   // In the partial-production profile, only reviewed reference calibration can
@@ -187,9 +186,9 @@ void printSensors(const SensorSnapshot& sample) {
   else Serial.println("[WATER] Level: unavailable; fresh valid echo required");
   Serial.printf("[TURBIDITY] Raw ADC: %u | ADC Voltage: %.3f V | Module Voltage: %.3f V | ",
                 lastTurbidityRaw, sample.turbidityAdc, sample.turbidityVoltage);
-  if (isfinite(sample.turbidity)) Serial.printf("NTU: %.2f (%s; MANUAL CALIBRATION REQUIRED)\n",
-      sample.turbidity, PROVISIONAL_DEMO_MODE ? "legacy DEMO approximation" : "provisional reference interpolation");
-  else Serial.println("NTU: unavailable (invalid ADC or reference calibration required)");
+  if (isfinite(sample.turbidity)) Serial.printf("NTU: %.2f (approved bounded reference estimate)\n",
+      sample.turbidity);
+  else Serial.println("NTU: unavailable (invalid/stale signal or unapproved reference calibration)");
   Serial.printf("[TDS] Raw ADC: %u | ADC Voltage: %.3f V | Module Voltage: %.3f V | ",
                 lastTdsRaw, sample.tdsAdc, sample.tdsVoltage);
   if (TDS_LOW_RANGE_BENCH)

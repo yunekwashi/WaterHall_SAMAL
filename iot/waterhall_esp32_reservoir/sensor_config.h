@@ -103,6 +103,10 @@ constexpr float TURBIDITY_REFERENCE_1_VOLTS = NAN;
 constexpr float TURBIDITY_REFERENCE_1_NTU = NAN;
 constexpr float TURBIDITY_REFERENCE_2_VOLTS = NAN;
 constexpr float TURBIDITY_REFERENCE_2_NTU = NAN;
+// Raw-signal validity is not NTU accuracy. Unapproved calibration publishes null,
+// including in demo builds; neither the unsupported curve nor a local index is
+// a production NTU measurement. Approve only after physical reference validation.
+constexpr bool TURBIDITY_REFERENCE_CALIBRATION_APPROVED = false;
 
 // Generic TDS board: default to measured reference points, as above (ppm units).
 // The SEN0244 reference curve is opt-in ONLY after model/compatibility confirmation.
