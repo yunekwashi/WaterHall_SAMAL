@@ -22,13 +22,14 @@ def test_null_turbidity_keeps_other_sensors_then_recovers(ui_page,role):
     level,turb,tds,tank=selectors(role)
     expect(page.locator(level)).to_have_text('78%')
     expect(page.locator(tank)).to_have_attribute('aria-valuenow','78')
-    expect(page.locator(turb)).to_have_text('Awaiting data' if role=='admin' else 'N/A')
+    expect(page.locator(turb)).to_have_text('Unavailable')
     expect(page.locator(tds)).to_have_text('137 ppm' if role=='admin' else '137')
     for value in [0,2.31,None]:
         ingest(value,None)
         page.clock.set_fixed_time(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=2))
         page.clock.fast_forward(60000)
-        expected=('Awaiting data' if role=='admin' else 'N/A') if value is None else (f'{value:g} NTU' if role=='admin' else f'{value:.1f}')
+        # The new local index is a separate quantity; legacy NTU is never relabeled.
+        expected='Unavailable'
         expect(page.locator(turb)).to_have_text(expected)
         expect(page.locator(level)).to_have_text('78%')
         expect(page.locator(tds)).to_have_text('Awaiting data' if role=='admin' else 'N/A')

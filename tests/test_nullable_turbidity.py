@@ -35,7 +35,8 @@ def test_numeric_turbidity_validation_and_zero_unchanged(system, value):
     assert result.status_code == 200 and result.json['turbidity_ntu'] == float(value)
     assets = client.get('/api/all-data', headers=headers['admin']).json['centralAssets']
     assert assets['turbidity'] == float(value)
-    assert assets['turbidity_status'] == ('warning' if float(value) > 5 else 'normal')
+    assert assets['turbidity_status'] == 'unknown'
+    assert assets['calibration_required'] and not assets['turbidity_ntu_calibrated']
 
 @pytest.mark.parametrize('value', [-1, 10001, True, False, '', 'unavailable', float('nan'), float('inf')])
 def test_non_null_invalid_turbidity_still_rejected(system, value):

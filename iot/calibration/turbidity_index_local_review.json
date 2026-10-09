@@ -1,0 +1,421 @@
+{
+  "model": "local-clear-cloudy-20261009-v2",
+  "clear_adc_volts": 0.836,
+  "cloudy_adc_volts": 0.645,
+  "gain": 1.665,
+  "equation": "max(0,10*(0.836-Vadc)/0.191)",
+  "warning_entry": 5.0,
+  "recovery": 4.3,
+  "confirm_posts": 2,
+  "measured_clear_span_volts": 0.013000000000000012,
+  "clear_noise_index_allowance": 0.7,
+  "return_median_drift_limit_volts": 0.013000000000000012,
+  "clear_span_limit_volts": 0.013369999999999996,
+  "clear_rule": "Median, p95 and all ten-second median indices <= 0.7; finite fresh nonzero/unclipped signal; filtered span <= 0.01337 V",
+  "cloudy_rule": "All ten-second median indices >= 5.0, p05 index >= 5.0; finite fresh nonzero/unclipped signal",
+  "return_rule": "Same clear rule; absolute median voltage difference from validation clear <= 0.013 V; recovery after two modeled POSTs and remain Normal",
+  "settle_seconds": {
+    "final-clear": 90,
+    "final-cloudy": 90,
+    "final-return": 120
+  },
+  "capture_seconds": 60,
+  "minimum_observations": 120,
+  "production_unchanged_during_captures": true,
+  "approved": false,
+  "candidate_basis_sha256": {
+    "fresh-clear": "e232bdeeff92c5eaabff2915759d007c971cb6ebb7b401ed372ad6ad1445ee99",
+    "fresh-cloudy": "ae39c9e5373204a03fd1377854c53d6c83a9f466e474a5f9242a9b211c113fe0",
+    "fresh-return": "0e7e14c975e9b0fce7bfac6178a102fadcbfbc7bc3bde5fe511e07b905a3face"
+  },
+  "unit": "dimensionless local comparison, not NTU",
+  "calibration_approved": false,
+  "production_release_approved": true,
+  "scientific_ntu_calibration_approved": false,
+  "temperature_measured": false,
+  "voltage_source": "Chip-calibrated ESP32 millivolt estimates",
+  "candidate_clear_return_adc_volts": 0.83,
+  "candidate_clear_return_index": 0.31413612565445054,
+  "approval_note": "User explicitly authorized provisional operational deployment despite failed repeatability; no scientific or repeatability approval.",
+  "operational_enabled": true,
+  "provisional": true,
+  "baseline_drift_unresolved": true,
+  "latest_physical_validation": {
+    "physical_validation": "FAIL",
+    "recorded_functional_response": "PASS",
+    "practical_repeatability": "FAIL",
+    "stages": [
+      {
+        "label": "final-clear",
+        "utc_start": "2026-10-09T07:50:00.259206+00:00",
+        "settle_seconds": 90.0,
+        "capture_seconds": 60.01600000000326,
+        "sample_count": 235,
+        "ADC": {
+          "count": 235,
+          "min": 673.0,
+          "max": 928.0,
+          "median": 879.0,
+          "mean": 876.6808510638298,
+          "variance": 281.91907619567195,
+          "stdev": 16.790445979653786,
+          "MAD": 1.0,
+          "p05": 857.1,
+          "p95": 889.6
+        },
+        "estimated_raw_ADC_voltage": {
+          "count": 235,
+          "min": 0.751,
+          "max": 1.002,
+          "median": 0.84,
+          "mean": 0.8398340425531915,
+          "variance": 0.00025174584469903625,
+          "stdev": 0.01586650070743503,
+          "MAD": 0.0020000000000000018,
+          "p05": 0.819,
+          "p95": 0.8506
+        },
+        "filtered_ADC_voltage": {
+          "count": 235,
+          "min": 0.835,
+          "max": 0.844,
+          "median": 0.841,
+          "mean": 0.8405106382978723,
+          "variance": 1.6013820694671788e-06,
+          "stdev": 0.0012654572570684394,
+          "MAD": 0.0010000000000000009,
+          "p05": 0.8380000000000001,
+          "p95": 0.842
+        },
+        "reconstructed_filtered_AO_voltage": {
+          "min": 1.390275,
+          "max": 1.40526,
+          "median": 1.4002649999999999
+        },
+        "index_offline": {
+          "min": 0.0,
+          "max": 0.05235602094240844,
+          "median": 0.0,
+          "p05": 0.0,
+          "p95": 0.0
+        },
+        "index_ten_second_medians": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "zero_count": 0,
+        "clipping_count": 0,
+        "accepted_raw_signal_valid": true,
+        "malformed_SAMPLE_lines": 0,
+        "parse_errors": [],
+        "HC_unavailable_observations": 235,
+        "HTTP_codes": [
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "MCU_ms_first": 2559064.0,
+        "MCU_ms_last": 2618749.0,
+        "filtered_span_volts": 0.009000000000000008,
+        "status_margin_pass": true,
+        "clear_noise_span_pass": true
+      },
+      {
+        "label": "final-cloudy",
+        "utc_start": "2026-10-09T07:54:57.287742+00:00",
+        "settle_seconds": 90.0,
+        "capture_seconds": 60.01500000001397,
+        "sample_count": 234,
+        "ADC": {
+          "count": 234,
+          "min": 554.0,
+          "max": 721.0,
+          "median": 689.0,
+          "mean": 689.0897435897435,
+          "variance": 162.86315615714759,
+          "stdev": 12.761784991024868,
+          "MAD": 3.0,
+          "p05": 677.0,
+          "p95": 704.35
+        },
+        "estimated_raw_ADC_voltage": {
+          "count": 234,
+          "min": 0.653,
+          "max": 0.72,
+          "median": 0.691,
+          "mean": 0.6911709401709402,
+          "variance": 6.640842228825034e-05,
+          "stdev": 0.008149136290936013,
+          "MAD": 0.0020000000000000018,
+          "p05": 0.677,
+          "p95": 0.7063499999999999
+        },
+        "filtered_ADC_voltage": {
+          "count": 234,
+          "min": 0.687,
+          "max": 0.699,
+          "median": 0.691,
+          "mean": 0.6909529914529914,
+          "variance": 4.285334360441653e-06,
+          "stdev": 0.0020701049153223254,
+          "MAD": 0.0020000000000000018,
+          "p05": 0.688,
+          "p95": 0.695
+        },
+        "reconstructed_filtered_AO_voltage": {
+          "min": 1.143855,
+          "max": 1.163835,
+          "median": 1.150515
+        },
+        "index_offline": {
+          "min": 7.17277486910995,
+          "max": 7.801047120418845,
+          "median": 7.591623036649218,
+          "p05": 7.382198952879584,
+          "p95": 7.748691099476444
+        },
+        "index_ten_second_medians": [
+          7.696335078534035,
+          7.696335078534035,
+          7.643979057591626,
+          7.591623036649218,
+          7.539267015706809,
+          7.486910994764401
+        ],
+        "zero_count": 0,
+        "clipping_count": 0,
+        "accepted_raw_signal_valid": true,
+        "malformed_SAMPLE_lines": 1,
+        "parse_errors": [
+          {
+            "seconds": 0.14000000001396984,
+            "kind": "SAMPLE",
+            "rejected_line": "[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756[SAMPLE] ms=2856099 echo_n=42756 analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na analog_n=43148 hc_raw=nan hc=na=0.689 tds_raw=0 tds_v=0.075 tds=nan level=-1 ntu=nan ppm=nan turb_mod=1.147 tds_mod=0.150 depth=nan tds_db=0 tds_state=LOW_SIGNAL_OR_FAULT_UNQUANTIFIED echo_us=0 echo_timeout_n=42107 echo_invalid_n=0 hc_available=0"
+          }
+        ],
+        "HC_unavailable_observations": 234,
+        "HTTP_codes": [
+          200,
+          200,
+          200,
+          200,
+          200
+        ],
+        "MCU_ms_first": 2856347.0,
+        "MCU_ms_last": 2915799.0,
+        "filtered_span_volts": 0.0119999999999999,
+        "status_margin_pass": true
+      },
+      {
+        "label": "final-return",
+        "utc_start": "2026-10-09T08:00:42.788088+00:00",
+        "settle_seconds": 120.0,
+        "capture_seconds": 60.0,
+        "sample_count": 236,
+        "ADC": {
+          "count": 236,
+          "min": 842.0,
+          "max": 1070.0,
+          "median": 978.0,
+          "mean": 978.9110169491526,
+          "variance": 198.9154525784349,
+          "stdev": 14.103738957398315,
+          "MAD": 2.0,
+          "p05": 964.5,
+          "p95": 995.25
+        },
+        "estimated_raw_ADC_voltage": {
+          "count": 236,
+          "min": 0.884,
+          "max": 1.007,
+          "median": 0.92,
+          "mean": 0.9212584745762712,
+          "variance": 0.0001934690768121165,
+          "stdev": 0.013909316187797173,
+          "MAD": 0.0020000000000000018,
+          "p05": 0.906,
+          "p95": 0.9394999999999999
+        },
+        "filtered_ADC_voltage": {
+          "count": 236,
+          "min": 0.91,
+          "max": 0.925,
+          "median": 0.921,
+          "mean": 0.9201059322033899,
+          "variance": 3.337666786873428e-06,
+          "stdev": 0.0018269282380196077,
+          "MAD": 0.0010000000000000009,
+          "p05": 0.918,
+          "p95": 0.923
+        },
+        "reconstructed_filtered_AO_voltage": {
+          "min": 1.51515,
+          "max": 1.5401250000000002,
+          "median": 1.533465
+        },
+        "index_offline": {
+          "min": 0.0,
+          "max": 0.0,
+          "median": 0.0,
+          "p05": 0.0,
+          "p95": 0.0
+        },
+        "index_ten_second_medians": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "zero_count": 0,
+        "clipping_count": 0,
+        "accepted_raw_signal_valid": true,
+        "malformed_SAMPLE_lines": 0,
+        "parse_errors": [],
+        "HC_unavailable_observations": 0,
+        "HTTP_codes": [
+          200,
+          200,
+          200,
+          200
+        ],
+        "MCU_ms_first": 3201832.0,
+        "MCU_ms_last": 3261280.0,
+        "filtered_span_volts": 0.015000000000000013,
+        "status_margin_pass": true,
+        "clear_noise_span_pass": false
+      }
+    ],
+    "clear_to_cloudy_percent_ADC": -21.61547212741752,
+    "clear_to_cloudy_percent_filtered_voltage": -17.835909631391203,
+    "clear_return_percent_ADC": 11.262798634812286,
+    "clear_return_percent_filtered_voltage": 9.512485136741983,
+    "clear_return_median_delta_volts": 0.08000000000000007,
+    "frozen_return_tolerance_volts": 0.013000000000000012,
+    "return_drift_multiple_of_tolerance": 6.153846153846154,
+    "return_median_drift_pass": false,
+    "status_replay_offline": [
+      {
+        "stage": "final-clear",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-clear",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-clear",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-clear",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-clear",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-clear",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-cloudy",
+        "index": 7.7,
+        "status": "Normal",
+        "pending": 1
+      },
+      {
+        "stage": "final-cloudy",
+        "index": 7.75,
+        "status": "Elevated",
+        "pending": 0
+      },
+      {
+        "stage": "final-cloudy",
+        "index": 7.54,
+        "status": "Elevated",
+        "pending": 0
+      },
+      {
+        "stage": "final-cloudy",
+        "index": 7.64,
+        "status": "Elevated",
+        "pending": 0
+      },
+      {
+        "stage": "final-cloudy",
+        "index": 7.59,
+        "status": "Elevated",
+        "pending": 0
+      },
+      {
+        "stage": "final-cloudy",
+        "index": 7.43,
+        "status": "Elevated",
+        "pending": 0
+      },
+      {
+        "stage": "final-return",
+        "index": 0.0,
+        "status": "Elevated",
+        "pending": 1
+      },
+      {
+        "stage": "final-return",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-return",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-return",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-return",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      },
+      {
+        "stage": "final-return",
+        "index": 0.0,
+        "status": "Normal",
+        "pending": 0
+      }
+    ],
+    "offline_status_return": "Normal",
+    "approval_gates_remain_OFF": true,
+    "important_limit": "Index clamps values above the clear voltage to zero. A Normal status alone does not validate a displaced baseline; drift/noise criteria are independent.",
+    "HC_signal_available_during_this_capture": false,
+    "production_modified": false,
+    "production_index_POSTs_performed": false
+  }
+}

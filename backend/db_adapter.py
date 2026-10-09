@@ -330,6 +330,8 @@ def init_db():
                 pass
 
         additions = {
+            # Additive local optical-index history; existing NTU rows are intact.
+            'reservoir_quality_readings': {'turbidity_index_json': 'TEXT'},
             'billing_records': {'billed_at': 'TEXT', 'billed_by': 'INTEGER', 'billing_snapshot': 'TEXT'},
             'households': {'account_status': "TEXT NOT NULL DEFAULT 'approved' CHECK (account_status IN ('pending', 'approved', 'rejected'))"},
             'announcements': {'target_audience': "TEXT NOT NULL DEFAULT 'Everyone'"},

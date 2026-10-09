@@ -214,16 +214,16 @@
               <div class="monitor-hero">
                 <div class="tank-visual"><div id="worker-water-tank" class="water-tank tank-unavailable" role="progressbar" aria-label="Water level" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Water level unavailable"><div class="tank-water"></div><div class="tank-ticks"></div></div><div class="tank-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div></div>
                 <div class="monitor-level"><span class="metric-card-lbl">Water Level</span><strong id="worker-tank-val">N/A</strong>
-                  <span class="metric-card-lbl">Water Status</span><span class="monitor-status" id="worker-safety-status">AWAITING DATA</span>
+                  <span class="metric-card-lbl">Turbidity status</span><span class="monitor-status" id="worker-safety-status">Unavailable</span>
                 </div>
               </div>
               <div class="metrics-row monitor-metrics">
-                <div class="metric-card"><span class="metric-card-lbl">Turbidity</span><div class="metric-card-val"><span id="worker-turb-val">N/A</span> <small>NTU</small></div></div>
+                <div class="metric-card"><span class="metric-card-lbl">Turbidity Index<br><small>Provisional</small></span><div class="metric-card-val"><span id="worker-turb-val">Unavailable</span></div></div>
                 <div class="metric-card"><span class="metric-card-lbl">Dissolved Solids / TDS</span><div class="metric-card-val"><span id="worker-tds-val">N/A</span> <small>ppm</small></div></div>
               </div>
               <div class="monitor-updated"><span>Last Updated</span><span id="worker-reading-time">Awaiting data</span></div>
               <p class="telemetry-freshness" id="worker-telemetry-freshness" aria-live="polite">Awaiting sensor readings.</p>
-              <p class="monitor-disclaimer">Provisional measurements; manual calibration required. These values do not certify drinking-water safety.</p>
+              <p class="monitor-disclaimer">Provisional operational Turbidity Index, not NTU. Baseline drift remains unresolved. Normal means below the operational warning threshold. Measurements do not certify drinking-water safety. TDS calibration remains unverified.</p>
             </section>
 
             <!-- High-Priority Alert Widget -->
@@ -498,16 +498,16 @@
               <div class="monitor-hero">
                 <div class="tank-visual"><div id="resident-water-tank" class="water-tank tank-unavailable" role="progressbar" aria-label="Water level" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Water level unavailable"><div class="tank-water"></div><div class="tank-ticks"></div></div><div class="tank-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div></div>
                 <div class="monitor-level"><span class="metric-card-lbl">Water Level</span><strong id="resident-tank-val">N/A</strong>
-                  <span class="metric-card-lbl">Water Status</span><span class="monitor-status" id="resident-safety-status">AWAITING DATA</span>
+                  <span class="metric-card-lbl">Turbidity status</span><span class="monitor-status" id="resident-safety-status">Unavailable</span>
                 </div>
               </div>
               <div class="metrics-row monitor-metrics">
-                <div class="metric-card"><span class="metric-card-lbl">Turbidity</span><div class="metric-card-val"><span id="resident-turb-val">N/A</span> <small>NTU</small></div></div>
+                <div class="metric-card"><span class="metric-card-lbl">Turbidity Index<br><small>Provisional</small></span><div class="metric-card-val"><span id="resident-turb-val">Unavailable</span></div></div>
                 <div class="metric-card"><span class="metric-card-lbl">Dissolved Solids / TDS</span><div class="metric-card-val"><span id="resident-tds-val">N/A</span> <small>ppm</small></div></div>
               </div>
               <div class="monitor-updated"><span>Last Updated</span><span id="resident-reading-time">Awaiting data</span></div>
               <p class="telemetry-freshness" id="resident-telemetry-freshness" aria-live="polite">Awaiting sensor readings.</p>
-              <p class="monitor-disclaimer">Provisional measurements; manual calibration required. These values do not certify drinking-water safety.</p>
+              <p class="monitor-disclaimer">Provisional operational Turbidity Index, not NTU. Baseline drift remains unresolved. Normal means below the operational warning threshold. Measurements do not certify drinking-water safety. TDS calibration remains unverified.</p>
             </section>
 
             <div id="resident-announcement-banner" class="announcement-banner" style="display: none;">
@@ -976,7 +976,7 @@
     </div> <!-- Close app-screen -->
     </div> <!-- Close device-container -->
   <script src="push-client.js?v=1.1.0"></script>
-  <script src="ui-display.js?v=1.2.0"></script>
-  <script src="app.js?v=1.2.0"></script>
+  <script src="ui-display.js?v=1.2.3-index-provisional"></script>
+  <script src="app.js?v=1.2.3-index-provisional"></script>
 </body>
 </html>

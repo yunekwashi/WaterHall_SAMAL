@@ -96,6 +96,23 @@ constexpr float SENSOR_TO_FULL_DISTANCE_CM = FULL_DISTANCE_CM;
 constexpr float TURBIDITY_DIVIDER_GAIN = 1.665f;
 constexpr float TDS_DIVIDER_GAIN = 2.0f;
 
+// Local dimensionless comparison, NOT scientific NTU. Same-path measured
+// Latest measured medians: clear 0.836 V, cloudy 0.645 V, return 0.830 V.
+// Frozen repeatability validation failed; provisional operational release is
+// separately authorized. Do not represent this as repeatability approval.
+// Raw ADC, ADC voltage and reconstructed AO remain available for diagnosis.
+#ifdef WATERHALL_LOCAL_TURBIDITY_INDEX
+constexpr bool TURBIDITY_LOCAL_INDEX_ENABLED = true;
+#else
+constexpr bool TURBIDITY_LOCAL_INDEX_ENABLED = false;
+#endif
+constexpr char TURBIDITY_LOCAL_INDEX_MODEL[] = "local-clear-cloudy-20261009-v2";
+// Repeatability failed; provisional display is explicitly authorized separately.
+constexpr bool TURBIDITY_LOCAL_INDEX_CALIBRATION_APPROVED = false;
+constexpr bool TURBIDITY_LOCAL_INDEX_OPERATIONAL_ENABLED = true;
+constexpr float TURBIDITY_LOCAL_CLEAR_ADC_VOLTS = 0.836f;
+constexpr float TURBIDITY_LOCAL_CLOUDY_ADC_VOLTS = 0.645f;
+
 // Generic turbidity board: fill TWO measured module-output voltages and certified
 // NTU references. Interpolation is provisional and valid only between these points.
 // No generic/unsupported NTU equation or assumed clear-water NTU is used.
@@ -103,9 +120,8 @@ constexpr float TURBIDITY_REFERENCE_1_VOLTS = NAN;
 constexpr float TURBIDITY_REFERENCE_1_NTU = NAN;
 constexpr float TURBIDITY_REFERENCE_2_VOLTS = NAN;
 constexpr float TURBIDITY_REFERENCE_2_NTU = NAN;
-// Raw-signal validity is not NTU accuracy. Unapproved calibration publishes null,
-// including in demo builds; neither the unsupported curve nor a local index is
-// a production NTU measurement. Approve only after physical reference validation.
+// Electrical signal validity alone never approves scientific NTU. Leave false
+// until same-path certified references and independent repeatability pass.
 constexpr bool TURBIDITY_REFERENCE_CALIBRATION_APPROVED = false;
 
 // Generic TDS board: default to measured reference points, as above (ppm units).

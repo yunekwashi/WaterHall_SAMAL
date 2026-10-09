@@ -144,6 +144,8 @@ class AppController {
 
     // Foreground fallback only; reconnect and foreground resume refresh promptly.
     Timer.periodic(const Duration(seconds: 60), (_) => _refreshVisibleView());
+    // Cached-display expiry only; does not make additional API requests.
+    Timer.periodic(const Duration(seconds: 1), (_) => _refreshTelemetryDisplay());
     document.onVisibilityChange.listen((_) {
       if (document.visibilityState == 'visible') unawaited(_refreshVisibleView());
     });
@@ -898,7 +900,7 @@ class AppController {
     final List<Map<String, String>> qualityAlerts = [];
     if (assets['turbidity_status'] == 'warning') {
       qualityAlertCount++;
-      qualityAlerts.add({'type': 'quality', 'name': 'Central Turbidity Alert', 'desc': assets['turbidity_desc']});
+      qualityAlerts.add({'type': 'quality', 'name': 'Elevated Turbidity Index (Provisional)', 'desc': assets['turbidity_desc']});
     }
 
     final totalAlerts = activeLeaks.length + qualityAlertCount;
@@ -1752,12 +1754,16 @@ class AppController {
     }
     final rawLevel = assets['main_tank_level'];
     reading(level, rawLevel, 0, '%');
-    reading(turbidity, assets['turbidity'], 1);
+    final indexState = js.context['WaterHallDisplay'].callMethod('turbidityIndexState', [js.JsObject.jsify(assets)]);
+    final indexValue = indexState['value'];
+    final indexStatus = '${indexState['status']}';
+    final indexText = indexValue is num ? indexValue.toStringAsFixed(2) : 'Unavailable';
+    if (turbidity?.text != indexText) turbidity?.text = indexText;
     reading(tds, assets['tds_ppm'], 0);
-    final warning = assets['turbidity_status'] == 'warning';
-    final statusText = !available ? 'AWAITING DATA' : stale ? 'STALE DATA' : warning ? 'QUALITY ALERT' : 'NO ALERT';
+    final warning = indexStatus == 'Elevated';
+    final statusText = indexStatus;
     if (status?.text != statusText) status?.text = statusText;
-    status?.style.color = !available || stale ? 'var(--text-muted)' : warning ? 'var(--alert-red)' : 'var(--text-muted)';
+    status?.style.color = warning ? 'var(--alert-red)' : 'var(--text-muted)';
     final updated = !available ? 'Awaiting current sensor readings.'
         : recorded == null ? 'Update time unavailable.'
         : stale ? 'Stale reading. Refresh when connected.' : 'Current sensor readings.';

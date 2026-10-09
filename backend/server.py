@@ -4,10 +4,12 @@ import datetime
 import hashlib
 import hmac
 import logging
+import math
 import re
 import secrets
 from decimal import Decimal
 from backend import config
+from backend import turbidity_index as local_turbidity
 from backend.security import principal, require_role, claims_for, text, password, number, identifier, timestamp, validate_push
 from backend.photos import save_photo, photo_for_client, report_photo_metadata
 from backend.collections import synchronize
@@ -305,21 +307,28 @@ def get_all_data():
                 'monthly_history': monthly_history
             })
 
-        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         row = db.fetchone()
         if row:
             turb_val = None if row['turbidity_ntu'] is None else float(row['turbidity_ntu'])
             central_assets = {
                 'main_tank_level': row['water_level_percentage'], 'turbidity': turb_val,
                 'tds_ppm': row['tds_ppm'], 'has_reading': True,
-                'turbidity_status': 'unknown' if turb_val is None else ('warning' if turb_val > 5 else 'normal'),
-                'turbidity_desc': 'Awaiting turbidity readings' if turb_val is None else ('Elevated turbidity; follow local water authority guidance.' if turb_val > 5 else 'No turbidity alert.'),
+                # Existing rows contain no persisted per-sensor calibration proof.
+                'turbidity_status': 'unknown',
+                'turbidity_desc': 'Awaiting turbidity readings' if turb_val is None else 'Provisional turbidity; NTU calibration unverified.',
                 'last_updated': row.get('recorded_at')
             }
         else:
             central_assets = {'main_tank_level': None, 'turbidity': None, 'tds_ppm': None,
                               'turbidity_status': 'unknown', 'turbidity_desc': 'Awaiting sensor readings',
                               'last_updated': None, 'has_reading': False}
+        central_assets.update(unverified_analogue_metadata())
+        central_assets.update(local_turbidity.public_metadata(dict(row) if row else None))
+        index_status = central_assets['turbidity_index_status']
+        central_assets['turbidity_status'] = {'Normal': 'normal', 'Elevated': 'warning'}.get(index_status, 'unknown')
+        if row and row.get('turbidity_index_json') is not None:
+            central_assets['turbidity_desc'] = local_turbidity.DISCLAIMER
 
         db.execute("SELECT * FROM maintenance_logs ORDER BY date DESC;")
         maintenance_logs = []
@@ -476,6 +485,32 @@ def export_reports():
 # ==============================================================================
 # IoT Real-time Telemetry Endpoints (ESP32 Integration)
 # ==============================================================================
+def unverified_analogue_metadata():
+    """Fail closed for schema-v2 rows without calibration evidence.
+
+    Raw numeric/history fields remain intact. This is not a certification or a
+    claim about HC-SR04 calibration; the analogue sensors remain unverified.
+    """
+    return {'calibration_required': True, 'turbidity_ntu_calibrated': False,
+            'tds_ppm_calibrated': False,
+            'measurement_disclaimer': 'Measurements do not certify drinking-water safety.'}
+
+
+def turbidity_alert_eligible(data, turbidity):
+    """Require explicit fresh, calibrated per-sensor evidence from the device.
+
+    Legacy/global metadata cannot approve turbidity. Missing or malformed
+    evidence stays ineligible without changing numeric ingestion.
+    """
+    age = data.get('turbidity_sample_age_ms')
+    return (turbidity is not None
+            and data.get('turbidity_signal_valid') is True
+            and data.get('turbidity_ntu_calibrated') is True
+            and data.get('turbidity_provisional') is False
+            and type(age) in (int, float) and 0 <= age <= 2000
+            and math.isfinite(age))
+
+
 @app.route('/api/iot/telemetry', methods=['POST'])
 @app.route('/api/iot/update', methods=['POST'])
 @limiter.limit("60 per minute; 20000 per day", override_defaults=True)
@@ -507,30 +542,58 @@ def iot_telemetry():
     raw_tds = data.get('tds_ppm', data.get('tds'))
     tds = None if raw_tds is None else int(number(raw_tds, 'TDS', 0, 100000))
 
+    if 'turbidity_index' in data:
+        if data['turbidity_index'] is not None:
+            number(data['turbidity_index'], 'turbidity index', 0, 100)
+        if data.get('turbidity_index_model') != local_turbidity.MODEL:
+            abort(400, description='Unsupported local turbidity index model')
+        for field, maximum in [('turbidity_raw_adc', 4095), ('turbidity_adc_voltage', 3.3),
+                               ('turbidity_module_voltage', 5.5), ('turbidity_sample_age_ms', 2**32 - 1)]:
+            if data.get(field) is not None:
+                number(data[field], field, 0, maximum)
+
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
 
     with get_db() as db:
+        # Persist the versioned local index separately from scientific NTU history.
+        # Serialize consecutive-state changes across simultaneous device POSTs.
+        if is_postgres():
+            db.execute('SELECT pg_advisory_xact_lock(1464355913)')
+        else:
+            db.execute('BEGIN IMMEDIATE')
+        db.execute('SELECT turbidity_index_json,recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1')
+        previous_index = db.fetchone()
+        index_record = local_turbidity.prepare_record(data, previous_index, datetime.datetime.now(datetime.timezone.utc))
         db.execute('''
-            INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, tds_ppm, recorded_at)
-            VALUES (?, ?, ?, ?);
-        ''', (water_level, turbidity, tds, now_str))
+            INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json)
+            VALUES (?, ?, ?, ?, ?);
+        ''', (water_level, turbidity, tds, now_str, json.dumps(index_record, allow_nan=False) if index_record else None))
 
         # Automated emergency system alerts for contamination or critically low water level
         now_dt = datetime.datetime.now(datetime.timezone.utc)
         one_hour_ago = (now_dt - datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
 
         # 1. Elevated turbidity alert (not a drinking-water safety certification)
-        if turbidity is not None and turbidity > 5.0:
+        index_elevated = index_record is not None and index_record['status'] == 'Elevated'
+        if index_elevated or (turbidity_alert_eligible(data, turbidity) and turbidity > 5.0):
             db.execute("""
                 SELECT COUNT(*) as cnt FROM announcements
                 WHERE author = 'System Sensor Alert'
-                  AND message LIKE '%WATER QUALITY ALERT%'
+                  AND (message LIKE '%WATER QUALITY ALERT%' OR message LIKE '%TURBIDITY INDEX ALERT%')
                   AND timestamp >= ?;
             """, (one_hour_ago,))
             recent_alert = db.fetchone()
             alert_count = recent_alert['cnt'] if recent_alert and 'cnt' in recent_alert else (list(recent_alert.values())[0] if recent_alert else 0)
             if alert_count == 0:
-                alert_msg = f"⚠️ WATER QUALITY ALERT: Elevated turbidity detected ({turbidity:.1f} NTU). Water may be unsafe for direct drinking. Follow local water authority guidance before using this supply."
+                if index_elevated:
+                    alert_msg = (f"TURBIDITY INDEX ALERT: Provisional operational Turbidity Index {index_record['value']:.2f} is elevated. "
+                                 "Baseline drift remains unresolved. This is a local operational comparison, not NTU or a drinking-water safety certification.")
+                    alert_title = 'Elevated Turbidity Index (Provisional)'
+                    alert_body = alert_msg
+                else:
+                    alert_msg = f"⚠️ WATER QUALITY ALERT: Elevated turbidity detected ({turbidity:.1f} NTU). Water may be unsafe for direct drinking. Follow local water authority guidance before using this supply."
+                    alert_title = '⚠️ Water Quality Warning'
+                    alert_body = f"Water turbidity ({turbidity:.1f} NTU) is elevated. Follow local water authority guidance."
                 db.execute("""
                     INSERT INTO announcements (message, author, target_audience, timestamp)
                     VALUES (?, 'System Sensor Alert', 'Everyone', ?);
@@ -538,8 +601,8 @@ def iot_telemetry():
 
                 # Queue durable push notification for contamination
                 send_web_push(
-                    title="⚠️ Water Quality Warning",
-                    body=f"Water turbidity ({turbidity:.1f} NTU) is elevated. Follow local water authority guidance.",
+                    title=alert_title,
+                    body=alert_body,
                     target_audience='Everyone',
                     tag='alert-water-quality',
                     extra_data={'url': '/', 'type': 'critical'}, db=db
@@ -579,6 +642,8 @@ def iot_telemetry():
         'water_level_percentage': water_level,
         'turbidity_ntu': turbidity,
         'tds_ppm': tds,
+        **local_turbidity.public_metadata({'turbidity_index_json': json.dumps(index_record) if index_record else None,
+                                          'recorded_at': now_str}),
         'message': 'IoT sensor data ingested successfully'
     })
 
@@ -586,14 +651,18 @@ def iot_telemetry():
 def get_latest_iot():
     """Returns the latest sensor reading snapshot for real-time subscribers."""
     with get_db() as db:
-        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         row = db.fetchone()
         if not row:
-            return jsonify(status='awaiting_sensor', recorded_at=None), 200
+            return jsonify(status='awaiting_sensor', recorded_at=None,
+                           **unverified_analogue_metadata(), **local_turbidity.public_metadata(None)), 200
         result = dict(row)
         result['water_level'] = result.get('water_level_percentage')
         result['turbidity'] = result.get('turbidity_ntu')
         result['tds'] = result.get('tds_ppm')
+        result.update(unverified_analogue_metadata())
+        result.update(local_turbidity.public_metadata(result))
+        result.pop('turbidity_index_json', None)
         return jsonify(result)
 
 # ==============================================================================
@@ -823,17 +892,20 @@ def poll_notifications():
         new_announcements = [dict(r) for r in db.fetchall()]
 
         # Latest telemetry for urgent status checks
-        db.execute("SELECT water_level_percentage, turbidity_ntu, tds_ppm, recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         telemetry = db.fetchone()
         telemetry_dict = dict(telemetry) if telemetry else {}
+        telemetry_dict.update(unverified_analogue_metadata())
+        telemetry_dict.update(local_turbidity.public_metadata(telemetry_dict))
+        telemetry_dict.pop('turbidity_index_json', None)
 
         is_contaminated = False
         is_low_level = False
         if telemetry_dict:
-            turb = telemetry_dict.get('turbidity_ntu') or 0.0
             wl = telemetry_dict.get('water_level_percentage')
-            if turb > 5.0:
-                is_contaminated = True
+            # Stored schema-v2 numbers do not establish calibrated water quality.
+            # Ingestion can issue a guarded alert from fresh device evidence;
+            # this read-side status cannot infer that evidence from numeric NTU.
             if wl is not None and wl <= 20:
                 is_low_level = True
 
@@ -843,6 +915,7 @@ def poll_notifications():
             'new_announcements': new_announcements,
             'latest_announcement': new_announcements[0] if new_announcements else None,
             'is_contaminated': is_contaminated,
+            'is_turbidity_elevated': telemetry_dict['turbidity_index_status'] == 'Elevated',
             'is_low_level': is_low_level,
             'telemetry': telemetry_dict
         })

@@ -209,7 +209,7 @@
         </div>
         <div class="chart-container chart-summary">
           <h3>Reservoir measurements</h3>
-          <div class="reservoir-summary-visual"><div class="tank-visual"><div id="summary-water-tank" class="water-tank tank-unavailable" role="progressbar" aria-label="Water level" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Water level unavailable"><div class="tank-water"></div><div class="tank-ticks"></div></div><div class="tank-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div></div><dl class="reservoir-summary"><dt>Water level</dt><dd id="summary-level">Awaiting data</dd><dt>Turbidity</dt><dd id="summary-turbidity">Awaiting data</dd><dt>TDS</dt><dd id="summary-tds">Awaiting data</dd></dl></div><p>Measurements do not certify drinking-water safety.</p>
+          <div class="reservoir-summary-visual"><div class="tank-visual"><div id="summary-water-tank" class="water-tank tank-unavailable" role="progressbar" aria-label="Water level" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Water level unavailable"><div class="tank-water"></div><div class="tank-ticks"></div></div><div class="tank-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div></div><dl class="reservoir-summary"><dt>Water level</dt><dd id="summary-level">Awaiting data</dd><dt>Turbidity Index<br><small>Provisional</small></dt><dd id="summary-turbidity">Unavailable</dd><dt>Index status</dt><dd id="summary-turbidity-status">Unavailable</dd><dt>TDS</dt><dd id="summary-tds">Awaiting data</dd></dl></div><p>Provisional operational Turbidity Index, not NTU. Baseline drift remains unresolved. Normal means below the operational warning threshold. Measurements do not certify drinking-water safety.</p>
         </div>
       </div>
       
@@ -316,8 +316,8 @@
     </div>
 
     <div id="tab-assets" class="tab-content">
-      <div class="glass-panel"><h2>Reservoir measurements</h2><p>Read-only provisional measurements. Manual calibration and field validation required. These values do not certify drinking-water safety.</p>
-        <div class="reservoir-layout"><div class="reservoir-hero"><div class="tank-visual"><div id="admin-water-tank" class="water-tank tank-unavailable" role="progressbar" aria-label="Water level" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Water level unavailable"><div class="tank-water"></div><div class="tank-ticks"></div></div><div class="tank-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div></div><span>Water Level</span><strong id="admin-water-level">Awaiting data</strong></div><dl id="admin-reservoir"><div><dt>Turbidity</dt><dd id="admin-turbidity">Awaiting data</dd></div><div><dt>TDS</dt><dd id="admin-tds">Awaiting data</dd></div><div class="reservoir-reading"><dt>Last Reading</dt><dd id="admin-reading-time">Awaiting data</dd></div></dl></div>
+      <div class="glass-panel"><h2>Reservoir measurements</h2><p>Provisional operational Turbidity Index, not NTU. Baseline drift remains unresolved. Normal means below the operational warning threshold. Measurements do not certify drinking-water safety. TDS calibration remains unverified.</p>
+        <div class="reservoir-layout"><div class="reservoir-hero"><div class="tank-visual"><div id="admin-water-tank" class="water-tank tank-unavailable" role="progressbar" aria-label="Water level" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Water level unavailable"><div class="tank-water"></div><div class="tank-ticks"></div></div><div class="tank-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div></div><span>Water Level</span><strong id="admin-water-level">Awaiting data</strong></div><dl id="admin-reservoir"><div><dt>Turbidity Index<br><small>Provisional</small></dt><dd id="admin-turbidity">Unavailable</dd></div><div><dt>Index status</dt><dd id="admin-turbidity-status">Unavailable</dd></div><div><dt>TDS</dt><dd id="admin-tds">Awaiting data</dd></div><div class="reservoir-reading"><dt>Last Reading</dt><dd id="admin-reading-time">Awaiting data</dd></div></dl></div>
       </div>
     </div>
 
@@ -757,7 +757,7 @@
     </div>
   </div>
 
-  <script src="/ui-display.js?v=1.2.0"></script>
-  <script src="/admin/app.js?v=31"></script>
+  <script src="/ui-display.js?v=1.2.3-index-provisional"></script>
+  <script src="/admin/app.js?v=32-index"></script>
 </body>
 </html>

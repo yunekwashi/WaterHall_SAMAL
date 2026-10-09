@@ -66,7 +66,8 @@ static void runtime_individual_invalid_and_recovery() {
   tdsOnlyInvalid = true;
   for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
   const SensorSnapshot missing = readSensors(clockMs);
-  assert(missing.waterLevel == 100 && isfinite(missing.turbidityAdc) && isnan(missing.turbidity) && isnan(missing.tds));
+  assert(missing.waterLevel == 100 && missing.turbiditySignalValid &&
+         !missing.turbidityNtuCalibrated && isnan(missing.turbidity) && isnan(missing.tds));
   tdsOnlyInvalid = false;
   for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
   assert(isfinite(readSensors(clockMs).tds));
@@ -83,7 +84,7 @@ static void runtime_hc_noise_and_invalid_confirmation() {
   for (int i = 0; i < 3; ++i) { clockMs += 70; serviceSensors(clockMs); }
   assert(readSensors(clockMs).waterLevel == -1);
   assert(isnan(lastDistanceCm));
-  assert(isfinite(readSensors(clockMs).tds) && isfinite(readSensors(clockMs).turbidityAdc) && isnan(readSensors(clockMs).turbidity));
+  assert(isfinite(readSensors(clockMs).tds) && readSensors(clockMs).turbiditySignalValid);
   echoUs = 583;
   for (int i = 0; i < 3; ++i) { clockMs += 70; serviceSensors(clockMs); }
   assert(readSensors(clockMs).waterLevel == 100);
@@ -278,6 +279,21 @@ static void legacy_demo_turbidity() {
   assert(isnan(legacyDemoTurbidityNtu(-1)));
   assert(isnan(legacyDemoTurbidityNtu(3.31f)));
 }
+static void turbidity_measured_voltage_path_and_legacy_bias() {
+  // Real captured ADC-voltage medians; the outputs below explain the old
+  // equation, not the samples' true NTU. Raw ADC is an adjacent conversion.
+  const float baseline = moduleVoltage(0.816f, TURBIDITY_DIVIDER_GAIN);
+  const float cloudy = moduleVoltage(0.603f, TURBIDITY_DIVIDER_GAIN);
+  const float returned = moduleVoltage(0.812f, TURBIDITY_DIVIDER_GAIN);
+  assert(closeTo(baseline, 1.35864f));
+  assert(closeTo(cloudy, 1.003995f));
+  assert(closeTo(returned, 1.35198f));
+  assert(closeTo(legacyDemoTurbidityNtu(baseline), 32.8272f));
+  assert(closeTo(legacyDemoTurbidityNtu(cloudy), 39.9201f));
+  assert(closeTo(legacyDemoTurbidityNtu(returned), 32.9604f));
+  assert(isnan(calibratedTurbidityNtu(baseline, turbidityReferenceCalibration,
+                                    TURBIDITY_DIVIDER_GAIN)));
+}
 static void retry_backoff() {
   RetrySchedule schedule;
   assert(SEND_INTERVAL_MS == 10000 && MIN_COMPLETION_GAP_MS == 10000);
@@ -381,9 +397,10 @@ static void runtime_demo_profile() {
   assert(sample.waterLevel == 100);
   assert(closeTo(sample.turbidityVoltage, 1.665f));
   assert(closeTo(sample.tdsVoltage, 2.0f));
-  assert(!TURBIDITY_REFERENCE_CALIBRATION_APPROVED && isnan(sample.turbidity));
+  assert(sample.turbiditySignalValid && !sample.turbidityNtuCalibrated && isnan(sample.turbidity));
+  assert(isnan(sample.turbidityDiagnosticNtu));
   assert(closeTo(sample.tds, sen0244Ppm(sample.tdsVoltage, 1, 25)));
-  assert(isfinite(sample.turbidityAdc) && !validTelemetry(sample.turbidity, sample.tds));
+  assert(!validTelemetry(sample.turbidity, sample.tds));
   assert(!validTelemetry(readSensors(clockMs, false).turbidity, readSensors(clockMs, false).tds));
   adcRaw = 4095; adcMv = 3300; echoUs = 0;
   for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
@@ -398,7 +415,7 @@ static void runtime_demo_level_bounds() {
     for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
     const SensorSnapshot sample = readSensors(clockMs, true);
     assert(sample.waterLevel == -1);
-    assert(isfinite(sample.turbidityAdc) && !validTelemetry(sample.turbidity, sample.tds));
+    assert(sample.turbiditySignalValid && !sample.turbidityNtuCalibrated && isnan(sample.turbidity));
   }
   echoUs = 583;
   for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
@@ -426,13 +443,83 @@ static void runtime_demo_tracks_changed_physical_inputs() {
   assert(after.distance > before.distance);
   assert(closeTo(before.turbidityAdc, 0.6f) && closeTo(after.turbidityAdc, 0.75f));
   assert(closeTo(before.tdsVoltage, 1.2f) && closeTo(after.tdsVoltage, 1.5f));
-  assert(isnan(before.turbidity) && isnan(after.turbidity) && after.tds > before.tds);
-  assert(!validTelemetry(before.turbidity, before.tds) && !validTelemetry(after.turbidity, after.tds));
+  assert(isnan(before.turbidityDiagnosticNtu) && isnan(after.turbidityDiagnosticNtu));
+  assert(after.turbidityVoltage != before.turbidityVoltage && after.tds > before.tds);
+  assert(isnan(before.turbidity) && isnan(after.turbidity));
+  assert(before.turbiditySignalValid && after.turbiditySignalValid);
+}
+
+static void turbidity_reference_gate_and_bounds() {
+  TurbidityReferenceCalibration reference = {false, 0.999f, 8, 1.665f, 0};
+  assert(isnan(calibratedTurbidityNtu(1.332f, reference, 1.665f)));
+  reference.approved = true;
+  assert(closeTo(calibratedTurbidityNtu(1.332f, reference, 1.665f), 4));
+  assert(closeTo(calibratedTurbidityNtu(1.665f, reference, 1.665f), 0));
+  assert(isnan(calibratedTurbidityNtu(0.998f, reference, 1.665f)));
+  assert(isnan(calibratedTurbidityNtu(1.666f, reference, 1.665f)));
+  reference.volts1 = NAN;
+  assert(isnan(calibratedTurbidityNtu(1.332f, reference, 1.665f)));
+  reference = {true, 0.1f, 8, 1.665f, 0};
+  assert(isnan(calibratedTurbidityNtu(1.332f, reference, 1.665f)));
+  // A constant output is not a two-concentration calibration.
+  reference = {true, 0.999f, 0, 1.665f, 0};
+  assert(isnan(calibratedTurbidityNtu(1.332f, reference, 1.665f)));
+  reference = {true, 1.665f, 8, 1.665f, 0};
+  assert(isnan(calibratedTurbidityNtu(1.665f, reference, 1.665f)));
+  // Synthetic rising-response references: no assumed curve direction.
+  reference = {true, 0.999f, 0, 1.665f, 8};
+  assert(closeTo(calibratedTurbidityNtu(1.332f, reference, 1.665f), 4));
+  reference.ntu2 = NAN;
+  assert(isnan(calibratedTurbidityNtu(1.332f, reference, 1.665f)));
+  reference = {true, 0.999f, -1, 1.665f, 8};
+  assert(isnan(calibratedTurbidityNtu(1.332f, reference, 1.665f)));
+  // An actual 5V module can output above 3.3V behind the protective divider.
+  // The legacy curve's artificial 3.3V module cutoff is not inherited.
+  reference = {true, 3.33f, 10, 4.1625f, 0.1f};
+  assert(closeTo(calibratedTurbidityNtu(3.74625f, reference, 1.665f), 5.05f));
+  assert(isnan(calibratedTurbidityNtu(3.74625f, reference, NAN)));
+  assert(isnan(calibratedTurbidityNtu(NAN, reference, 1.665f)));
+}
+
+static void turbidity_runtime_separate_signal_calibration_and_age() {
+  for (int i = 0; i < 50; ++i) { clockMs += 20; serviceSensors(clockMs); }
+  const SensorSnapshot unapproved = readSensors(clockMs, true);
+  assert(unapproved.turbiditySignalValid && !unapproved.turbidityNtuCalibrated);
+  assert(isfinite(unapproved.turbidityAdc) && isnan(unapproved.turbidityDiagnosticNtu));
+  assert(isnan(unapproved.turbidity) && unapproved.turbiditySampleAgeMs < 500);
+  TurbidityReferenceCalibration reference = {true, 0.999f, 8, 1.665f, 0};
+  SensorSnapshot approved = readSensors(clockMs, true, tdsReferenceCalibration, reference);
+  assert(approved.turbiditySignalValid && approved.turbidityNtuCalibrated);
+  assert(closeTo(approved.turbidity, 0));  // Certified fixture zero, never a sentinel.
+  assert(approved.tds == unapproved.tds && approved.waterLevel == unapproved.waterLevel);
+  clockMs += 2001;
+  approved = readSensors(clockMs, true, tdsReferenceCalibration, reference);
+  assert(!approved.turbiditySignalValid && !approved.turbidityNtuCalibrated);
+  assert(isnan(approved.turbidity) && approved.turbiditySampleAgeMs == UINT32_MAX);
+}
+
+static void local_index_measured_direction_and_invalid() {
+  const float clear = 0.836f, cloudy = 0.645f, gain = 1.665f;
+  assert(closeTo(localTurbidityIndex(clear * gain, gain, clear, cloudy), 0));
+  assert(closeTo(localTurbidityIndex(cloudy * gain, gain, clear, cloudy), 10));
+  assert(closeTo(localTurbidityIndex(0.830f * gain, gain, clear, cloudy), .314136f));
+  assert(closeTo(localTurbidityIndex(0.837f * gain, gain, clear, cloudy), 0));
+  assert(closeTo(localTurbidityIndex(0.7405f * gain, gain, clear, cloudy), 5));
+  assert(isnan(localTurbidityIndex(NAN, gain, clear, cloudy)));
+  assert(isnan(localTurbidityIndex(0.1f * gain, gain, clear, cloudy)));
+  assert(isnan(localTurbidityIndex(clear * gain, gain, clear, clear)));
+  assert(isnan(localTurbidityIndex(clear * gain, gain, cloudy, clear)));
+  for (float v = 0.15f; v < clear - .02f; v += 0.01f)
+    assert(localTurbidityIndex(v * gain, gain, clear, cloudy) > localTurbidityIndex((v + 0.01f) * gain, gain, clear, cloudy));
 }
 
 int main(int argc, char** argv) {
   struct Case { const char* name; void (*run)(); };
   const Case cases[] = {
+    {"local_index_measured_direction_and_invalid", local_index_measured_direction_and_invalid},
+    {"turbidity_reference_gate_and_bounds", turbidity_reference_gate_and_bounds},
+    {"turbidity_measured_voltage_path_and_legacy_bias", turbidity_measured_voltage_path_and_legacy_bias},
+    {"turbidity_runtime_separate_signal_calibration_and_age", turbidity_runtime_separate_signal_calibration_and_age},
     {"validity_confirmation", validity_confirmation},
     {"runtime_individual_invalid_and_recovery", runtime_individual_invalid_and_recovery},
     {"runtime_hc_noise_and_invalid_confirmation", runtime_hc_noise_and_invalid_confirmation},

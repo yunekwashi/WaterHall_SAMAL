@@ -8,6 +8,15 @@ bool waitForTimeSync();
 #include "waterhall_test_firmware.inc"
 #undef time
 
+static bool useCalibratedTurbidityFixture = true;
+static const waterhall::TurbidityReferenceCalibration transportTurbidityFixture = {
+    true, 0.5f, 0, 2.5f, 20};  // Synthetic known references; never physical calibration.
+static SensorSnapshot readTransportFixture(uint32_t now, bool demo = PROVISIONAL_DEMO_MODE,
+    const waterhall::TdsReferenceCalibration& tdsReference = tdsReferenceCalibration) {
+  return readSensors(now, demo, tdsReference, useCalibratedTurbidityFixture
+      ? transportTurbidityFixture : turbidityReferenceCalibration);
+}
+
 static void advanceSensorTime(uint32_t duration) {
   const uint32_t until = clockMs + duration;
   while (clockMs < until) {
@@ -17,6 +26,15 @@ static void advanceSensorTime(uint32_t duration) {
     if (clockMs >= physicalChangeAt) { tdsRaw = 900; modeledTdsMv = 900; }
     if (samplingAllowed) {
       insideSampling = true; loop(); insideSampling = false;
+      if (useCalibratedTurbidityFixture && latestSensors) {
+        TimedSensorSnapshot latest;
+        if (xQueuePeek(latestSensors, &latest, 0) == pdTRUE) {
+          const SensorSnapshot fixture = readTransportFixture(latest.observedAt);
+          latest.sample.turbidity = fixture.turbidity;
+          latest.sample.turbidityNtuCalibrated = fixture.turbidityNtuCalibrated;
+          xQueueOverwrite(latestSensors, &latest);
+        }
+      }
     } else ++clockMs;
   }
 }
@@ -66,12 +84,11 @@ static void latest_after_network_recovery() {
 }
 static void stale_never_posted_individual_nulls() {
   initialize(); WiFi.connected = true; timeSynchronized = true;
-  TimedSensorSnapshot latest = {readSensors(clockMs), clockMs - 2001};
+  TimedSensorSnapshot latest = {readTransportFixture(clockMs), clockMs - 2001};
   xQueueOverwrite(latestSensors, &latest);
   assert(sendTelemetry() == TELEMETRY_NO_SAMPLE && payloads.empty());
   modeledHttpDelay = 0;
-  SensorSnapshot valid = readSensors(clockMs);
-  valid.turbidity = 2.3f;  // Synthetic serializer fixture, not a sensor value.
+  const SensorSnapshot valid = readTransportFixture(clockMs);
   for (int field = 0; field < 4; ++field) {
     latest.observedAt = clockMs; latest.sample = valid;
     if (field == 0 || field == 3) latest.sample.waterLevel = -1;
@@ -99,8 +116,7 @@ static void cadence_and_next_request_current() {
 static void legacy_contract_guard() {
   assert(PRODUCTION_TELEMETRY_ENABLED && !NULLABLE_ANALOG_TELEMETRY_SUPPORTED);
   initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
-  SensorSnapshot valid = readSensors(clockMs);
-  valid.turbidity = 2.3f;  // Synthetic serializer fixture, not a sensor value.
+  const SensorSnapshot valid = readTransportFixture(clockMs);
   TimedSensorSnapshot latest = {valid, clockMs};
   latest.sample.waterLevel = -1; xQueueOverwrite(latestSensors, &latest);
   assert(sendTelemetry() == TELEMETRY_ACCEPTED);
@@ -185,8 +201,8 @@ static void tds_low_range_raw_only_and_post_block() {
 #ifdef WATERHALL_TDS_LOW_RANGE_BENCH
   assert(tdsLowRangeCalibration && lastCalibrationRaw == tdsRaw);
 #endif
-  const SensorSnapshot sample = readSensors(clockMs);
-  assert(sample.waterLevel == 100 && isfinite(sample.turbidityAdc) && isnan(sample.turbidity));
+  const SensorSnapshot sample = readTransportFixture(clockMs);
+  assert(sample.waterLevel == 100 && isfinite(sample.turbidity));
   assert(fabsf(sample.turbidityAdc - 0.6f) < 0.0001f);
   assert(fabsf(sample.tdsAdc - 0.12f) < 0.0001f);
   assert(fabsf(sample.tdsVoltage - 0.24f) < 0.0001f && isnan(sample.tds));
@@ -201,25 +217,25 @@ static void tds_low_range_invalid_and_recovery() {
   for (int state = 0; state < 2; ++state) {
     tdsRaw = state ? 4095 : 30; modeledTdsMv = state ? 1000 : 90;
     advanceSensorTime(500);
-    const SensorSnapshot invalid = readSensors(clockMs);
+    const SensorSnapshot invalid = readTransportFixture(clockMs);
     assert(isnan(invalid.tdsAdc) && isnan(invalid.tdsVoltage) && isnan(invalid.tds));
-    assert(invalid.waterLevel == 100 && isfinite(invalid.turbidityAdc) && isnan(invalid.turbidity));
+    assert(invalid.waterLevel == 100 && isfinite(invalid.turbidity));
     Serial.input = "status\n"; serviceSerial();
     assert(Serial.output.find(state ? "CLIPPED_OR_OVER_RANGE" :
                              "LOW_SIGNAL_OR_FAULT_UNQUANTIFIED") != std::string::npos);
   }
   tdsRaw = 600; modeledTdsMv = 250; advanceSensorTime(500);
-  assert(isfinite(readSensors(clockMs).tdsAdc) && isnan(readSensors(clockMs).tds));
+  assert(isfinite(readTransportFixture(clockMs).tdsAdc) && isnan(readTransportFixture(clockMs).tds));
   clockMs += 2101;  // Stop sensor servicing: fresh medians must expire.
-  assert(isnan(readSensors(clockMs).tdsAdc) && isnan(readSensors(clockMs).tds));
+  assert(isnan(readTransportFixture(clockMs).tdsAdc) && isnan(readTransportFixture(clockMs).tds));
 }
 static void tds_low_range_calibration_failure() {
 #ifdef WATERHALL_TDS_LOW_RANGE_BENCH
   tdsRaw = 500; modeledTdsMv = 120; modeledCalibrationFailure = 1;
   initialize();
   assert(!tdsLowRangeCalibration && lastTdsRaw == 500);
-  assert(isnan(readSensors(clockMs).tdsAdc) && isnan(lastTdsRawVoltage));
-  assert(readSensors(clockMs).waterLevel == 100 && isfinite(readSensors(clockMs).turbidityAdc) && isnan(readSensors(clockMs).turbidity));
+  assert(isnan(readTransportFixture(clockMs).tdsAdc) && isnan(lastTdsRawVoltage));
+  assert(readTransportFixture(clockMs).waterLevel == 100 && isfinite(readTransportFixture(clockMs).turbidity));
   Serial.input = "status\nsend\n"; serviceSerial(); runWorker(500);
   assert(Serial.output.find("ADC_CALIBRATION_UNAVAILABLE") != std::string::npos);
   assert(payloads.empty() && sendTelemetry() == TELEMETRY_FAILED);
@@ -229,11 +245,11 @@ static void tds_low_range_calibration_failure() {
   assert(tdsLowRangeCalibration);
   for (int failure = 3; failure <= 4; ++failure) {
     modeledCalibrationFailure = failure; advanceSensorTime(500);
-    assert(isnan(readSensors(clockMs).tdsAdc) && isnan(lastTdsRawVoltage));
-    assert(readSensors(clockMs).waterLevel == 100 && isfinite(readSensors(clockMs).turbidityAdc) && isnan(readSensors(clockMs).turbidity));
+    assert(isnan(readTransportFixture(clockMs).tdsAdc) && isnan(lastTdsRawVoltage));
+    assert(readTransportFixture(clockMs).waterLevel == 100 && isfinite(readTransportFixture(clockMs).turbidity));
   }
   modeledCalibrationFailure = 0; advanceSensorTime(500);
-  assert(isfinite(readSensors(clockMs).tdsAdc) && isnan(readSensors(clockMs).tds));
+  assert(isfinite(readTransportFixture(clockMs).tdsAdc) && isnan(readTransportFixture(clockMs).tds));
 #endif
 }
 static void tds_low_range_production_live_and_invalid() {
@@ -243,25 +259,27 @@ static void tds_low_range_production_live_and_invalid() {
   tdsRaw = 135; modeledTdsMv = 106;
   initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
   assert(configuredTdsAttenuation == ADC_0db && configuredTurbidityAttenuation == ADC_11db);
-  const SensorSnapshot tap = readSensors(clockMs);
+  const SensorSnapshot tap = readTransportFixture(clockMs);
   assert(fabsf(tap.tdsVoltage - 0.212f) < 0.0001f && isfinite(tap.tds));
-  assert(isnan(tap.turbidity) && sendTelemetry() == TELEMETRY_FAILED && payloads.empty());
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  const std::string first = payloads.back();
   tdsRaw = 629; modeledTdsMv = 221; advanceSensorTime(500);
-  assert(readSensors(clockMs).tds > tap.tds && sendTelemetry() == TELEMETRY_FAILED);
-  assert(payloads.empty());
+  assert(readTransportFixture(clockMs).tds > tap.tds && sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back() != first);
   for (int state = 0; state < 3; ++state) {
     tdsRaw = state == 1 ? 4095 : 100;
     modeledTdsMv = state == 1 ? 1000 : 90;
     modeledCalibrationFailure = state == 2 ? 3 : 0;
     advanceSensorTime(500);
-    assert(isnan(readSensors(clockMs).tds) && sendTelemetry() == TELEMETRY_FAILED);
-    assert(payloads.empty());  // Unapproved turbidity cannot satisfy a numeric-only contract.
+    assert(isnan(readTransportFixture(clockMs).tds) && sendTelemetry() == TELEMETRY_FAILED);
+    assert(payloads.size() == 2);  // Never post zero, cached ppm or unsupported null.
   }
   modeledCalibrationFailure = 0; tdsRaw = 137; modeledTdsMv = 107;
   advanceSensorTime(500);
-  assert(sendTelemetry() == TELEMETRY_FAILED && payloads.empty());
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED && payloads.size() == 3);
+  assert(payloads.back().find("\"calibration_required\":true") != std::string::npos);
   clockMs += 2101;
-  assert(sendTelemetry() == TELEMETRY_NO_SAMPLE && payloads.empty());
+  assert(sendTelemetry() == TELEMETRY_NO_SAMPLE && payloads.size() == 3);
 #endif
 }
 static void tds_low_range_production_cadence() {
@@ -269,7 +287,8 @@ static void tds_low_range_production_cadence() {
   tdsRaw = 135; modeledTdsMv = 106;
   initialize(); physicalChangeAt = clockMs + 15000;
   runWorker(27000);
-  assert(payloads.empty() && sendSchedule.interval == 60000);
+  assert(payloads.size() == 2 && payloads[0] != payloads[1]);
+  assert(postStarts[1] - postStarts[0] >= modeledHttpDelay + 10000);
   assertContinuousSampling();
 #endif
 }
@@ -279,18 +298,12 @@ static void tds_partial_production_posts_null_and_live_values() {
   tdsRaw = 0; modeledTdsMv = 75;
   initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
   assert(configuredTdsAttenuation == ADC_0db && configuredTurbidityAttenuation == ADC_11db);
-  assert(isnan(readSensors(clockMs).tds) && isnan(readSensors(clockMs).turbidity));
-#ifndef WATERHALL_NULLABLE_TURBIDITY_PRODUCTION
-  assert(sendTelemetry() == TELEMETRY_FAILED && payloads.empty());
-  assert(Serial.output.find("partial-TDS contract requires valid turbidity") != std::string::npos);
-#else
-  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(isnan(readTransportFixture(clockMs).tds) && sendTelemetry() == TELEMETRY_ACCEPTED);
   const std::string first = payloads.back();
   assert(first.find("\"tds_ppm\":null") != std::string::npos);
-  assert(first.find("\"turbidity_ntu\":null") != std::string::npos);
   echoUs = 1400; turbidityRaw = 900; modeledTurbidityMv = 900;
   tdsRaw = 629; modeledTdsMv = 221; advanceSensorTime(1000);
-  assert(isfinite(readSensors(clockMs).tdsAdc) && isnan(readSensors(clockMs).tds));
+  assert(isfinite(readTransportFixture(clockMs).tdsAdc) && isnan(readTransportFixture(clockMs).tds));
   assert(sendTelemetry() == TELEMETRY_ACCEPTED && payloads.back() != first);
   assert(payloads.back().find("\"tds_ppm\":null") != std::string::npos);
   turbidityRaw = 0; modeledTurbidityMv = 75; advanceSensorTime(1000);
@@ -304,30 +317,21 @@ static void tds_partial_production_posts_null_and_live_values() {
   assert(payloads.back().find("\"water_level_percentage\":null") != std::string::npos);
   turbidityRaw = 900; modeledTurbidityMv = 900; echoUs = 1400; advanceSensorTime(1000);
   assert(sendTelemetry() == TELEMETRY_ACCEPTED && payloads.size() == 5);
-  assert(payloads.back().find("\"turbidity_ntu\":null") != std::string::npos);
-  assert(isfinite(readSensors(clockMs).turbidityAdc));
+  assert(payloads.back().find("\"turbidity_ntu\":null") == std::string::npos);
 #else
   assert(sendTelemetry() == TELEMETRY_FAILED && payloads.size() == 2);
 #endif
   clockMs += 2101;
   assert(sendTelemetry() == TELEMETRY_NO_SAMPLE);
 #endif
-#endif
 }
 static void tds_partial_production_cadence() {
 #ifdef WATERHALL_TDS_PARTIAL_PRODUCTION
   tdsRaw = 0; modeledTdsMv = 75;
   initialize(); runWorker(27000);
-#ifdef WATERHALL_NULLABLE_TURBIDITY_PRODUCTION
   assert(payloads.size() == 2);
   assert(postStarts[1] - postStarts[0] >= modeledHttpDelay + 10000);
-  for (const auto& payload : payloads) {
-    assert(payload.find("\"tds_ppm\":null") != std::string::npos);
-    assert(payload.find("\"turbidity_ntu\":null") != std::string::npos);
-  }
-#else
-  assert(payloads.empty() && sendSchedule.interval == 60000);
-#endif
+  for (const auto& payload : payloads) assert(payload.find("\"tds_ppm\":null") != std::string::npos);
   assertContinuousSampling();
 #endif
 }
@@ -340,12 +344,12 @@ static void tds_approved_reference_numeric_null_and_recovery() {
   tdsRaw = 800; modeledTdsMv = 450;
   initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
   auto publish = [&]() {
-    TimedSensorSnapshot latest = {readSensors(clockMs, true, calibration), clockMs};
+    TimedSensorSnapshot latest = {readTransportFixture(clockMs, true, calibration), clockMs};
     xQueueOverwrite(latestSensors, &latest);
     assert(sendTelemetry() == TELEMETRY_ACCEPTED);
     return payloads.back();
   };
-  assert(isnan(readSensors(clockMs).tds));  // Default approval remains off.
+  assert(isnan(readTransportFixture(clockMs).tds));  // Default approval remains off.
   assert(publish().find("\"tds_ppm\":250") != std::string::npos);
   tdsRaw = 600; modeledTdsMv = 200; advanceSensorTime(1000);
   assert(publish().find("\"tds_ppm\":0,") != std::string::npos);
@@ -356,7 +360,7 @@ static void tds_approved_reference_numeric_null_and_recovery() {
     const std::string payload = publish();
     assert(payload.find("\"tds_ppm\":null") != std::string::npos);
     assert(payload.find("\"water_level_percentage\":null") == std::string::npos);
-    assert(payload.find("\"turbidity_ntu\":null") != std::string::npos);
+    assert(payload.find("\"turbidity_ntu\":null") == std::string::npos);
   }
   tdsRaw = 800; modeledTdsMv = 450; advanceSensorTime(1000);
   assert(publish().find("\"tds_ppm\":250") != std::string::npos);
@@ -365,13 +369,122 @@ static void tds_approved_reference_numeric_null_and_recovery() {
   calibration.measuredTemperatureC = 25; calibration.approved = false;
   assert(publish().find("\"tds_ppm\":null") != std::string::npos);
   clockMs += 2101;
-  assert(isnan(readSensors(clockMs, true, calibration).tdsAdc));
+  assert(isnan(readTransportFixture(clockMs, true, calibration).tdsAdc));
   assert(sendTelemetry() == TELEMETRY_NO_SAMPLE);
 #endif
 }
+static void turbidity_uncalibrated_signal_null_and_preserved_other_fields() {
+#ifdef WATERHALL_NULLABLE_TURBIDITY_PRODUCTION
+  useCalibratedTurbidityFixture = false;
+  tdsRaw = 0; modeledTdsMv = 75;
+  initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
+  const SensorSnapshot baseline = readSensors(clockMs);
+  assert(baseline.turbiditySignalValid && !baseline.turbidityNtuCalibrated);
+  assert(isfinite(baseline.turbidityAdc) && isnan(baseline.turbidityDiagnosticNtu));
+  assert(isnan(baseline.turbidity) && sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_ntu\":null") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_signal_valid\":true") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_ntu_calibrated\":false") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_provisional\":true") != std::string::npos);
+  turbidityRaw = 900; modeledTurbidityMv = 900; advanceSensorTime(1000);
+  const SensorSnapshot changed = readSensors(clockMs);
+  assert(changed.turbidityDiagnosticNtu != baseline.turbidityDiagnosticNtu);
+  assert(changed.turbidityAdc != baseline.turbidityAdc && isnan(changed.turbidity));
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED && payloads.size() == 2);
+  turbidityRaw = 4095; modeledTurbidityMv = 3300; advanceSensorTime(1000);
+  assert(!readSensors(clockMs).turbiditySignalValid);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_signal_valid\":false") != std::string::npos);
+  assert(payloads.back().find("\"water_level_percentage\":100") != std::string::npos);
+  assert(payloads.back().find("\"tds_ppm\":null") != std::string::npos);
+  turbidityRaw = 800; modeledTurbidityMv = 800; advanceSensorTime(1000);
+  assert(readSensors(clockMs).turbiditySignalValid && isnan(readSensors(clockMs).turbidity));
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  Serial.input = "status\n"; serviceSerial();
+  assert(Serial.output.find("turb_signal_valid=1 turb_ntu_calibrated=0") != std::string::npos);
+#endif
+}
+static void turbidity_calibrated_transport_ages_old_measurement_not_new_snapshot() {
+#ifdef WATERHALL_NULLABLE_TURBIDITY_PRODUCTION
+  useCalibratedTurbidityFixture = false;
+  initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
+  TimedSensorSnapshot latest = {readSensors(clockMs, true, tdsReferenceCalibration,
+      transportTurbidityFixture), clockMs};
+  assert(latest.sample.turbidityNtuCalibrated);
+  xQueueOverwrite(latestSensors, &latest);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_ntu\":null") == std::string::npos);
+  assert(payloads.back().find("\"turbidity_ntu_calibrated\":true") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_provisional\":false") != std::string::npos);
+  // Fresh queue entry, but contributing voltage samples have expired.
+  latest.observedAt = clockMs - 100;
+  latest.sample.turbiditySampleAgeMs = 1950;
+  xQueueOverwrite(latestSensors, &latest);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_ntu\":null") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_ntu_calibrated\":false") != std::string::npos);
+  assert(payloads.back().find("\"water_level_percentage\":100") != std::string::npos);
+#endif
+}
+
+static void local_index_payload_direction_null_and_snapshot_safety() {
+#ifdef WATERHALL_LOCAL_TURBIDITY_INDEX
+  assert(!TURBIDITY_LOCAL_INDEX_CALIBRATION_APPROVED);
+  assert(TURBIDITY_LOCAL_INDEX_OPERATIONAL_ENABLED);
+  useCalibratedTurbidityFixture = false;
+  initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
+  turbidityRaw = 985; modeledTurbidityMv = 836; advanceSensorTime(1000);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_index\":0.00") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_ntu\":null") != std::string::npos);
+  assert(payloads.back().find("\"tds_ppm\":null") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_adc_voltage\":0.8360") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_raw_adc\":985") != std::string::npos);
+  turbidityRaw = 738; modeledTurbidityMv = 645; advanceSensorTime(1000);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_index\":10.00") != std::string::npos);
+  assert(payloads.back().find("\"turbidity_module_voltage\":1.0739") != std::string::npos);
+  turbidityRaw = 4095; modeledTurbidityMv = 3300; advanceSensorTime(1000);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_index\":null") != std::string::npos);
+  assert(payloads.back().find("\"water_level_percentage\":100") != std::string::npos);
+  turbidityRaw = 883; modeledTurbidityMv = 830; advanceSensorTime(1000);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_index\":0.31") != std::string::npos);
+  // Old contributing voltages must not become fresh through a new queue timestamp.
+  TimedSensorSnapshot latest = {readSensors(clockMs), clockMs - 100};
+  latest.sample.turbiditySampleAgeMs = 1950;
+  xQueueOverwrite(latestSensors, &latest);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"turbidity_index\":null") != std::string::npos);
+#endif
+}
+
+static void local_index_unapproved_never_publishes_numeric() {
+#ifdef WATERHALL_LOCAL_TURBIDITY_INDEX
+  assert(!TURBIDITY_LOCAL_INDEX_OPERATIONAL_ENABLED);
+  assert(!TURBIDITY_LOCAL_INDEX_CALIBRATION_APPROVED);
+  useCalibratedTurbidityFixture = false;
+  initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
+  for (int mv : {836, 645, 830}) {
+    turbidityRaw = 800; modeledTurbidityMv = mv; advanceSensorTime(1000);
+    assert(isfinite(readSensors(clockMs).turbidityIndex)); // Raw/internal comparison retained.
+    assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+    assert(payloads.back().find("\"turbidity_index\":null") != std::string::npos);
+    assert(payloads.back().find("\"turbidity_ntu\":null") != std::string::npos);
+    assert(payloads.back().find("\"tds_ppm\":null") != std::string::npos);
+    assert(payloads.back().find("\"water_level_percentage\":100") != std::string::npos);
+  }
+#endif
+}
+
 int main(int argc, char** argv) {
   struct Case { const char* name; void (*run)(); };
   const Case cases[] = {
+    {"local_index_unapproved_never_publishes_numeric", local_index_unapproved_never_publishes_numeric},
+    {"local_index_payload_direction_null_and_snapshot_safety", local_index_payload_direction_null_and_snapshot_safety},
+    {"turbidity_uncalibrated_signal_null_and_preserved_other_fields", turbidity_uncalibrated_signal_null_and_preserved_other_fields},
+    {"turbidity_calibrated_transport_ages_old_measurement_not_new_snapshot", turbidity_calibrated_transport_ages_old_measurement_not_new_snapshot},
     {"tds_partial_production_posts_null_and_live_values", tds_partial_production_posts_null_and_live_values},
     {"tds_partial_production_cadence", tds_partial_production_cadence},
     {"tds_approved_reference_numeric_null_and_recovery", tds_approved_reference_numeric_null_and_recovery},

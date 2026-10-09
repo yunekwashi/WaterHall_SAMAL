@@ -29,5 +29,14 @@
     if (valid) tank.setAttribute('aria-valuenow', String(level));
     else tank.removeAttribute('aria-valuenow');
   }
-  root.WaterHallDisplay = Object.freeze({parseTimestamp, formatTimestamp, renderTank});
+  function turbidityIndexState(data, now = Date.now()) {
+    const date = parseTimestamp(data.last_updated || data.recorded_at);
+    const age = date ? now - date.getTime() : Infinity;
+    const value = data.turbidity_index;
+    const valid = data.has_reading !== false && age >= 0 && age < 120000 &&
+      typeof value === 'number' && Number.isFinite(value) && value >= 0 &&
+      ['Normal', 'Elevated'].includes(data.turbidity_index_status);
+    return {value: valid ? value : null, status: valid ? data.turbidity_index_status : 'Unavailable'};
+  }
+  root.WaterHallDisplay = Object.freeze({parseTimestamp, formatTimestamp, renderTank, turbidityIndexState});
 })(window);

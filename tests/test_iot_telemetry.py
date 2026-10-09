@@ -128,7 +128,8 @@ def test_iot_telemetry_alerts(system):
     headers = {'X-IoT-Secret': IOT_DEVICE_SECRET}
 
     # 1. Elevated turbidity (> 5.0 NTU)
-    res = client.post('/api/iot/telemetry', json={'water_level_percentage': 50, 'turbidity_ntu': 8.5, 'tds_ppm': 120}, headers=headers)
+    # Synthetic calibrated fixture; numeric voltage/NTU alone cannot approve an alert.
+    res = client.post('/api/iot/telemetry', json={'water_level_percentage': 50, 'turbidity_ntu': 8.5, 'tds_ppm': 120, 'turbidity_signal_valid': True, 'turbidity_ntu_calibrated': True, 'turbidity_provisional': False, 'turbidity_sample_age_ms': 350}, headers=headers)
     assert res.status_code == 200
     with db_adapter.get_db() as db:
         db.execute("SELECT message FROM announcements WHERE message LIKE '%WATER QUALITY ALERT%' ORDER BY id DESC LIMIT 1;")

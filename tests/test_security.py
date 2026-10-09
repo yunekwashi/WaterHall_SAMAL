@@ -77,8 +77,9 @@ def test_telemetry_auth_validation_zero_and_alerts(system, monkeypatch):
     assert client.post('/api/iot/telemetry', json=payload, headers=device).status_code == 200
     assert client.post('/api/iot/telemetry', json=payload, headers=device).status_code == 200
     poll = client.get('/api/notifications/poll', headers=headers['HH-1']).json
-    assert poll['is_low_level'] and poll['is_contaminated']
-    assert len(poll['new_announcements']) == 2
+    assert poll['is_low_level'] and not poll['is_contaminated']
+    assert poll['telemetry']['calibration_required']
+    assert len(poll['new_announcements']) == 1
     data = client.get('/api/all-data', headers=headers['HH-1']).json
     assert data['centralAssets']['main_tank_level'] == 0
     for value in [-1, 101, 'NaN', 'Infinity', True]:

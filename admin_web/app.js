@@ -910,9 +910,10 @@ function renderCharts(data) {
 
   // Measurements have different units; show values without a misleading part-to-whole chart.
   const ca = data.centralAssets || {has_reading: false};
-  for (const [id, key, unit] of [['summary-level','main_tank_level','%'], ['summary-turbidity','turbidity',' NTU'], ['summary-tds','tds_ppm',' ppm']]) {
+  for (const [id, key, unit] of [['summary-level','main_tank_level','%'], ['summary-tds','tds_ppm',' ppm']]) {
     document.getElementById(id).textContent = ca.has_reading && ca[key] != null ? String(ca[key]) + unit : 'Awaiting data';
   }
+  renderTurbidityIndex(ca);
 }
 
 function renderDirectory(data) {
@@ -1798,13 +1799,33 @@ function renderBillingConfig(config) {
 }
 function renderReservoir(data) {
   const present = typeof telemetryIsFresh === 'function' ? telemetryIsFresh(data) : data.has_reading === true;
-  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['admin-turbidity', 'turbidity', ' NTU'], ['admin-tds', 'tds_ppm', ' ppm']]) {
+  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['admin-tds', 'tds_ppm', ' ppm']]) {
     const element = document.getElementById(id);
     element.textContent = present && typeof data[key] === 'number' && Number.isFinite(data[key]) ? String(data[key]) + unit : 'Awaiting data';
   }
+  renderTurbidityIndex(data);
   document.getElementById('admin-reading-time').textContent = WaterHallDisplay.formatTimestamp(data.last_updated);
   WaterHallDisplay.renderTank('admin-water-tank', data.main_tank_level, present);
   WaterHallDisplay.renderTank('summary-water-tank', data.main_tank_level, present);
+}
+
+let latestTurbidityAssets = {};
+setInterval(() => {
+  if (jwtToken) renderTurbidityIndex(latestTurbidityAssets, false);
+}, 1000); // Display-only expiry; existing API polling cadence is unchanged.
+function renderTurbidityIndex(data, remember = true) {
+  if (remember) latestTurbidityAssets = data;
+  const state = WaterHallDisplay.turbidityIndexState(data);
+  for (const id of ['admin-turbidity', 'summary-turbidity']) {
+    document.getElementById(id).textContent = state.value === null ? 'Unavailable' : state.value.toFixed(2);
+  }
+  for (const id of ['admin-turbidity-status', 'summary-turbidity-status']) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = state.status;
+      element.style.color = state.status === 'Elevated' ? 'var(--alert-red)' : 'var(--text-muted)';
+    }
+  }
 }
 document.getElementById('billing-config-form').addEventListener('submit', async event => {
   event.preventDefault();

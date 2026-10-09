@@ -80,8 +80,10 @@ void setup() {
   Serial.println("[BOOT] ESP32 started");
   Serial.println("[BOOT] Firmware: WaterHall HC-SR04 intended reservoir geometry / sensor validity");
   Serial.println("[BOOT] No synthetic telemetry; sensor_config.h controls hardware gates.");
-  Serial.println("[TURBIDITY] Numeric NTU requires approved reference calibration; raw diagnostics remain available.");
-  Serial.println("[SAFETY] Measurements do not certify drinking-water safety.");
+  if (TURBIDITY_LOCAL_INDEX_ENABLED)
+    Serial.println("[TURBIDITY] Local clear/cloudy comparison index, NOT NTU. Scientific NTU/ppm accuracy unverified; measurements do not certify drinking-water safety.");
+  else if (PROVISIONAL_DEMO_MODE)
+    Serial.println("[DEMO] Existing NTU/ppm approximations; MANUAL CALIBRATION REQUIRED. Water level uses intended 4-ft / 5-in geometry; physical accuracy verification required.");
   Serial.printf("[WATER] Full distance: %.2f cm | Empty distance: %.2f cm | Max depth: %.2f cm\n",
                 FULL_DISTANCE_CM, EMPTY_DISTANCE_CM, EMPTY_DISTANCE_CM - FULL_DISTANCE_CM);
   if (!SENSOR_WIRING_CONFIRMED) Serial.println("[HARDWARE] Wiring/voltage confirmation pending; all POSTs disabled.");
@@ -358,7 +360,13 @@ int sendTelemetry() {
     return TELEMETRY_NO_SAMPLE;
   }
   const int waterLevelPct = sample.waterLevel;  // Invalid/unmeasured level -> JSON null.
-  const float turbidityNTU = sample.turbidity;
+  const uint32_t snapshotAge = uint32_t(millis() - observedAt);
+  const uint32_t turbidityAge = sample.turbiditySampleAgeMs <= waterhall::SAMPLE_MAX_AGE_MS
+      ? sample.turbiditySampleAgeMs + snapshotAge : UINT32_MAX;
+  const bool turbiditySignalValid = sample.turbiditySignalValid &&
+      turbidityAge <= waterhall::SAMPLE_MAX_AGE_MS;
+  const bool turbidityNtuCalibrated = turbiditySignalValid && sample.turbidityNtuCalibrated;
+  const float turbidityNTU = turbidityNtuCalibrated ? sample.turbidity : NAN;
   // The focused deployed contract still requires real, valid turbidity.
   if (TDS_PARTIAL_PRODUCTION && !NULLABLE_TURBIDITY_PRODUCTION &&
       !(isfinite(turbidityNTU) && turbidityNTU >= 0 && turbidityNTU <= 10000)) {
@@ -384,10 +392,32 @@ int sendTelemetry() {
   jsonPayload += ",\"tds_ppm\":";
   jsonPayload += isfinite(sample.tds) && sample.tds >= 0 && sample.tds <= 100000
       ? String(int(lroundf(sample.tds))) : String("null");
-  // Existing approximations and all reference interpolation remain provisional.
-  // The focused released backend ignores calibration metadata; its existing
-  // alert thresholds and cooldown remain unchanged.
+  // Per-sensor evidence keeps uncalibrated or stale turbidity out of alerts.
+  // Other sensors can still require calibration independently.
+  jsonPayload += ",\"turbidity_signal_valid\":";
+  jsonPayload += turbiditySignalValid ? String("true") : String("false");
+  jsonPayload += ",\"turbidity_ntu_calibrated\":";
+  jsonPayload += turbidityNtuCalibrated ? String("true") : String("false");
+  jsonPayload += ",\"turbidity_provisional\":";
+  jsonPayload += turbidityNtuCalibrated ? String("false") : String("true");
+  jsonPayload += ",\"turbidity_sample_age_ms\":";
+  jsonPayload += turbiditySignalValid ? String(int(turbidityAge)) : String("null");
   jsonPayload += ",\"calibration_required\":true";
+  if (TURBIDITY_LOCAL_INDEX_ENABLED) {
+    const float index = turbiditySignalValid && TURBIDITY_LOCAL_INDEX_OPERATIONAL_ENABLED
+        ? sample.turbidityIndex : NAN;
+    jsonPayload += ",\"turbidity_index\":";
+    jsonPayload += isfinite(index) ? String(index, 2) : String("null");
+    jsonPayload += ",\"turbidity_index_provisional\":true";
+    jsonPayload += ",\"turbidity_index_calibration_approved\":false";
+    jsonPayload += ",\"turbidity_index_model\":\"";
+    jsonPayload += TURBIDITY_LOCAL_INDEX_MODEL;
+    jsonPayload += "\",\"turbidity_raw_adc\":" + String(sample.turbidityRaw);
+    jsonPayload += ",\"turbidity_adc_voltage\":";
+    jsonPayload += isfinite(sample.turbidityAdc) ? String(sample.turbidityAdc, 4) : String("null");
+    jsonPayload += ",\"turbidity_module_voltage\":";
+    jsonPayload += isfinite(sample.turbidityVoltage) ? String(sample.turbidityVoltage, 4) : String("null");
+  }
   jsonPayload += "}";
   Serial.println("\n[HTTP] POST " + SERVER_URL);
   Serial.printf("[HTTP] Sample age: %lu ms | distance: %.2f cm\n",

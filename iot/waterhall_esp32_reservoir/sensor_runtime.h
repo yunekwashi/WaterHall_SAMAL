@@ -46,6 +46,12 @@ struct SensorSnapshot {
   float turbidity;
   float tds;
   float waterDepth;
+  bool turbiditySignalValid;
+  bool turbidityNtuCalibrated;
+  float turbidityDiagnosticNtu;
+  uint32_t turbiditySampleAgeMs;
+  float turbidityIndex;
+  uint16_t turbidityRaw;
 };
 
 float readDistanceCm() {
@@ -124,7 +130,8 @@ void printSensorStatus(const SensorSnapshot& sample, uint32_t now) {
                 "turb_raw=%u turb_v=%.3f turb=%.3f tds_raw=%u tds_v=%.3f tds=%.3f "
                 "level=%d ntu=%.2f ppm=%.0f turb_mod=%.3f tds_mod=%.3f depth=%.2f "
                 "tds_db=%u tds_state=%s echo_us=%lu echo_timeout_n=%lu "
-                "echo_invalid_n=%lu hc_available=%u\n",
+                "echo_invalid_n=%lu hc_available=%u turb_signal_valid=%u "
+                "turb_ntu_calibrated=%u turb_legacy=%.2f turb_age_ms=%lu turb_index=%.2f turb_offset=%.4f turb_unclamped=%.2f\n",
                 (unsigned long)now, (unsigned long)echoSampleCount,
                 (unsigned long)analogSampleCount, lastDistanceCm, sample.distance,
                 lastTurbidityRaw, lastTurbidityRawVoltage, sample.turbidityAdc,
@@ -135,15 +142,27 @@ void printSensorStatus(const SensorSnapshot& sample, uint32_t now) {
                 TDS_LOW_RANGE ? 0u : 11u,
                 tdsState, (unsigned long)lastEchoDurationUs,
                 (unsigned long)echoTimeoutCount, (unsigned long)echoInvalidRangeCount,
-                distanceValidity.available ? 1u : 0u);
+                distanceValidity.available ? 1u : 0u,
+                sample.turbiditySignalValid ? 1u : 0u,
+                sample.turbidityNtuCalibrated ? 1u : 0u,
+                sample.turbidityDiagnosticNtu, (unsigned long)sample.turbiditySampleAgeMs,
+                sample.turbidityIndex,
+                sample.turbidityAdc - TURBIDITY_LOCAL_CLEAR_ADC_VOLTS,
+                10.0f * (TURBIDITY_LOCAL_CLEAR_ADC_VOLTS - sample.turbidityAdc) /
+                    (TURBIDITY_LOCAL_CLEAR_ADC_VOLTS - TURBIDITY_LOCAL_CLOUDY_ADC_VOLTS));
 }
+
+const waterhall::TurbidityReferenceCalibration turbidityReferenceCalibration = {
+    TURBIDITY_REFERENCE_CALIBRATION_APPROVED, TURBIDITY_REFERENCE_1_VOLTS,
+    TURBIDITY_REFERENCE_1_NTU, TURBIDITY_REFERENCE_2_VOLTS, TURBIDITY_REFERENCE_2_NTU};
 
 const waterhall::TdsReferenceCalibration tdsReferenceCalibration = {
     TDS_REFERENCE_CALIBRATION_APPROVED, TDS_REFERENCE_1_VOLTS, TDS_REFERENCE_1_PPM,
     TDS_REFERENCE_2_VOLTS, TDS_REFERENCE_2_PPM, TDS_CALIBRATION_MEASURED_TEMPERATURE_C};
 
 SensorSnapshot readSensors(uint32_t now, bool provisionalDemo = PROVISIONAL_DEMO_MODE,
-    const waterhall::TdsReferenceCalibration& tdsReference = tdsReferenceCalibration) {
+    const waterhall::TdsReferenceCalibration& tdsReference = tdsReferenceCalibration,
+    const waterhall::TurbidityReferenceCalibration& turbidityReference = turbidityReferenceCalibration) {
   SensorSnapshot sample;
   sample.distance = distanceSamples.median(now, 3);
   sample.waterDepth = distanceValidity.available
@@ -155,10 +174,20 @@ SensorSnapshot readSensors(uint32_t now, bool provisionalDemo = PROVISIONAL_DEMO
   sample.turbidityVoltage = waterhall::moduleVoltage(sample.turbidityAdc, TURBIDITY_DIVIDER_GAIN);
   sample.tdsVoltage = waterhall::tdsModuleVoltage(sample.tdsAdc, TDS_DIVIDER_GAIN,
                                                 TDS_LOW_RANGE);
-  sample.turbidity = TURBIDITY_REFERENCE_CALIBRATION_APPROVED
-      ? waterhall::referenceValue(sample.turbidityVoltage,
-      TURBIDITY_REFERENCE_1_VOLTS, TURBIDITY_REFERENCE_1_NTU,
-      TURBIDITY_REFERENCE_2_VOLTS, TURBIDITY_REFERENCE_2_NTU, 10000) : NAN;
+  sample.turbiditySignalValid = isfinite(lastTurbidityAdcVoltage) &&
+      isfinite(sample.turbidityVoltage);
+  sample.turbiditySampleAgeMs = sample.turbiditySignalValid
+      ? waterhall::turbiditySampleAgeMs(turbiditySamples, now) : UINT32_MAX;
+  sample.turbidity = sample.turbiditySignalValid
+      ? waterhall::calibratedTurbidityNtu(sample.turbidityVoltage,
+          turbidityReference, TURBIDITY_DIVIDER_GAIN) : NAN;
+  sample.turbidityNtuCalibrated = isfinite(sample.turbidity);
+  sample.turbidityRaw = lastTurbidityRaw;
+  sample.turbidityIndex = TURBIDITY_LOCAL_INDEX_ENABLED && sample.turbiditySignalValid
+      ? waterhall::localTurbidityIndex(sample.turbidityVoltage, TURBIDITY_DIVIDER_GAIN,
+          TURBIDITY_LOCAL_CLEAR_ADC_VOLTS, TURBIDITY_LOCAL_CLOUDY_ADC_VOLTS) : NAN;
+  // The unsupported historical curve is excluded from every runtime path.
+  sample.turbidityDiagnosticNtu = NAN;
   // This polynomial already existed in WaterHall's readTDSppm. Demo opt-in
   // does not assert that the unknown generic module is a SEN0244.
   // In the partial-production profile, only reviewed reference calibration can
@@ -186,9 +215,16 @@ void printSensors(const SensorSnapshot& sample) {
   else Serial.println("[WATER] Level: unavailable; fresh valid echo required");
   Serial.printf("[TURBIDITY] Raw ADC: %u | ADC Voltage: %.3f V | Module Voltage: %.3f V | ",
                 lastTurbidityRaw, sample.turbidityAdc, sample.turbidityVoltage);
-  if (isfinite(sample.turbidity)) Serial.printf("NTU: %.2f (approved bounded reference estimate)\n",
-      sample.turbidity);
-  else Serial.println("NTU: unavailable (invalid/stale signal or unapproved reference calibration)");
+  Serial.printf("signal_valid=%u | ntu_calibrated=%u | ",
+      sample.turbiditySignalValid ? 1u : 0u, sample.turbidityNtuCalibrated ? 1u : 0u);
+  if (sample.turbidityNtuCalibrated)
+    Serial.printf("NTU: %.2f (approved bounded reference estimate)\n", sample.turbidity);
+  else Serial.println("NTU: unavailable (invalid/stale signal or calibration not approved)");
+  if (isfinite(sample.turbidityIndex))
+    Serial.printf("[TURBIDITY] Turbidity Index: %.2f (Provisional operational only; unresolved baseline drift; not NTU)\n", sample.turbidityIndex);
+  if (isfinite(sample.turbidityDiagnosticNtu))
+    Serial.printf("[TURBIDITY] Legacy curve diagnostic only, NOT measured NTU: %.2f\n",
+        sample.turbidityDiagnosticNtu);
   Serial.printf("[TDS] Raw ADC: %u | ADC Voltage: %.3f V | Module Voltage: %.3f V | ",
                 lastTdsRaw, sample.tdsAdc, sample.tdsVoltage);
   if (TDS_LOW_RANGE_BENCH)

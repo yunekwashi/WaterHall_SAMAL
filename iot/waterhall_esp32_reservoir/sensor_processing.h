@@ -140,6 +140,60 @@ inline float referenceValue(float voltage, float v1, float value1,
   return value1 + (voltage - v1) * (value2 - value1) / (v2 - v1);
 }
 
+struct TurbidityReferenceCalibration {
+  bool approved;
+  float volts1;
+  float ntu1;
+  float volts2;
+  float ntu2;
+};
+
+inline float localTurbidityIndex(float moduleVolts, float dividerGain,
+                                float clearAdcVolts, float cloudyAdcVolts) {
+  // Zero means voltage at or above the local reference, never zero NTU.
+  // Baseline drift can produce zero; preserve unclamped/offset diagnostics.
+  // Ten denotes the captured cloudy sample. Values may exceed ten for a
+  // stronger response; the comparison remains specific to this optical setup.
+  if (!isfinite(dividerGain) || dividerGain < 1 || dividerGain > 10 ||
+      !isfinite(clearAdcVolts) || !isfinite(cloudyAdcVolts) ||
+      clearAdcVolts <= cloudyAdcVolts || clearAdcVolts - cloudyAdcVolts < 0.001f ||
+      !isfinite(moduleVoltage(clearAdcVolts, dividerGain)) ||
+      !isfinite(moduleVoltage(cloudyAdcVolts, dividerGain)) ||
+      !isfinite(moduleVoltage(moduleVolts / dividerGain, dividerGain))) return NAN;
+  const float index = 10.0f * (clearAdcVolts - moduleVolts / dividerGain) /
+                      (clearAdcVolts - cloudyAdcVolts);
+  return index < 0 ? 0 : index;
+}
+
+inline float calibratedTurbidityNtu(float moduleVolts,
+    const TurbidityReferenceCalibration& reference, float dividerGain) {
+  if (!reference.approved || !isfinite(dividerGain) || dividerGain < 1 ||
+      dividerGain > 10 ||
+      reference.ntu1 == reference.ntu2 ||
+      !isfinite(moduleVoltage(moduleVolts / dividerGain, dividerGain)) ||
+      !isfinite(moduleVoltage(reference.volts1 / dividerGain, dividerGain)) ||
+      !isfinite(moduleVoltage(reference.volts2 / dividerGain, dividerGain))) return NAN;
+  // N(V) = N1 + (V - V1) * (N2 - N1) / (V2 - V1), only inside the
+  // measured interval. Approval requires an independent standard to validate
+  // local linearity; two arbitrary water samples cannot supply NTU anchors.
+  return referenceValue(moduleVolts, reference.volts1, reference.ntu1,
+                        reference.volts2, reference.ntu2, 10000);
+}
+
+// Conservative age of every fresh voltage contributing to the turbidity median.
+// Queue age is added at send time; a new snapshot cannot relabel old data fresh.
+inline uint32_t turbiditySampleAgeMs(const SampleWindow<9>& samples, uint32_t now) {
+  size_t valid = 0;
+  uint32_t oldest = 0;
+  for (size_t i = 0; i < samples.count; ++i) {
+    const uint32_t age = uint32_t(now - samples.times[i]);
+    if (!isfinite(samples.values[i]) || age > SAMPLE_MAX_AGE_MS) continue;
+    ++valid;
+    if (age > oldest) oldest = age;
+  }
+  return valid >= 7 ? oldest : UINT32_MAX;
+}
+
 inline float sen0244Ppm(float voltage, float calibrationFactor, float temperatureC) {
   // SEN0244 manufacturer's reference polynomial; only for a confirmed compatible
   // module. A fixed 25 C reference is NOT measured temperature compensation.
@@ -181,9 +235,9 @@ inline float calibratedTdsPpm(float moduleVolts,
                         reference.volts2, reference.ppm2, 100000);
 }
 
-// Exact pre-existing readTurbidityNTU approximation from WaterHall commit
-// faf9103, reused ONLY for an explicitly provisional consultant demonstration.
-// No claim of manufacturer compatibility, calibrated NTU or water safety.
+// Local approximation present in the earliest tracked sketch (ecbb42e).
+// No manufacturer/SKU or NTU reference evidence accompanied these constants.
+// Retained only to explain historic readings; never a trusted NTU conversion.
 inline float legacyDemoTurbidityNtu(float voltage) {
   if (!isfinite(voltage) || voltage < 0 || voltage > 3.3f) return NAN;
   if (voltage >= 2.5f) {

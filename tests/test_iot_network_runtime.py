@@ -4,6 +4,7 @@ These deterministic failure tests model concurrent sampling while a network
 operation waits. COM3 captures separately verify the real FreeRTOS scheduling.
 """
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -27,7 +28,7 @@ def network_test_executable(tmp_path_factory):
     return build_network_test(output, ['WATERHALL_ENABLE_AUTOMATIC_TELEMETRY'])
 
 
-def build_network_test(output, definitions, expect_failure=False):
+def build_network_test(output, definitions, expect_failure=False, approve_local_index_fixture=None):
     firmware = ROOT / 'iot/waterhall_esp32_reservoir'
     stubs = ROOT / 'tests/cpp/network_stubs'
     # Copy the exact sketch so its quoted private include resolves to a temporary
@@ -41,9 +42,14 @@ def build_network_test(output, definitions, expect_failure=False):
         f'const char IOT_DEVICE_SECRET[] = "{"x" * 32}";\n'
         'const char ROOT_CA[] = "native-test-root";\n'
         'constexpr bool ALLOW_INSECURE_LOCAL_HTTP = false;\n')
-    # Test the public build switches; never rewrite runtime/configuration source.
+    # Test the public build switches. One isolated, explicitly approved fixture
+    # exercises future numeric transport; the actual public approval stays false.
     for name in ('sensor_runtime.h', 'sensor_processing.h', 'sensor_config.h'):
         source_text = (firmware / name).read_text()
+        if name == 'sensor_config.h' and approve_local_index_fixture is not None:
+            source_text, changed = re.subn(r'(constexpr bool TURBIDITY_LOCAL_INDEX_OPERATIONAL_ENABLED = )(?:false|true)(;)',
+                r'\g<1>' + ('true' if approve_local_index_fixture else 'false') + r'\g<2>', source_text)
+            assert changed == 1
         (output / name).write_text(source_text)
     source = ROOT / 'tests/cpp/test_iot_network_runtime.cpp'
     executable = output / ('network-tests.exe' if os.name == 'nt' else 'network-tests')
@@ -167,9 +173,9 @@ def test_tds_partial_production(tds_partial_production_executable, case):
     assert result.stdout.strip() == case
 
 
-def test_tds_calibration_approved_path(nullable_turbidity_production_executable):
+def test_tds_calibration_approved_path(tds_partial_production_executable):
     case = 'tds_approved_reference_numeric_null_and_recovery'
-    result = subprocess.run([str(nullable_turbidity_production_executable), case],
+    result = subprocess.run([str(tds_partial_production_executable), case],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.strip() == case
@@ -207,3 +213,36 @@ def test_nullable_turbidity_requires_partial_production(tmp_path, definitions):
     result = build_network_test(tmp_path, definitions + ['WATERHALL_NULLABLE_TURBIDITY_PRODUCTION'], expect_failure=True)
     assert result.returncode != 0
     assert 'Nullable turbidity production requires the partial TDS production profile' in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('case', [
+    'turbidity_uncalibrated_signal_null_and_preserved_other_fields',
+    'turbidity_calibrated_transport_ages_old_measurement_not_new_snapshot',
+])
+def test_turbidity_calibration_and_freshness_transport(nullable_turbidity_production_executable, case):
+    result = subprocess.run([str(nullable_turbidity_production_executable), case],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == case
+
+
+def test_local_index_actual_transport(tmp_path):
+    executable = build_network_test(tmp_path, [
+        'WATERHALL_ENABLE_AUTOMATIC_TELEMETRY', 'WATERHALL_TDS_PARTIAL_PRODUCTION',
+        'WATERHALL_NULLABLE_TURBIDITY_PRODUCTION', 'WATERHALL_LOCAL_TURBIDITY_INDEX'],
+        approve_local_index_fixture=True)
+    case = 'local_index_payload_direction_null_and_snapshot_safety'
+    result = subprocess.run([str(executable), case], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == case
+
+
+def test_unapproved_local_index_actual_transport(tmp_path):
+    executable = build_network_test(tmp_path, [
+        'WATERHALL_ENABLE_AUTOMATIC_TELEMETRY', 'WATERHALL_TDS_PARTIAL_PRODUCTION',
+        'WATERHALL_NULLABLE_TURBIDITY_PRODUCTION', 'WATERHALL_LOCAL_TURBIDITY_INDEX'],
+        approve_local_index_fixture=False)
+    case = 'local_index_unapproved_never_publishes_numeric'
+    result = subprocess.run([str(executable), case], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == case

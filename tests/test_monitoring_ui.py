@@ -8,6 +8,8 @@ from playwright.sync_api import expect
 from backend.db_adapter import get_db
 from backend.server import IOT_DEVICE_SECRET
 from test_browser import browser_page
+from test_turbidity_index import packet, approved_local_index
+from backend import turbidity_index as index
 
 pytestmark = pytest.mark.skipif(os.getenv('RUN_BROWSER_TESTS') != '1', reason='Opt-in Chrome UI checks')
 DEVICE = {'X-IoT-Secret': IOT_DEVICE_SECRET}
@@ -49,7 +51,8 @@ def selectors(role):
 
 def post(page, origin, level, tds):
     reply = page.request.post(origin + '/api/iot/telemetry', headers=DEVICE,
-                              data={'water_level_percentage': level, 'turbidity_ntu': 2.31, 'tds_ppm': tds})
+                              data=packet(index.CLEAR_ADC_VOLTS-2.31*(index.CLEAR_ADC_VOLTS-index.CLOUDY_ADC_VOLTS)/10,
+                                          water_level_percentage=level, tds_ppm=tds))
     assert reply.status == 200
 
 
@@ -69,7 +72,7 @@ def test_tank_levels_numeric_and_null_tds_through_existing_poll(ui_page, role, w
         page.clock.set_fixed_time(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=2))
         page.clock.fast_forward(60000)
         expect(page.locator(level)).to_have_text(f'{percent}%')
-        expect(page.locator(turb)).to_have_text('2.31 NTU' if role == 'admin' else '2.3')
+        expect(page.locator(turb)).to_have_text('2.31')
         expect(page.locator(tds)).to_have_text('Awaiting data' if role == 'admin' else 'N/A')
         expect(page.locator(tank)).to_have_attribute('aria-valuenow', str(percent))
         ratio = page.locator(tank).evaluate('e => e.querySelector(".tank-water").getBoundingClientRect().height / e.clientHeight')
@@ -105,7 +108,7 @@ def test_cached_stale_state_on_failed_poll_keeps_session(ui_page, role):
     expect(page.locator(tank)).to_have_attribute('aria-valuenow', '75')
     page.route('**/api/all-data*', lambda route: route.abort())
     page.clock.fast_forward(661000)
-    expect(page.locator(f'#{role}-safety-status')).not_to_have_text('NO ALERT')
+    expect(page.locator(f'#{role}-safety-status')).to_have_text('Unavailable')
     expect(page.locator(f'#{role}-telemetry-freshness')).not_to_contain_text('Current')
     expect(page.locator(tank)).not_to_have_attribute('aria-valuenow', '75')
     assert page.evaluate("localStorage.getItem('waterhall_jwt') !== null")

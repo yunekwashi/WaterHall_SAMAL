@@ -8,6 +8,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = [
+    'local_index_measured_direction_and_invalid',
+    'turbidity_reference_gate_and_bounds',
+    'turbidity_measured_voltage_path_and_legacy_bias',
+    'turbidity_runtime_separate_signal_calibration_and_age',
     'validity_confirmation', 'runtime_individual_invalid_and_recovery',
     'runtime_hc_noise_and_invalid_confirmation',
     'echo_bounds', 'geometry_and_clamps', 'geometry_missing_invalid',
