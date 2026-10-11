@@ -911,7 +911,7 @@ function renderCharts(data) {
   // Measurements have different units; show values without a misleading part-to-whole chart.
   const ca = data.centralAssets || {has_reading: false};
   for (const [id, key, unit] of [['summary-level','main_tank_level','%'], ['summary-tds','tds_ppm',' ppm']]) {
-    document.getElementById(id).textContent = ca.has_reading && ca[key] != null ? String(ca[key]) + unit : 'Awaiting data';
+    renderTelemetryValue(id, ca, key, unit);
   }
   renderTurbidityIndex(ca);
 }
@@ -1797,32 +1797,42 @@ function renderBillingConfig(config) {
     ? 'Confirmed rate version ' + config.version + '. Existing bills retain their recorded rates.'
     : 'Unconfirmed sample rates. Admin must enter and confirm the official rates.';
 }
+function renderTelemetryValue(id, data, key, unit) {
+  const value = data[key];
+  document.getElementById(id).textContent = WaterHallDisplay.telemetryFreshness(data).fresh &&
+    typeof value === 'number' && Number.isFinite(value) ? String(value) + unit : 'Awaiting data';
+}
 function renderReservoir(data) {
-  const present = typeof telemetryIsFresh === 'function' ? telemetryIsFresh(data) : data.has_reading === true;
-  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['admin-tds', 'tds_ppm', ' ppm']]) {
-    const element = document.getElementById(id);
-    element.textContent = present && typeof data[key] === 'number' && Number.isFinite(data[key]) ? String(data[key]) + unit : 'Awaiting data';
+  const freshness = WaterHallDisplay.telemetryFreshness(data);
+  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['admin-tds', 'tds_ppm', ' ppm'],
+    ['summary-level', 'main_tank_level', '%'], ['summary-tds', 'tds_ppm', ' ppm']]) {
+    renderTelemetryValue(id, data, key, unit);
   }
   renderTurbidityIndex(data);
   document.getElementById('admin-reading-time').textContent = WaterHallDisplay.formatTimestamp(data.last_updated);
-  WaterHallDisplay.renderTank('admin-water-tank', data.main_tank_level, present);
-  WaterHallDisplay.renderTank('summary-water-tank', data.main_tank_level, present);
+  const message = freshness.fresh ? 'Current sensor readings.' : freshness.hasReading ? 'IoT offline.' : 'Awaiting sensor readings.';
+  document.getElementById('admin-telemetry-freshness').textContent = message;
+  document.getElementById('summary-telemetry-freshness').textContent = message +
+    (freshness.hasReading ? ' Last reading: ' + WaterHallDisplay.formatTimestamp(data.last_updated) : '');
+  WaterHallDisplay.renderTank('admin-water-tank', data.main_tank_level, freshness.fresh);
+  WaterHallDisplay.renderTank('summary-water-tank', data.main_tank_level, freshness.fresh);
 }
 
 let latestTurbidityAssets = {};
 setInterval(() => {
-  if (jwtToken) renderTurbidityIndex(latestTurbidityAssets, false);
+  if (jwtToken) renderReservoir(latestTurbidityAssets);
 }, 1000); // Display-only expiry; existing API polling cadence is unchanged.
 function renderTurbidityIndex(data, remember = true) {
   if (remember) latestTurbidityAssets = data;
   const state = WaterHallDisplay.turbidityIndexState(data);
+  const fresh = WaterHallDisplay.telemetryFreshness(data).fresh;
   for (const id of ['admin-turbidity', 'summary-turbidity']) {
-    document.getElementById(id).textContent = state.value === null ? 'Unavailable' : state.value.toFixed(2);
+    document.getElementById(id).textContent = state.value === null ? (fresh ? 'Unavailable' : 'Awaiting data') : state.value.toFixed(2);
   }
   for (const id of ['admin-turbidity-status', 'summary-turbidity-status']) {
     const element = document.getElementById(id);
     if (element) {
-      element.textContent = state.status;
+      element.textContent = fresh ? state.status : 'Awaiting data';
       element.style.color = state.status === 'Elevated' ? 'var(--alert-red)' : 'var(--text-muted)';
     }
   }

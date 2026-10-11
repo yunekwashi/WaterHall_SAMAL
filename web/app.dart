@@ -147,7 +147,10 @@ class AppController {
     // Cached-display expiry only; does not make additional API requests.
     Timer.periodic(const Duration(seconds: 1), (_) => _refreshTelemetryDisplay());
     document.onVisibilityChange.listen((_) {
-      if (document.visibilityState == 'visible') unawaited(_refreshVisibleView());
+      if (document.visibilityState == 'visible') {
+        _refreshTelemetryDisplay();
+        unawaited(_refreshVisibleView());
+      }
     });
 
     // Check existing session strictly isolated by application role (?role=resident or ?role=worker)
@@ -1740,12 +1743,9 @@ class AppController {
 
   void _renderTelemetry(String role, Map<String, dynamic> assets, Element? level,
       Element? turbidity, Element? tds, Element? status) {
-    final available = assets['has_reading'] != false;
+    final freshnessState = js.context['WaterHallDisplay'].callMethod('telemetryFreshness', [js.JsObject.jsify(assets)]);
+    final available = freshnessState['fresh'] == true;
     final rawDate = '${assets['last_updated'] ?? ''}';
-    final normalized = RegExp(r'(Z|[+-]\d\d:\d\d)$').hasMatch(rawDate) ? rawDate : '${rawDate}Z';
-    final recorded = DateTime.tryParse(normalized);
-    final age = recorded == null ? null : DateTime.now().toUtc().difference(recorded.toUtc());
-    final stale = age != null && (age.inMinutes >= 10 || age.isNegative);
     void reading(Element? element, dynamic value, int digits, [String unit = '']) {
       final valid = available && value is num && value.isFinite;
       final text = valid ? '${value.toStringAsFixed(digits)}$unit' : 'N/A';
@@ -1757,22 +1757,21 @@ class AppController {
     final indexState = js.context['WaterHallDisplay'].callMethod('turbidityIndexState', [js.JsObject.jsify(assets)]);
     final indexValue = indexState['value'];
     final indexStatus = '${indexState['status']}';
-    final indexText = indexValue is num ? indexValue.toStringAsFixed(2) : 'Unavailable';
+    final indexText = indexValue is num ? indexValue.toStringAsFixed(2) : 'N/A';
     if (turbidity?.text != indexText) turbidity?.text = indexText;
     reading(tds, assets['tds_ppm'], 0);
     final warning = indexStatus == 'Elevated';
     final statusText = indexStatus;
     if (status?.text != statusText) status?.text = statusText;
     status?.style.color = warning ? 'var(--alert-red)' : 'var(--text-muted)';
-    final updated = !available ? 'Awaiting current sensor readings.'
-        : recorded == null ? 'Update time unavailable.'
-        : stale ? 'Stale reading. Refresh when connected.' : 'Current sensor readings.';
+    final updated = available ? 'Current sensor readings.'
+        : freshnessState['hasReading'] == true ? 'IoT offline.' : 'Awaiting current sensor readings.';
     final freshness = document.getElementById('$role-telemetry-freshness');
     if (freshness?.text != updated) freshness?.text = updated;
     final dateElement = document.getElementById('$role-reading-time');
     final displayDate = _formatTimestamp(rawDate);
     if (dateElement?.text != displayDate) dateElement?.text = displayDate;
-    js.context['WaterHallDisplay'].callMethod('renderTank', ['$role-water-tank', rawLevel, available && !stale && recorded != null]);
+    js.context['WaterHallDisplay'].callMethod('renderTank', ['$role-water-tank', rawLevel, available]);
   }
 
   void renderResidentDashboard() {

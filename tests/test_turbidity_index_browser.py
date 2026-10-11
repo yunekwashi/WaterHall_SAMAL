@@ -46,14 +46,14 @@ def test_index_clear_cloudy_return_invalid_and_polling(ui_page, role, width):
         expect(page.locator(tds)).to_have_text('Awaiting data' if role=='admin' else 'N/A')
     ingest(.830, turbidity_raw_adc=4095, turbidity_signal_valid=False, turbidity_index=None)
     advance()
-    expect(page.locator(turb)).to_have_text('Unavailable')
+    expect(page.locator(turb)).to_have_text('Unavailable' if role == 'admin' else 'N/A')
     expect(page.locator(status)).to_have_text('Unavailable')
     expect(page.locator(level)).to_have_text('78%')
     # Historical/unverified NTU must never be relabeled as a local index.
     assert page.request.post(origin+'/api/iot/telemetry', headers=DEVICE,
         data={'water_level_percentage':78,'turbidity_ntu':34.9,'tds_ppm':None}).status == 200
     advance()
-    expect(page.locator(turb)).to_have_text('Unavailable')
+    expect(page.locator(turb)).to_have_text('Unavailable' if role == 'admin' else 'N/A')
     ingest(index.CLEAR_ADC_VOLTS); advance()
     expect(page.locator(turb)).to_have_text('0.00')
     expect(page.locator(status)).to_have_text('Normal')
@@ -77,6 +77,6 @@ def test_index_clear_cloudy_return_invalid_and_polling(ui_page, role, width):
     # wall clock so this is a real stale-cache check rather than a frozen date.
     page.clock.set_fixed_time(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=123))
     page.clock.fast_forward(121000)
-    expect(page.locator(turb)).to_have_text('Unavailable')
-    expect(page.locator(status)).to_have_text('Unavailable')
+    expect(page.locator(turb)).to_have_text('Awaiting data' if role == 'admin' else 'N/A')
+    expect(page.locator(status)).to_have_text('Awaiting data' if role == 'admin' else 'Unavailable')
     assert errors == []
