@@ -1,6 +1,7 @@
 #pragma once
 #include "sensor_config.h"
 #include "sensor_processing.h"
+#include "tds_index.h"
 
 #if defined(WATERHALL_TDS_LOW_RANGE_BENCH) || defined(WATERHALL_TDS_LOW_RANGE_PRODUCTION) || defined(WATERHALL_TDS_PARTIAL_PRODUCTION)
 bool readTdsLowRangeMillivolts(uint16_t raw, uint32_t& millivolts);
@@ -52,6 +53,10 @@ struct SensorSnapshot {
   uint32_t turbiditySampleAgeMs;
   float turbidityIndex;
   uint16_t turbidityRaw;
+  float tdsIndex;
+  bool tdsSignalValid;
+  uint32_t tdsSampleAgeMs;
+  uint16_t tdsRaw;
 };
 
 float readDistanceCm() {
@@ -186,13 +191,19 @@ SensorSnapshot readSensors(uint32_t now, bool provisionalDemo = PROVISIONAL_DEMO
   sample.turbidityIndex = TURBIDITY_LOCAL_INDEX_ENABLED && sample.turbiditySignalValid
       ? waterhall::localTurbidityIndex(sample.turbidityVoltage, TURBIDITY_DIVIDER_GAIN,
           TURBIDITY_LOCAL_CLEAR_ADC_VOLTS, TURBIDITY_LOCAL_CLOUDY_ADC_VOLTS) : NAN;
+  sample.tdsRaw = lastTdsRaw;
+  sample.tdsSignalValid = isfinite(lastTdsAdcVoltage) && isfinite(sample.tdsVoltage);
+  sample.tdsSampleAgeMs = sample.tdsSignalValid
+      ? waterhall::tdsSampleAgeMs(tdsSamples, now) : UINT32_MAX;
+  sample.tdsIndex = TDS_LOCAL_INDEX_ENABLED && sample.tdsSignalValid
+      ? waterhall::localTdsIndex(sample.tdsAdc) : NAN;
   // The unsupported historical curve is excluded from every runtime path.
   sample.turbidityDiagnosticNtu = NAN;
   // This polynomial already existed in WaterHall's readTDSppm. Demo opt-in
   // does not assert that the unknown generic module is a SEN0244.
   // In the partial-production profile, only reviewed reference calibration can
   // supply ppm. The legacy demo flag must never bypass that approval gate.
-  sample.tds = TDS_LOW_RANGE_BENCH ? NAN : tdsReference.approved
+  sample.tds = (TDS_LOW_RANGE_BENCH || TDS_LOCAL_INDEX_ENABLED) ? NAN : tdsReference.approved
       ? waterhall::calibratedTdsPpm(sample.tdsVoltage, tdsReference, TDS_DIVIDER_GAIN, TDS_LOW_RANGE)
       : TDS_PARTIAL_PRODUCTION ? NAN : (provisionalDemo || TDS_USE_SEN0244_REFERENCE)
       ? waterhall::sen0244Ppm(sample.tdsVoltage, TDS_CALIBRATION_FACTOR, TDS_REFERENCE_TEMPERATURE_C)
@@ -227,7 +238,9 @@ void printSensors(const SensorSnapshot& sample) {
         sample.turbidityDiagnosticNtu);
   Serial.printf("[TDS] Raw ADC: %u | ADC Voltage: %.3f V | Module Voltage: %.3f V | ",
                 lastTdsRaw, sample.tdsAdc, sample.tdsVoltage);
-  if (TDS_LOW_RANGE_BENCH)
+  if (TDS_LOCAL_INDEX_ENABLED) {
+    Serial.printf("Index: %.2f (Provisional operational only, NOT ppm)\n", sample.tdsIndex);
+  } else if (TDS_LOW_RANGE_BENCH)
     Serial.println("ppm: unset (raw/voltage diagnosis only; MANUAL CALIBRATION REQUIRED)");
   else if (isfinite(sample.tds)) Serial.printf("ppm: %.0f (%s; calibration limits apply)\n",
       sample.tds, TDS_REFERENCE_CALIBRATION_APPROVED ? "approved bounded reference estimate" : "legacy provisional approximation");

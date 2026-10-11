@@ -418,6 +418,25 @@ int sendTelemetry() {
     jsonPayload += ",\"turbidity_module_voltage\":";
     jsonPayload += isfinite(sample.turbidityVoltage) ? String(sample.turbidityVoltage, 4) : String("null");
   }
+  if (TDS_LOCAL_INDEX_ENABLED) {
+    const uint32_t tdsAge = sample.tdsSampleAgeMs <= waterhall::SAMPLE_MAX_AGE_MS
+        ? sample.tdsSampleAgeMs + snapshotAge : UINT32_MAX;
+    const bool tdsValid = sample.tdsSignalValid && tdsAge <= waterhall::SAMPLE_MAX_AGE_MS;
+    jsonPayload += ",\"tds_index\":";
+    jsonPayload += tdsValid && isfinite(sample.tdsIndex) ? String(sample.tdsIndex, 2) : String("null");
+    jsonPayload += ",\"tds_index_model\":\"";
+    jsonPayload += TDS_LOCAL_INDEX_MODEL;
+    jsonPayload += "\",\"tds_index_provisional\":true,\"tds_index_calibration_approved\":false";
+    jsonPayload += ",\"tds_signal_valid\":";
+    jsonPayload += tdsValid ? String("true") : String("false");
+    jsonPayload += ",\"tds_raw_adc\":" + String(sample.tdsRaw);
+    jsonPayload += ",\"tds_adc_voltage\":";
+    jsonPayload += isfinite(sample.tdsAdc) ? String(sample.tdsAdc, 4) : String("null");
+    jsonPayload += ",\"tds_module_voltage\":";
+    jsonPayload += isfinite(sample.tdsVoltage) ? String(sample.tdsVoltage, 4) : String("null");
+    jsonPayload += ",\"tds_sample_age_ms\":";
+    jsonPayload += tdsValid ? String(int(tdsAge)) : String("null");
+  }
   jsonPayload += "}";
   Serial.println("\n[HTTP] POST " + SERVER_URL);
   Serial.printf("[HTTP] Sample age: %lu ms | distance: %.2f cm\n",

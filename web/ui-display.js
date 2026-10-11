@@ -53,6 +53,13 @@
       ['Normal', 'Elevated'].includes(data.turbidity_index_status);
     return {value: valid ? value : null, status: valid ? data.turbidity_index_status : 'Unavailable'};
   }
+  function tdsIndexState(data, now = Date.now()) {
+    const value = data.tds_index;
+    const valid = telemetryFreshness(data, now).fresh &&
+      typeof value === 'number' && Number.isFinite(value) && value >= 0 &&
+      ['Normal', 'Elevated'].includes(data.tds_index_status);
+    return {value: valid ? value : null, status: valid ? data.tds_index_status : 'Unavailable'};
+  }
   root.WaterHallDisplay = Object.freeze({parseTimestamp, formatTimestamp, renderTank,
-    TELEMETRY_STALE_AFTER_MS, telemetryFreshness, turbidityIndexState});
+    TELEMETRY_STALE_AFTER_MS, telemetryFreshness, turbidityIndexState, tdsIndexState});
 })(window);

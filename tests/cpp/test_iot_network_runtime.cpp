@@ -478,9 +478,59 @@ static void local_index_unapproved_never_publishes_numeric() {
 #endif
 }
 
+static void tds_index_firmware_anchors() {
+  assert(fabsf(waterhall::localTdsIndex(.332f)) < .0001f);
+  assert(fabsf(waterhall::localTdsIndex(.459f) - 10) < .0001f);
+  assert(fabsf(waterhall::localTdsIndex(.335f) - .23622047f) < .0001f);
+  assert(fabsf(waterhall::localTdsIndex(.3955f) - 5) < .0001f);
+  assert(waterhall::localTdsIndex(.6f) > 10);
+  assert(waterhall::localTdsIndex(.3f) == 0);
+  assert(isnan(waterhall::localTdsIndex(NAN)));
+  assert(isnan(waterhall::localTdsIndex(.099f)));
+  assert(isnan(waterhall::localTdsIndex(.951f)));
+}
+static void tds_index_firmware_payload_null_age() {
+#ifdef WATERHALL_LOCAL_TDS_INDEX
+  assert(TDS_LOCAL_INDEX_ENABLED && TDS_DIVIDER_GAIN == 2.0f);
+  useCalibratedTurbidityFixture = false;
+  tdsRaw = 1102; modeledTdsMv = 332;
+  initialize(); WiFi.connected = true; timeSynchronized = true; modeledHttpDelay = 0;
+  assert(configuredTdsAttenuation == ADC_0db);
+  auto publish = []() { advanceSensorTime(1000); assert(sendTelemetry() == TELEMETRY_ACCEPTED); return payloads.back(); };
+  auto first = publish();
+  assert(first.find("\"tds_index\":0.00") != std::string::npos);
+  assert(first.find("\"tds_adc_voltage\":0.3320") != std::string::npos);
+  assert(first.find("\"tds_module_voltage\":0.6640") != std::string::npos);
+  assert(first.find("\"tds_ppm\":null") != std::string::npos);
+  tdsRaw = 1654; modeledTdsMv = 459;
+  auto salted = publish();
+  assert(salted.find("\"tds_index\":10.00") != std::string::npos);
+  tdsRaw = 1119; modeledTdsMv = 335;
+  assert(publish().find("\"tds_index\":0.24") != std::string::npos);
+  tdsRaw = 0; modeledTdsMv = 75;
+  assert(publish().find("\"tds_index\":null") != std::string::npos);
+  tdsRaw = 4095; modeledTdsMv = 1000;
+  assert(publish().find("\"tds_index\":null") != std::string::npos);
+  tdsRaw = 1119; modeledTdsMv = 335;
+  auto recovered = publish();
+  assert(recovered.find("\"tds_index\":0.24") != std::string::npos);
+  assert(recovered.find("\"turbidity_index\":") != std::string::npos);
+  assert(recovered.find("\"water_level_percentage\":100") != std::string::npos);
+  TimedSensorSnapshot latest = {readSensors(clockMs), clockMs - 100};
+  latest.sample.tdsSampleAgeMs = 1950;
+  xQueueOverwrite(latestSensors, &latest);
+  assert(sendTelemetry() == TELEMETRY_ACCEPTED);
+  assert(payloads.back().find("\"tds_index\":null") != std::string::npos);
+  assert(payloads.back().find("\"tds_signal_valid\":false") != std::string::npos);
+  for (const auto& payload : payloads) assert(payload.find("\"tds_ppm\":null") != std::string::npos);
+#endif
+}
+
 int main(int argc, char** argv) {
   struct Case { const char* name; void (*run)(); };
   const Case cases[] = {
+    {"tds_index_firmware_anchors", tds_index_firmware_anchors},
+    {"tds_index_firmware_payload_null_age", tds_index_firmware_payload_null_age},
     {"local_index_unapproved_never_publishes_numeric", local_index_unapproved_never_publishes_numeric},
     {"local_index_payload_direction_null_and_snapshot_safety", local_index_payload_direction_null_and_snapshot_safety},
     {"turbidity_uncalibrated_signal_null_and_preserved_other_fields", turbidity_uncalibrated_signal_null_and_preserved_other_fields},

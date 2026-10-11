@@ -92,9 +92,8 @@ def test_tank_levels_numeric_and_null_tds_through_existing_poll(ui_page, role, w
         post(page, origin, 75, numeric)
         page.clock.set_fixed_time(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=2))
         page.clock.fast_forward(60000)
-        expect(page.locator(tds)).to_have_text(f'{numeric} ppm' if role == 'admin' else str(numeric))
-        if role != 'admin':
-            expect(page.locator(tds + ' + small')).to_be_visible()
+        # Legacy numeric ppm stays valid in storage but is never relabeled as an index.
+        expect(page.locator(tds)).to_have_text('Awaiting data' if role == 'admin' else 'N/A')
     assert errors == []
 
 

@@ -910,10 +910,11 @@ function renderCharts(data) {
 
   // Measurements have different units; show values without a misleading part-to-whole chart.
   const ca = data.centralAssets || {has_reading: false};
-  for (const [id, key, unit] of [['summary-level','main_tank_level','%'], ['summary-tds','tds_ppm',' ppm']]) {
+  for (const [id, key, unit] of [['summary-level','main_tank_level','%']]) {
     renderTelemetryValue(id, ca, key, unit);
   }
   renderTurbidityIndex(ca);
+  renderTdsIndex(ca);
 }
 
 function renderDirectory(data) {
@@ -1804,11 +1805,11 @@ function renderTelemetryValue(id, data, key, unit) {
 }
 function renderReservoir(data) {
   const freshness = WaterHallDisplay.telemetryFreshness(data);
-  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['admin-tds', 'tds_ppm', ' ppm'],
-    ['summary-level', 'main_tank_level', '%'], ['summary-tds', 'tds_ppm', ' ppm']]) {
+  for (const [id, key, unit] of [['admin-water-level', 'main_tank_level', '%'], ['summary-level', 'main_tank_level', '%']]) {
     renderTelemetryValue(id, data, key, unit);
   }
   renderTurbidityIndex(data);
+  renderTdsIndex(data);
   document.getElementById('admin-reading-time').textContent = WaterHallDisplay.formatTimestamp(data.last_updated);
   const message = freshness.fresh ? 'Current sensor readings.' : freshness.hasReading ? 'IoT offline.' : 'Awaiting sensor readings.';
   document.getElementById('admin-telemetry-freshness').textContent = message;
@@ -1822,6 +1823,17 @@ let latestTurbidityAssets = {};
 setInterval(() => {
   if (jwtToken) renderReservoir(latestTurbidityAssets);
 }, 1000); // Display-only expiry; existing API polling cadence is unchanged.
+function renderTdsIndex(data) {
+  const state = WaterHallDisplay.tdsIndexState(data);
+  for (const id of ['admin-tds', 'summary-tds']) {
+    document.getElementById(id).textContent = state.value === null ? 'Awaiting data' : state.value.toFixed(2);
+  }
+  for (const id of ['admin-tds-status', 'summary-tds-status']) {
+    const element = document.getElementById(id);
+    element.textContent = state.status;
+    element.style.color = state.status === 'Elevated' ? 'var(--alert-red)' : 'var(--text-muted)';
+  }
+}
 function renderTurbidityIndex(data, remember = true) {
   if (remember) latestTurbidityAssets = data;
   const state = WaterHallDisplay.turbidityIndexState(data);

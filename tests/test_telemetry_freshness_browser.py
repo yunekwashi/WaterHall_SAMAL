@@ -17,10 +17,10 @@ def assert_snapshot(page, role, assets, fresh):
     level, turb, tds, tank = selectors(role)
     unavailable = 'Awaiting data' if role == 'admin' else 'N/A'
     numeric_level = fresh and isinstance(assets.get('main_tank_level'), (int, float))
-    numeric_tds = fresh and isinstance(assets.get('tds_ppm'), (int, float))
+    numeric_tds = fresh and isinstance(assets.get('tds_index'), (int, float)) and assets.get('tds_index_status') in ('Normal', 'Elevated')
     numeric_index = fresh and assets.get('turbidity_index') is not None and assets.get('turbidity_index_status') in ('Normal', 'Elevated')
     expect(page.locator(level)).to_have_text(f"{assets['main_tank_level']}%" if numeric_level else unavailable)
-    expect(page.locator(tds)).to_have_text(str(assets['tds_ppm']) + (' ppm' if role == 'admin' else '') if numeric_tds else unavailable)
+    expect(page.locator(tds)).to_have_text(f"{assets['tds_index']:.2f}" if numeric_tds else unavailable)
     expect(page.locator(turb)).to_have_text(f"{assets['turbidity_index']:.2f}" if numeric_index else
         'Unavailable' if role == 'admin' and fresh else unavailable)
     state = assets['turbidity_index_status'] if numeric_index else 'Awaiting data' if role == 'admin' and not fresh else 'Unavailable'
@@ -70,8 +70,8 @@ def test_timestamp_boundaries_partial_nulls_and_unavailable_state(ui_page, role)
         ('partial water null', {'main_tank_level': None}, True),
         ('invalid index', {'turbidity_index': None, 'turbidity_index_status': 'Unavailable'}, True),
         ('all null', {'main_tank_level': None, 'turbidity_index': None, 'turbidity_index_status': 'Unavailable'}, True),
-        ('numeric TDS zero remains valid', {'tds_ppm': 0}, True),
-        ('stale numeric TDS is hidden', {'tds_ppm': 137, 'last_updated': (now-datetime.timedelta(seconds=61)).isoformat()}, False),
+        ('numeric TDS index zero remains valid', {'tds_index': 0, 'tds_index_status': 'Normal'}, True),
+        ('stale numeric TDS index is hidden', {'tds_index': 10, 'tds_index_status': 'Elevated', 'last_updated': (now-datetime.timedelta(seconds=61)).isoformat()}, False),
         ('fresh recovery with null TDS', {}, True),
     ]
     for name, changes, fresh in cases:

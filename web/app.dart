@@ -1759,7 +1759,14 @@ class AppController {
     final indexStatus = '${indexState['status']}';
     final indexText = indexValue is num ? indexValue.toStringAsFixed(2) : 'N/A';
     if (turbidity?.text != indexText) turbidity?.text = indexText;
-    reading(tds, assets['tds_ppm'], 0);
+    final tdsState = js.context['WaterHallDisplay'].callMethod('tdsIndexState', [js.JsObject.jsify(assets)]);
+    final tdsValue = tdsState['value'];
+    final tdsText = tdsValue is num ? tdsValue.toStringAsFixed(2) : 'N/A';
+    if (tds?.text != tdsText) tds?.text = tdsText;
+    final tdsStatus = document.getElementById('$role-tds-status');
+    final tdsStatusText = '${tdsState['status']}';
+    if (tdsStatus?.text != tdsStatusText) tdsStatus?.text = tdsStatusText;
+    tdsStatus?.style.color = tdsStatusText == 'Elevated' ? 'var(--alert-red)' : 'var(--text-muted)';
     final warning = indexStatus == 'Elevated';
     final statusText = indexStatus;
     if (status?.text != statusText) status?.text = statusText;

@@ -97,7 +97,7 @@ def test_worker_offline_collection_reconnect_and_reload(browser_page):
     page.locator('#login-password').fill(password)
     page.locator('#btn-login').click()
     page.locator('#view-dashboard').wait_for(state='visible')
-    expect(page.locator('#worker-safety-status')).to_have_text('AWAITING DATA')
+    expect(page.locator('#worker-safety-status')).to_have_text('Unavailable')
     # Ensure the shell is installed before testing a cold offline reload.
     page.evaluate('async () => { await navigator.serviceWorker.ready; }')
     page.locator('#app-bottom-nav [data-target="view-directory"]').click()

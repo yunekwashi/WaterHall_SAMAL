@@ -10,6 +10,7 @@ import secrets
 from decimal import Decimal
 from backend import config
 from backend import turbidity_index as local_turbidity
+from backend import tds_index as local_tds
 from backend.security import principal, require_role, claims_for, text, password, number, identifier, timestamp, validate_push
 from backend.photos import save_photo, photo_for_client, report_photo_metadata
 from backend.collections import synchronize
@@ -307,7 +308,7 @@ def get_all_data():
                 'monthly_history': monthly_history
             })
 
-        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json, tds_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         row = db.fetchone()
         if row:
             turb_val = None if row['turbidity_ntu'] is None else float(row['turbidity_ntu'])
@@ -325,6 +326,7 @@ def get_all_data():
                               'last_updated': None, 'has_reading': False}
         central_assets.update(unverified_analogue_metadata())
         central_assets.update(local_turbidity.public_metadata(dict(row) if row else None))
+        central_assets.update(local_tds.public_metadata(dict(row) if row else None))
         index_status = central_assets['turbidity_index_status']
         central_assets['turbidity_status'] = {'Normal': 'normal', 'Elevated': 'warning'}.get(index_status, 'unknown')
         if row and row.get('turbidity_index_json') is not None:
@@ -552,6 +554,16 @@ def iot_telemetry():
             if data.get(field) is not None:
                 number(data[field], field, 0, maximum)
 
+    if 'tds_index' in data:
+        if data['tds_index'] is not None:
+            number(data['tds_index'], 'TDS index', 0, 100)
+        if data.get('tds_index_model') != local_tds.MODEL:
+            abort(400, description='Unsupported local TDS index model')
+        for field, maximum in [('tds_raw_adc', 4095), ('tds_adc_voltage', 3.3),
+                               ('tds_module_voltage', 3.3), ('tds_sample_age_ms', 2**32 - 1)]:
+            if data.get(field) is not None:
+                number(data[field], field, 0, maximum)
+
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
 
     with get_db() as db:
@@ -561,13 +573,15 @@ def iot_telemetry():
             db.execute('SELECT pg_advisory_xact_lock(1464355913)')
         else:
             db.execute('BEGIN IMMEDIATE')
-        db.execute('SELECT turbidity_index_json,recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1')
+        db.execute('SELECT turbidity_index_json,tds_index_json,recorded_at FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1')
         previous_index = db.fetchone()
         index_record = local_turbidity.prepare_record(data, previous_index, datetime.datetime.now(datetime.timezone.utc))
+        tds_index_record = local_tds.prepare_record(data, previous_index, datetime.datetime.now(datetime.timezone.utc))
         db.execute('''
-            INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json)
-            VALUES (?, ?, ?, ?, ?);
-        ''', (water_level, turbidity, tds, now_str, json.dumps(index_record, allow_nan=False) if index_record else None))
+            INSERT INTO reservoir_quality_readings (water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json, tds_index_json)
+            VALUES (?, ?, ?, ?, ?, ?);
+        ''', (water_level, turbidity, tds, now_str, json.dumps(index_record, allow_nan=False) if index_record else None,
+              json.dumps(tds_index_record, allow_nan=False) if tds_index_record else None))
 
         # Automated emergency system alerts for contamination or critically low water level
         now_dt = datetime.datetime.now(datetime.timezone.utc)
@@ -644,6 +658,8 @@ def iot_telemetry():
         'tds_ppm': tds,
         **local_turbidity.public_metadata({'turbidity_index_json': json.dumps(index_record) if index_record else None,
                                           'recorded_at': now_str}),
+        **local_tds.public_metadata({'tds_index_json': json.dumps(tds_index_record) if tds_index_record else None,
+                                    'recorded_at': now_str}),
         'message': 'IoT sensor data ingested successfully'
     })
 
@@ -651,17 +667,20 @@ def iot_telemetry():
 def get_latest_iot():
     """Returns the latest sensor reading snapshot for real-time subscribers."""
     with get_db() as db:
-        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json, tds_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         row = db.fetchone()
         if not row:
             return jsonify(status='awaiting_sensor', recorded_at=None,
-                           **unverified_analogue_metadata(), **local_turbidity.public_metadata(None)), 200
+                           **unverified_analogue_metadata(), **local_turbidity.public_metadata(None),
+                           **local_tds.public_metadata(None)), 200
         result = dict(row)
         result['water_level'] = result.get('water_level_percentage')
         result['turbidity'] = result.get('turbidity_ntu')
         result['tds'] = result.get('tds_ppm')
         result.update(unverified_analogue_metadata())
         result.update(local_turbidity.public_metadata(result))
+        result.update(local_tds.public_metadata(result))
+        result.pop('tds_index_json', None)
         result.pop('turbidity_index_json', None)
         return jsonify(result)
 
@@ -892,11 +911,13 @@ def poll_notifications():
         new_announcements = [dict(r) for r in db.fetchall()]
 
         # Latest telemetry for urgent status checks
-        db.execute("SELECT water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
+        db.execute("SELECT water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json, tds_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         telemetry = db.fetchone()
         telemetry_dict = dict(telemetry) if telemetry else {}
         telemetry_dict.update(unverified_analogue_metadata())
         telemetry_dict.update(local_turbidity.public_metadata(telemetry_dict))
+        telemetry_dict.update(local_tds.public_metadata(telemetry_dict))
+        telemetry_dict.pop('tds_index_json', None)
         telemetry_dict.pop('turbidity_index_json', None)
 
         is_contaminated = False

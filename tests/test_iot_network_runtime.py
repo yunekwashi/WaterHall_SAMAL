@@ -44,7 +44,7 @@ def build_network_test(output, definitions, expect_failure=False, approve_local_
         'constexpr bool ALLOW_INSECURE_LOCAL_HTTP = false;\n')
     # Test the public build switches. One isolated, explicitly approved fixture
     # exercises future numeric transport; the actual public approval stays false.
-    for name in ('sensor_runtime.h', 'sensor_processing.h', 'sensor_config.h'):
+    for name in ('sensor_runtime.h', 'sensor_processing.h', 'sensor_config.h', 'tds_index.h'):
         source_text = (firmware / name).read_text()
         if name == 'sensor_config.h' and approve_local_index_fixture is not None:
             source_text, changed = re.subn(r'(constexpr bool TURBIDITY_LOCAL_INDEX_OPERATIONAL_ENABLED = )(?:false|true)(;)',
@@ -244,5 +244,20 @@ def test_unapproved_local_index_actual_transport(tmp_path):
         approve_local_index_fixture=False)
     case = 'local_index_unapproved_never_publishes_numeric'
     result = subprocess.run([str(executable), case], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == case
+
+
+@pytest.fixture(scope='module')
+def tds_index_executable(tmp_path_factory):
+    return build_network_test(tmp_path_factory.mktemp('tds-index-native'), [
+        'WATERHALL_ENABLE_AUTOMATIC_TELEMETRY', 'WATERHALL_TDS_PARTIAL_PRODUCTION',
+        'WATERHALL_NULLABLE_TURBIDITY_PRODUCTION', 'WATERHALL_LOCAL_TURBIDITY_INDEX',
+        'WATERHALL_LOCAL_TDS_INDEX'])
+
+
+@pytest.mark.parametrize('case', ['tds_index_firmware_anchors', 'tds_index_firmware_payload_null_age'])
+def test_tds_operational_firmware(tds_index_executable, case):
+    result = subprocess.run([str(tds_index_executable), case], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.strip() == case

@@ -95,6 +95,14 @@ constexpr float SENSOR_TO_FULL_DISTANCE_CM = FULL_DISTANCE_CM;
 // Gain follows nominal installed resistor values; refine only after measurement.
 constexpr float TURBIDITY_DIVIDER_GAIN = 1.665f;
 constexpr float TDS_DIVIDER_GAIN = 2.0f;
+#ifdef WATERHALL_LOCAL_TDS_INDEX
+constexpr bool TDS_LOCAL_INDEX_ENABLED = true;
+static_assert(TDS_LOW_RANGE && TDS_PARTIAL_PRODUCTION,
+              "Local TDS index requires the preserved 0dB partial-production profile");
+#else
+constexpr bool TDS_LOCAL_INDEX_ENABLED = false;
+#endif
+constexpr const char* TDS_LOCAL_INDEX_MODEL = "local-tap-salted-20261011-v1";
 
 // Local dimensionless comparison, NOT scientific NTU. Same-path measured
 // Latest measured medians: clear 0.836 V, cloudy 0.645 V, return 0.830 V.
