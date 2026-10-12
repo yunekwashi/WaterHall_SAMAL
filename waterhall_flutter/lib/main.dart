@@ -48,7 +48,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _isLoading = true;
   bool _initialized = false;
   bool _serverError = false;
-  bool _isWelcomePage = true;
   Timer? _errorTimer;
   Timer? _pollTimer;
 
@@ -148,12 +147,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             setState(() {
               _isLoading = true;
               _serverError = false;
-              _isWelcomePage = Uri.tryParse(url)?.path == '/landing.html';
             });
           },
           onPageFinished: (String url) async {
-            // The public welcome page does not participate in authentication.
-            // Keep the existing native session bridge only on the portal.
+            // Sync the native session only after the private portal loads.
             if (Uri.tryParse(url)?.path == '/index.html') {
               await _controller.runJavaScript(
                   "if(window.waterhallSetNativeSession) window.waterhallSetNativeSession(localStorage.getItem('waterhall_jwt'));");
@@ -253,16 +250,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   String _getAppUrl() {
     final cleanUrl = _activeServerUrl.replaceAll(RegExp(r'/+$'), '');
-    if (_isWelcomePage) return "$cleanUrl/landing.html";
     return "$cleanUrl/index.html?role=${AppConfig.appRole}";
-  }
-
-  Future<void> _openWorkerPortal() async {
-    setState(() {
-      _isWelcomePage = false;
-      _isLoading = true;
-    });
-    await _controller.loadRequest(Uri.parse(_getAppUrl()));
   }
 
   Future<void> _retryConnection() async {
@@ -295,19 +283,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         }
       },
       child: Scaffold(
-        bottomNavigationBar: _isWelcomePage && !_serverError
-            ? SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: FilledButton.icon(
-                    onPressed: _isLoading ? null : _openWorkerPortal,
-                    icon: const Icon(Icons.login),
-                    label: const Text('Continue to Worker Portal'),
-                  ),
-                ),
-              )
-            : null,
         body: SafeArea(
           child: Stack(
             children: [

@@ -114,18 +114,10 @@ void main() {
   }
 
   testWidgets(
-      'fresh open loads public welcome; Continue uses the Worker portal',
+      'fresh open loads Worker portal directly and preserves the session bridge',
       (tester) async {
     await mount(tester);
     expect(platform.controller.requests.single.toString(),
-        '${AppConfig.serverBaseUrl}/landing.html');
-    expect(platform.controller.scripts, isEmpty,
-        reason: 'Public welcome must not clear or overwrite a stored session');
-    expect(find.text('Continue to Worker Portal'), findsOneWidget);
-    await tester.tap(find.text('Continue to Worker Portal'));
-    await tester.pump();
-    await tester.pump();
-    expect(platform.controller.requests.last.toString(),
         '${AppConfig.serverBaseUrl}/index.html?role=worker');
     expect(platform.controller.scripts.single,
         contains('waterhallSetNativeSession'));
@@ -135,18 +127,22 @@ void main() {
     await dispose(tester);
   });
 
-  testWidgets('back to welcome exposes Continue without rewriting auth',
-      (tester) async {
+  testWidgets('connection retry loads Worker portal directly', (tester) async {
     await mount(tester);
-    await tester.tap(find.text('Continue to Worker Portal'));
+    platform.navigation
+        .started('${AppConfig.serverBaseUrl}/index.html?role=worker');
+    await tester.pump(const Duration(seconds: 21));
+    expect(find.text('Server Offline'), findsOneWidget);
+    await tester.tap(find.text('Retry Connection'));
     await tester.pump();
     await tester.pump();
-    final count = platform.controller.scripts.length;
-    platform.navigation.started('${AppConfig.serverBaseUrl}/landing.html');
-    platform.navigation.finished('${AppConfig.serverBaseUrl}/landing.html');
-    await tester.pump();
-    expect(find.text('Continue to Worker Portal'), findsOneWidget);
-    expect(platform.controller.scripts.length, count);
+    expect(platform.controller.requests.length, 2);
+    expect(
+        platform.controller.requests.every((uri) =>
+            uri.toString() ==
+            '${AppConfig.serverBaseUrl}/index.html?role=worker'),
+        isTrue);
+    expect(find.text('Continue to Worker Portal'), findsNothing);
     await dispose(tester);
   });
 
