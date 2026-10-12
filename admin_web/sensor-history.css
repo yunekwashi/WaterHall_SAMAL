@@ -1,0 +1,31 @@
+/* Scoped additions; the existing live reservoir and shared layout stay unchanged. */
+#tab-sensor-history .history-filters {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+#tab-sensor-history .history-filters .form-group {
+  flex: 1 1 180px;
+  margin-bottom: 0;
+  min-width: 0;
+}
+#tab-sensor-history [hidden] { display: none; }
+#tab-sensor-history .history-note,
+#tab-sensor-history #history-message { color: var(--text-muted); margin-bottom: 16px; }
+#tab-sensor-history .history-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+#tab-sensor-history .history-pagination > div { display: flex; flex-wrap: wrap; gap: 8px; }
+#tab-sensor-history button:disabled { opacity: .5; cursor: default; transform: none; }
+#tab-sensor-history td:first-child { white-space: nowrap; }
+@media (max-width: 600px) {
+  #tab-sensor-history .history-filters .form-group { flex-basis: 100%; }
+  #tab-sensor-history .history-pagination { align-items: start; flex-direction: column; }
+}

@@ -146,6 +146,7 @@ function closeReportPhotoViews() {
 function invalidateAdminRequests() {
   cancelAdminLogin();
   closeReportPhotoViews();
+  window.WaterHallSensorHistory?.reset();
   sessionGeneration++;
   dataRequestGeneration++;
   renderedDirectoryData = null;
@@ -615,6 +616,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
       'tab-dashboard': 'System Overview', 
       'tab-directory': 'User Directory', 
       'tab-assets': 'Reservoir measurements',
+      'tab-sensor-history': 'Sensor Reading History',
       'tab-announcements': 'Public Announcements',
       'tab-billing': 'Billing & Collections Audit',
       'tab-payment-settings': 'Barangay Payment Configuration',

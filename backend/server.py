@@ -11,6 +11,7 @@ from decimal import Decimal
 from backend import config
 from backend import turbidity_index as local_turbidity
 from backend import tds_index as local_tds
+from backend import sensor_history
 from backend.security import principal, require_role, claims_for, text, password, number, identifier, timestamp, validate_push
 from backend.photos import save_photo, photo_for_client, report_photo_metadata
 from backend.collections import synchronize
@@ -111,7 +112,7 @@ STAFF = {'sync_offline_collections', 'get_collections_history', 'update_report_s
          'update_household_status', 'add_maintenance_log', 'add_billing_record', 'add_announcement'}
 ADMIN = {'update_payment_settings', 'update_central_assets', 'add_household', 'add_worker',
          'delete_household', 'delete_worker', 'get_registrations', 'review_registration', 'save_billing_config',
-         'admin_mark_bill_paid', 'export_reports'}
+         'admin_mark_bill_paid', 'export_reports', 'get_sensor_history'}
 AUTHENTICATED = {'get_all_data', 'get_puroks', 'get_latest_iot', 'get_payment_settings', 'handle_reports',
                  'get_report_photo',
                  'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events', 'get_billing_config'}
@@ -662,6 +663,12 @@ def iot_telemetry():
                                     'recorded_at': now_str}),
         'message': 'IoT sensor data ingested successfully'
     })
+
+@app.route('/api/iot/history', methods=['GET'])
+def get_sensor_history():
+    with get_db() as db:
+        return jsonify(sensor_history.history(db, request.args))
+
 
 @app.route('/api/iot/latest', methods=['GET'])
 def get_latest_iot():
