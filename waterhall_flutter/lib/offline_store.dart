@@ -12,7 +12,7 @@ class OfflineStore {
   );
 
   Future<void> save(String owner, String kind, List<dynamic> rows) async {
-    if (owner.isEmpty || !['collections', 'actions'].contains(kind)) throw ArgumentError('Invalid queue');
+    if (owner.isEmpty || !['collections', 'actions', 'bill_history'].contains(kind)) throw ArgumentError('Invalid queue');
     for (final row in rows) {
       if ((row['owner'] ?? row['collected_by']) != owner) throw ArgumentError('Wrong queue owner');
     }

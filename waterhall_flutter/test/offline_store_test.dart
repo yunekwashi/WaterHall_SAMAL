@@ -37,4 +37,27 @@ void main() {
     expect((json.decode(await store.load('two', 'actions')) as List).single['operation_id'], 'second');
     await store.close();
   });
+
+  test('bill history persists independently without dropping unsynced actions',
+      () async {
+    final store = OfflineStore();
+    final pending = {'owner': 'one', 'operation_id': 'pending'};
+    final confirmed = {
+      'owner': 'one',
+      'operation_id': 'confirmed',
+      'bill_id': 'BILL-7',
+      'status': 'Unpaid'
+    };
+    await store.save('one', 'actions', [pending]);
+    await store.save('one', 'bill_history', [confirmed]);
+    await store.close();
+    final reopened = OfflineStore();
+    expect(json.decode(await reopened.load('one', 'actions')), [pending]);
+    expect(
+        json.decode(await reopened.load('one', 'bill_history')), [confirmed]);
+    expect(json.decode(await reopened.load('two', 'bill_history')), isEmpty);
+    await expectLater(
+        reopened.save('two', 'bill_history', [confirmed]), throwsArgumentError);
+    await reopened.close();
+  });
 }

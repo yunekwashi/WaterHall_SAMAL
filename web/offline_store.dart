@@ -41,7 +41,7 @@ Future<void> mutateQueue(String type, void Function(List<Map<String, dynamic>>) 
   final owner = currentAccount();
   final write = _queueWrites.then((_) async {
     if (owner == null || currentAccount() != owner) throw StateError('Session changed before local save');
-    final key = type == 'collections' ? 'waterhall_offline_collections' : 'waterhall_unsynced_actions';
+    final key = queueKey(type);
     final rows = (json.decode(window.localStorage[key] ?? '[]') as List).map((row) => Map<String, dynamic>.from(row)).toList();
     change(rows);
     await _persistQueue(type, rows);
@@ -55,31 +55,41 @@ Future<void> _persistQueue(String type, List<Map<String, dynamic>> rows) async {
   if (owner == null) throw StateError('Sign in before recording an operation');
   // The native app stores only the active account's rows in this transaction.
   final own = rows.where((r) => (r['owner'] ?? r['collected_by']) == owner).toList();
-  await nativeCall('save', {'type': type, 'rows': own});
-  window.localStorage[type == 'collections' ? 'waterhall_offline_collections' : 'waterhall_unsynced_actions'] = json.encode(rows);
+  // Older installed wrappers support only the existing queues. They retain
+  // browser history until upgraded; never block their working bill sync.
+  if (type != 'bill_history' || js.context['waterhallBillHistoryStorage'] == true) {
+    await nativeCall('save', {'type': type, 'rows': own});
+  }
+  window.localStorage[queueKey(type)] = json.encode(rows);
 }
+
+String queueKey(String type) => type == 'collections' ? 'waterhall_offline_collections'
+    : type == 'bill_history' ? 'waterhall_bill_history' : 'waterhall_unsynced_actions';
 
 Future<void> restoreQueues() async {
   final token = window.localStorage['waterhall_jwt'];
   if (currentAccount() == null) return;
   await nativeSession(window.localStorage['waterhall_jwt']);
-  for (final type in ['collections', 'actions']) {
+  for (final type in ['collections', 'actions', if (Uri.base.queryParameters['role'] != 'resident') 'bill_history']) {
     if (window.localStorage['waterhall_jwt'] != token) return;
+    if (type == 'bill_history' && js.context['waterhallBillHistoryStorage'] != true) continue;
     final result = await nativeCall('load', {'type': type});
     if (window.localStorage['waterhall_jwt'] != token) return;
     if (result == null) continue;
     final rows = json.decode(result as String) as List;
-    final key = type == 'collections' ? 'waterhall_offline_collections' : 'waterhall_unsynced_actions';
+    final key = queueKey(type);
     final legacy = json.decode(window.localStorage[key] ?? '[]') as List;
     // Import existing localStorage records without dropping pending native rows.
     final merged = <String, Map<String, dynamic>>{};
     for (final item in [...legacy, ...rows]) {
       final row = Map<String, dynamic>.from(item);
-      merged[(row['transaction_id'] ?? row['operation_id']).toString()] = row;
+      merged[type == 'bill_history' ? '${row['owner']}|${row['bill_id'] ?? row['operation_id']}'
+          : (row['transaction_id'] ?? row['operation_id']).toString()] = row;
     }
     if (currentAccount() != null) await mutateQueue(type, (current) {
       for (final row in current) {
-        merged.putIfAbsent((row['transaction_id'] ?? row['operation_id']).toString(), () => row);
+        merged.putIfAbsent(type == 'bill_history' ? '${row['owner']}|${row['bill_id'] ?? row['operation_id']}'
+            : (row['transaction_id'] ?? row['operation_id']).toString(), () => row);
       }
       current..clear()..addAll(merged.values);
     });

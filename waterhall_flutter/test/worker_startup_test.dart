@@ -146,6 +146,20 @@ void main() {
     await dispose(tester);
   });
 
+  testWidgets('keyboard metrics reach hosted navigation and restore on close',
+      (tester) async {
+    await mount(tester);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pump();
+    expect(platform.controller.scripts.last,
+        contains('waterhallKeyboardChanged(true)'));
+    tester.view.resetViewInsets();
+    await tester.pump();
+    expect(platform.controller.scripts.last,
+        contains('waterhallKeyboardChanged(false)'));
+    await dispose(tester);
+  });
+
   testWidgets('same-origin restriction and Admin exclusion stay enforced',
       (tester) async {
     await mount(tester);

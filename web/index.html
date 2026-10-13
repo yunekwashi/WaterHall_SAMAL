@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="logo.png" />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=3.1.0">
-  <link rel="stylesheet" href="mobile.css?v=1.2.0">
+  <link rel="stylesheet" href="mobile.css?v=1.3.0-workflows">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#126789">
   <script src="/native-store.js"></script>
@@ -389,13 +389,14 @@
             
             <!-- Meter Selector Panel (Searchable Autocomplete) -->
             <div class="reservoir-card" style="position:relative; overflow:visible; z-index:100;">
-              <label for="bill-meter-search" class="reservoir-title" style="font-size:12px; text-transform:uppercase; color:var(--text-muted); display:block; cursor:pointer;">Search & Select Meter</label>
+              <label for="bill-meter-search" class="reservoir-title" style="font-size:12px; text-transform:uppercase; color:var(--text-muted); display:block; cursor:pointer;">Search & Select Household</label>
+              <div class="search-mode" role="group" aria-label="Household search mode"><button type="button" id="bill-search-name" aria-pressed="true">Search by Name</button><button type="button" id="bill-search-id" aria-pressed="false">Search by ID</button></div>
               <div class="form-group" style="margin-top:4px; position:relative;">
-                <div class="search-input-wrapper" style="position:relative; display:flex; align-items:center;">
+                <div class="bill-search-field">
                   <svg viewBox="0 0 24 24" style="position:absolute; left:12px; width:18px; height:18px; fill:var(--navy-primary); pointer-events:none;">
                     <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
                   </svg>
-                  <input type="text" id="bill-meter-search" name="bill-meter-search" aria-label="Search and select meter" style="width:100%; padding:10px 10px 10px 38px; font-size:14px; background-color:var(--off-white); border:1.5px solid var(--navy-border); color:var(--navy-primary); border-radius:var(--radius-md); font-weight:600; outline:none;" placeholder="Type Owner or Account #..." autocomplete="off">
+                  <input type="text" id="bill-meter-search" name="bill-meter-search" aria-label="Search by Name" style="width:100%; padding:10px 10px 10px 38px; font-size:14px; background-color:var(--off-white); border:1.5px solid var(--navy-border); color:var(--navy-primary); border-radius:var(--radius-md); font-weight:600; outline:none;" placeholder="Type any part of the household name" autocomplete="off">
                 </div>
                 <!-- Autocomplete Dropdown List -->
                 <div id="bill-meter-results" class="search-results-dropdown">
@@ -404,6 +405,7 @@
               </div>
             </div>
 
+            <div id="bill-selected-details" class="reservoir-card" aria-live="polite"></div>
             <!-- Double-Billing Protection Alert Badge -->
             <div id="billing-alert-banner" class="reservoir-status-banner" style="font-weight:700; text-align:left; display:flex; align-items:center; gap:8px;">
               <!-- Dynamic alert text/status (safe/warning) -->
@@ -741,6 +743,22 @@
           </div>
         </div>
 
+      <div id="view-transactions" class="app-view">
+        <div class="view-header"><h2>Transaction History</h2><p>View your saved bills and transactions.</p></div>
+        <div class="assets-scroll">
+          <div class="reservoir-card">
+            <label for="transaction-filter">Sync status</label>
+            <select id="transaction-filter"><option>All</option><option>Pending Sync</option><option>Synced</option><option>Failed Sync</option></select>
+            <label for="transaction-search">Customer name</label><input id="transaction-search" type="search" placeholder="Search customer name">
+            <p class="field-help">Synced means saved on the server, not paid. Offline history includes records saved or viewed on this device.</p>
+          </div>
+          <p id="transaction-message" role="status" class="field-help"></p>
+          <div id="transaction-list" class="announcement-history"></div>
+          <button type="button" id="transaction-previous" class="login-btn" hidden>Previous transactions</button>
+          <button type="button" id="transaction-more" class="login-btn" hidden>Load older transactions</button>
+        </div>
+      </div>
+
       </div> <!-- End Views Container -->
 
       <!-- BOTTOM NAVIGATION BAR (Worker) (Hidden on Login screen) -->
@@ -761,6 +779,7 @@
           </svg>
           <span>Billing</span>
         </a>
+        <a href="#" class="nav-tab" data-target="view-transactions"><svg viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3zm3 4v2h8V7H8zm0 4v2h8v-2H8zm0 4v2h5v-2H8z"/></svg><span>Transactions</span></a>
         <a href="#" class="nav-tab" data-target="view-announcements"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H7l-3 3V4zm3 3v2h10V7H7zm0 4v2h7v-2H7z"/></svg><span>Updates</span></a>
         <a href="#" class="nav-tab" data-target="view-profile">
           <svg viewBox="0 0 24 24">
@@ -896,34 +915,20 @@
           <div class="registration-actions"><button type="button" id="btn-close-register-modal">Close</button><button type="submit" id="btn-submit-register" class="login-btn">Submit registration</button></div>
         </form>
       </div>
-      <!-- Account Recovery Modal -->
-      <div class="modal-overlay" id="web-modal-forgot-pw" style="display: none; z-index: 1000; align-items: center; justify-content: center;">
-        <div class="offline-card" style="max-width: 380px; width: 90%; padding: 24px; border-radius: 12px; background: #0c1524; border: 1px solid #1f3044; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); text-align: left;">
-          <h3 style="margin-bottom:18px; font-size:18px; font-weight:700; color: #fff; text-align: center;">Account Password Recovery</h3><p>WaterHall does not send SMS. Contact an administrator to verify your identity. The administrator issues a one-use recovery code with the local manage tool. Codes expire after 30 minutes and are never shown as a password.</p>
-          <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
-            <label for="web-recover-role" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Role</label>
-            <select id="web-recover-role" name="web-recover-role" aria-label="Role" class="form-input" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
-              <option value="resident">Resident Citizen</option>
-              <option value="worker">Field Worker / Technician</option>
-            </select>
+      <!-- Shared Worker / Resident recovery, administrator-issued codes only. -->
+      <div class="modal-overlay" id="web-modal-forgot-pw" style="display:none" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
+        <form id="web-recovery-form" class="recovery-card">
+          <h3 id="recovery-title">Forgot Password</h3>
+          <p>Contact an administrator to verify your identity and receive a one-time recovery code. Codes expire after 30 minutes. WaterHall does not send SMS.</p>
+          <div class="recovery-fields">
+            <label for="web-recover-role">Account role</label><select id="web-recover-role" disabled><option value="resident">Resident</option><option value="worker">Worker</option></select>
+            <label for="web-recover-username">Username / Account ID</label><input id="web-recover-username" autocomplete="username" required maxlength="60">
+            <label for="web-recover-contact">One-time recovery code</label><input id="web-recover-contact" autocomplete="off" required minlength="32" maxlength="128" spellcheck="false">
+            <label for="web-recover-new-password">New password (12–128 characters)</label><input id="web-recover-new-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
           </div>
-          <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
-            <label for="web-recover-username" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Username / Account ID</label>
-            <input type="text" id="web-recover-username" name="web-recover-username" aria-label="Username or Account ID" class="form-input" placeholder="e.g. HH-117 or EMP-301" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
-          </div>
-          <div class="form-group" style="margin-bottom: 12px; display: flex; flex-direction: column;">
-            <label for="web-recover-contact" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">One-use Recovery Code</label>
-            <input type="text" id="web-recover-contact" name="web-recover-contact" aria-label="One-use Recovery Code" class="form-input" placeholder="Request a recovery code from the administrator" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
-          </div>
-          <div class="form-group" style="margin-bottom: 20px; display: flex; flex-direction: column;">
-            <label for="web-recover-new-password" style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">New Password</label>
-            <input type="password" id="web-recover-new-password" name="web-recover-new-password" aria-label="New Password" class="form-input" placeholder="Enter secure new password" style="background: #070b13; color: #fff; width: 100%; border: 1px solid #1f3044; padding: 10px; border-radius: 6px;">
-          </div>
-          <div style="display:flex; justify-content:flex-end; gap:10px;">
-            <button class="offline-btn" id="btn-web-recover-cancel" style="background: #1e293b; color: #fff; padding: 8px 16px; font-size: 14px; border: none; cursor: pointer; border-radius: 6px;">Cancel</button>
-            <button class="offline-btn" id="btn-web-recover-submit" style="background: #0284c7; color: #fff; padding: 8px 16px; font-size: 14px; border: none; cursor: pointer; border-radius: 6px;">Reset Password</button>
-          </div>
-        </div>
+          <p id="web-recover-error" role="alert" hidden></p><p id="web-recover-success" role="status" hidden></p>
+          <div class="recovery-actions"><button type="button" id="btn-web-recover-cancel">Cancel</button><button type="submit" id="btn-web-recover-submit">Reset Password</button></div>
+        </form>
       </div>
 
       <!-- Offline / Online Bill Collection Modal for Field Workers -->
@@ -977,6 +982,7 @@
     </div> <!-- Close device-container -->
   <script src="push-client.js?v=1.1.0"></script>
   <script src="ui-display.js?v=1.2.5-announcement-time"></script>
-  <script src="app.js?v=1.2.4-tds-index"></script>
+  <script src="mobile-keyboard.js?v=1.3.0"></script>
+  <script src="app.js?v=1.3.0-workflows"></script>
 </body>
 </html>

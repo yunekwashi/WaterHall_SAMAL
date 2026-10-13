@@ -16,7 +16,7 @@ from backend.security import principal, require_role, claims_for, text, password
 from backend.photos import save_photo, photo_for_client, report_photo_metadata
 from backend.collections import synchronize
 from backend.notifications import enqueue, drain
-from backend import operational_routes, accounts, billing, login_security, reporting
+from backend import operational_routes, accounts, billing, login_security, reporting, mobile_workflow
 from flask import Flask, jsonify, request, send_from_directory, send_file, abort, Response
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from flask_cors import CORS
@@ -112,10 +112,10 @@ STAFF = {'sync_offline_collections', 'get_collections_history', 'update_report_s
          'update_household_status', 'add_maintenance_log', 'add_billing_record', 'add_announcement'}
 ADMIN = {'update_payment_settings', 'update_central_assets', 'add_household', 'add_worker',
          'delete_household', 'delete_worker', 'get_registrations', 'review_registration', 'save_billing_config',
-         'admin_mark_bill_paid', 'export_reports', 'get_sensor_history'}
+         'admin_mark_bill_paid', 'export_reports', 'get_sensor_history', 'issue_recovery_code'}
 AUTHENTICATED = {'get_all_data', 'get_puroks', 'get_latest_iot', 'get_payment_settings', 'handle_reports',
                  'get_report_photo',
-                 'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events', 'get_billing_config'}
+                 'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events', 'get_billing_config', 'get_worker_transactions'}
 
 @app.before_request
 def enforce_api_policy():
@@ -264,12 +264,38 @@ def recover_account():
         reset = db.fetchone()
         if not reset or reset['used'] or reset['expires_at'] < datetime.datetime.now(datetime.timezone.utc).isoformat():
             abort(400, description='Invalid or expired recovery code')
+        # Older clients submit only a code. New forms also bind the displayed
+        # account and role; mismatches must never reset a different account.
+        if 'username' in data or 'role' in data:
+            account = text(data.get('username'), 'account ID', 60)
+            role = data.get('role')
+            if role == 'resident':
+                account = f"HH-{identifier(account, 'HH-')}"
+            if (role not in ('resident', 'worker', 'admin') or account != reset['account_id']
+                    or (role == 'resident') != (reset['kind'] == 'resident')):
+                abort(400, description='Invalid or expired recovery code')
+            if role != 'resident':
+                db.execute('SELECT role FROM users WHERE username = ?', (account,))
+                staff = db.fetchone()
+                if not staff or (role == 'admin') != (staff['role'] == 'Admin'):
+                    abort(400, description='Invalid or expired recovery code')
         if reset['kind'] == 'resident':
             db.execute('UPDATE households SET password_hash = ? WHERE household_id = ?', (new_hash, identifier(reset['account_id'], 'HH-')))
         else:
             db.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_hash, reset['account_id']))
         db.execute('UPDATE password_resets SET used = 1 WHERE token_hash = ?', (digest,))
     return jsonify(status='success', msg='Password reset. Please sign in again.')
+
+@app.route('/api/worker/transactions', methods=['GET'])
+@jwt_required()
+def get_worker_transactions():
+    return mobile_workflow.transaction_history()
+
+@app.route('/api/admin/recovery-codes', methods=['POST'])
+@jwt_required()
+@limiter.limit('10 per minute')
+def issue_recovery_code():
+    return mobile_workflow.issue_recovery()
 
 @app.route('/api/all-data', methods=['GET'])
 @jwt_required()

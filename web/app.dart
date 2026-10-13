@@ -71,6 +71,7 @@ class AppController {
       'view-assets': assetsView,
       'view-profile': profileView,
       'view-billing': billingView,
+      'view-transactions': document.getElementById('view-transactions')!,
       'view-announcements': document.getElementById('view-announcements')!,
       'view-resident-profile': document.getElementById('view-resident-profile')!,
       'view-resident-home': residentViewHome,
@@ -130,6 +131,8 @@ class AppController {
       window.localStorage.remove(_reportDraftKey);
       activeHouseholdId = null;
       selectedBillHouseId = null;
+      _transactionVersion++; _transactionCursor = null; _loadingTransactions = false;
+      document.getElementById('transaction-list')?.children.clear();
       _reportPhoto = null;
       document.getElementById('collection-review-modal')?.remove();
       document.getElementById('modal-collect-payment')?.style.display = 'none';
@@ -138,6 +141,7 @@ class AppController {
     };
     db.onSyncStatusChange.listen((status) {
       _updateSyncStatusUI(status);
+      if (activeTab == 'view-transactions' && currentWorker != null) renderTransactions();
     });
     await db.init();
     _updateSyncStatusUI(db.getSyncStatus());
@@ -185,6 +189,7 @@ class AppController {
 
     // Bind Event Listeners
     bindEvents();
+    initTransactions();
     if (db.lastSyncError == sessionExpiredMessage) {
       showLoginError(sessionExpiredMessage, document.getElementById('login-error-msg'));
     }
@@ -212,7 +217,6 @@ class AppController {
     final textEl = document.getElementById('worker-sync-status-text');
     final offlineBanner = document.getElementById('db-offline-overlay');
     final offlineBannerText = document.getElementById('offline-banner-text');
-
     final String st = status['status'] ?? 'online';
     final int pendingCount = (status['pendingCount'] as int?) ?? 0;
     final bool isOnline = (status['isOnline'] as bool?) ?? true;
@@ -237,19 +241,11 @@ class AppController {
       }
     }
 
+    // Preserve Resident connection feedback; Worker uses the compact terminal pill.
     if (offlineBanner != null) {
-      if (authenticated && !isOnline) {
-        offlineBanner.style.display = 'flex';
-        if (offlineBannerText != null) {
-          if (pendingCount > 0) {
-            offlineBannerText.text = 'Offline Mode Active: $pendingCount collection(s) saved on this device waiting to sync.';
-          } else {
-            offlineBannerText.text = 'Offline Mode Active: Local SQLite database enabled. Field operations available.';
-          }
-        }
-      } else {
-        offlineBanner.style.display = 'none';
-      }
+      final residentOffline = Uri.base.queryParameters['role'] == 'resident' && authenticated && !isOnline;
+      offlineBanner.style.display = residentOffline ? 'flex' : 'none';
+      if (residentOffline) offlineBannerText?.text = 'Offline Mode Active: Local SQLite storage enabled. Data will auto-sync when online.';
     }
     var reviewButton = document.getElementById('btn-review-collections');
     if (reviewButton == null && pill?.parent != null) {
@@ -570,88 +566,65 @@ class AppController {
       } finally { btnBroadcast.disabled = false; }
     });
 
-    // --- Forgot Password Events ---
-    final btnWebForgotPw = document.getElementById('btn-web-forgot-password');
-    final modalWebForgotPw = document.getElementById('web-modal-forgot-pw');
-    final btnWebRecoverCancel = document.getElementById('btn-web-recover-cancel');
-    final btnWebRecoverSubmit = document.getElementById('btn-web-recover-submit');
+    initRecovery();
+  }
 
-    btnWebForgotPw?.onClick.listen((e) {
+  bool _recovering = false;
+  int _recoveryVersion = 0;
+  void initRecovery() {
+    final modal = document.getElementById('web-modal-forgot-pw')!;
+    final form = document.getElementById('web-recovery-form') as FormElement;
+    final submit = document.getElementById('btn-web-recover-submit') as ButtonElement;
+    final error = document.getElementById('web-recover-error')!;
+    final success = document.getElementById('web-recover-success')!;
+    final role = document.getElementById('web-recover-role') as SelectElement;
+    final account = document.getElementById('web-recover-username') as InputElement;
+    final code = document.getElementById('web-recover-contact') as InputElement;
+    final password = document.getElementById('web-recover-new-password') as InputElement;
+    void close() {
+      _recoveryVersion++;
+      (document.activeElement as HtmlElement?)?.blur();
+      modal.style.display = 'none';
+      form.reset(); error.hidden = true; success.hidden = true;
+      document.getElementById('btn-web-forgot-password')?.focus();
+    }
+    document.getElementById('btn-web-forgot-password')?.onClick.listen((e) {
       e.preventDefault();
-      if (modalWebForgotPw != null) {
-        modalWebForgotPw.style.display = 'flex';
-      }
+      _recoveryVersion++;
+      role.value = Uri.base.queryParameters['role'] == 'resident' ? 'resident' : 'worker';
+      modal.style.display = 'flex';
+      account.value = (document.getElementById('employee-id') as InputElement?)?.value ?? '';
+      account.focus();
     });
-
-    btnWebRecoverCancel?.onClick.listen((e) {
+    document.getElementById('btn-web-recover-cancel')?.onClick.listen((e) { e.preventDefault(); close(); });
+    modal.onKeyDown.listen((e) { if (e.key == 'Escape') close(); });
+    form.onSubmit.listen((e) async {
       e.preventDefault();
-      if (modalWebForgotPw != null) {
-        modalWebForgotPw.style.display = 'none';
-      }
-    });
-
-    btnWebRecoverSubmit?.onClick.listen((e) async {
-      e.preventDefault();
-      final roleSelect = document.getElementById('web-recover-role') as SelectElement?;
-      final idInput = document.getElementById('web-recover-username') as InputElement?;
-      final phoneInput = document.getElementById('web-recover-contact') as InputElement?;
-      final newPwInput = document.getElementById('web-recover-new-password') as InputElement?;
-      final errorEl = document.getElementById('web-recover-error');
-      final successEl = document.getElementById('web-recover-success');
-
-      if (errorEl != null) errorEl.style.display = 'none';
-      if (successEl != null) successEl.style.display = 'none';
-
-      final roleVal = roleSelect?.value ?? '';
-      final idVal = idInput?.value?.trim() ?? '';
-      final phoneVal = phoneInput?.value?.trim() ?? '';
-      final newPwVal = newPwInput?.value?.trim() ?? '';
-
-      if (idVal.isEmpty || phoneVal.isEmpty || newPwVal.isEmpty) {
-        if (errorEl != null) {
-          errorEl.text = 'All fields are required.';
-          errorEl.style.display = 'block';
-        }
-        return;
-      }
-
+      if (_recovering) return;
+      error.hidden = true; success.hidden = true;
+      if (!form.checkValidity()) { form.reportValidity(); return; }
+      _recovering = true; submit.disabled = true; submit.text = 'Resetting…';
+      final version = _recoveryVersion;
       try {
-        final xhr = await db.apiRequest(
-          '/api/recover-account',
-          authenticated: false,
-          method: 'POST',
-          sendData: json.encode({
-            'role': roleVal,
-            'username': idVal,
-            'reset_token': phoneVal,
-            'new_password': newPwVal
-          }),
-          requestHeaders: {'Content-Type': 'application/json'}
-        );
-
-        if (xhr.status == 200) {
-          final resp = json.decode(xhr.responseText ?? '{}');
-          if (successEl != null) {
-            successEl.text = resp['message'] ?? 'Password reset successfully!';
-            successEl.style.display = 'block';
-          }
-          if (idInput != null) idInput.value = '';
-          if (phoneInput != null) phoneInput.value = '';
-          if (newPwInput != null) newPwInput.value = '';
-
-          Future.delayed(Duration(seconds: 2), () {
-            if (modalWebForgotPw != null) {
-              modalWebForgotPw.style.display = 'none';
-            }
-            if (successEl != null) successEl.style.display = 'none';
-          });
-        }
-      } catch (e) {
-        if (errorEl != null) {
-          errorEl.text = 'Verification failed. Please check details.';
-          errorEl.style.display = 'block';
-        }
-      }
+        await db.apiRequest('/api/recover-account', authenticated: false, method: 'POST',
+          requestHeaders: {'Content-Type': 'application/json'}, sendData: json.encode({
+            'role': role.value, 'username': account.value!.trim(),
+            'reset_token': code.value!.trim(), 'new_password': password.value
+          }));
+        if (version != _recoveryVersion) return;
+        // Do not leave a previous native/browser session active after a reset.
+        await db.endSession();
+        success.text = 'Password reset. Sign in with your new password.'; success.hidden = false;
+        code.value = ''; password.value = '';
+        showLoginError('Password reset. Sign in with your new password.', document.getElementById('login-error-msg'));
+        Future.delayed(const Duration(seconds: 2), () { if (version == _recoveryVersion) close(); });
+      } on ApiFailure catch (failure) {
+        if (version != _recoveryVersion) return;
+        error.text = failure.status == 429 ? 'Too many attempts. Please try again shortly.'
+          : failure.unavailable ? 'Unable to reach the server. Check your connection and retry.'
+          : 'Invalid or expired code, account, or password. Contact your administrator.';
+        error.hidden = false;
+      } finally { _recovering = false; submit.disabled = false; submit.text = 'Reset Password'; }
     });
   }
 
@@ -754,7 +727,7 @@ class AppController {
     window.localStorage.remove('waterhall_resident_session');
 
     // Show nav
-    bottomNav.setAttribute('style', 'display: flex !important');
+    bottomNav.style.display = 'flex';
     residentBottomNav.setAttribute('style', 'display: none !important');
 
     // Show quick switch
@@ -801,7 +774,7 @@ class AppController {
       print('[SECURITY] Worker application is forbidden from switching to Resident tab $targetViewId.');
       return;
     }
-    if (role == 'resident' && (targetViewId == 'view-dashboard' || targetViewId == 'view-billing' || targetViewId == 'view-profile' || targetViewId == 'view-directory' || targetViewId == 'view-assets' || targetViewId == 'view-worker-resident-details')) {
+    if (role == 'resident' && (targetViewId == 'view-dashboard' || targetViewId == 'view-billing' || targetViewId == 'view-profile' || targetViewId == 'view-transactions' || targetViewId == 'view-directory' || targetViewId == 'view-assets' || targetViewId == 'view-worker-resident-details')) {
       print('[SECURITY] Resident application is forbidden from switching to Worker tab $targetViewId.');
       return;
     }
@@ -838,6 +811,9 @@ class AppController {
       renderAssets();
     } else if (targetViewId == 'view-profile') {
       renderProfile();
+    } else if (targetViewId == 'view-transactions') {
+      renderTransactions();
+      unawaited(loadTransactions());
     } else if (targetViewId == 'view-billing') {
       if (selectedBillHouseId == null) {
         final households = db.getHouseholds();
@@ -845,7 +821,7 @@ class AppController {
           selectedBillHouseId = households[0]['house_id'];
           final billMeterSearch = document.getElementById('bill-meter-search') as InputElement?;
           if (billMeterSearch != null) {
-            billMeterSearch.value = '${households[0]['owner_name']} (${households[0]['account_number']})';
+            billMeterSearch.value = '${households[0]['owner_name']} (${households[0]['house_id']})';
           }
         }
       }
@@ -1370,10 +1346,106 @@ class AppController {
     if (profileStatLogs != null) profileStatLogs.text = myLogs.toString();
   }
 
+  int? _transactionCursor;
+  int _transactionOffset = 0;
+  int _transactionVersion = 0;
+  bool _loadingTransactions = false;
+  String? _transactionError;
+  Timer? _transactionSearchTimer;
+  void initTransactions() {
+    document.getElementById('transaction-filter')?.onChange.listen((_) { _transactionOffset = 0; renderTransactions(); unawaited(loadTransactions()); });
+    document.getElementById('transaction-search')?.onInput.listen((_) {
+      _transactionVersion++; _transactionOffset = 0; _transactionSearchTimer?.cancel(); renderTransactions();
+      _transactionSearchTimer = Timer(const Duration(milliseconds: 300), () => loadTransactions());
+    });
+    document.getElementById('transaction-more')?.onClick.listen((_) {
+      if (filteredTransactions().length > _transactionOffset + 25) {
+        _transactionOffset += 25; renderTransactions();
+      } else { unawaited(loadTransactions(older: true)); }
+    });
+    document.getElementById('transaction-previous')?.onClick.listen((_) {
+      _transactionOffset = (_transactionOffset - 25).clamp(0, 1000000); renderTransactions();
+    });
+  }
+  Future<void> loadTransactions({bool older = false}) async {
+    final filter = (document.getElementById('transaction-filter') as SelectElement).value;
+    if (currentWorker == null || !db.isDatabaseOnline || filter == 'Pending Sync' || filter == 'Failed Sync') {
+      _transactionVersion++; _loadingTransactions = false; _transactionCursor = null;
+      renderTransactions(); return;
+    }
+    final version = ++_transactionVersion;
+    final token = window.localStorage['waterhall_jwt'];
+    if (!older) { _transactionCursor = null; _transactionOffset = 0; }
+    _loadingTransactions = true; _transactionError = null; renderTransactions();
+    try {
+      final query = (document.getElementById('transaction-search') as InputElement).value ?? '';
+      final result = await db.fetchWorkerTransactions(before: older ? _transactionCursor : null, query: query);
+      if (version != _transactionVersion || token != window.localStorage['waterhall_jwt']) return;
+      _transactionCursor = result['next_cursor'] as int?;
+      if (older && filteredTransactions().length > _transactionOffset + 25) _transactionOffset += 25;
+    } catch (_) {
+      if (version == _transactionVersion) _transactionError = 'History could not load. Saved device records remain available; reopen Transactions to retry.';
+    } finally { if (version == _transactionVersion) { _loadingTransactions = false; renderTransactions(); } }
+  }
+  List<Map<String, dynamic>> filteredTransactions() {
+    final filter = (document.getElementById('transaction-filter') as SelectElement).value ?? 'All';
+    final query = ((document.getElementById('transaction-search') as InputElement).value ?? '').trim().toLowerCase();
+    return db.workerTransactions().where((r) => (filter == 'All' || r['sync_status'] == filter) &&
+      (r['family_head_name'] ?? db.getHousehold('${r['house_id']}')?['owner_name'] ?? '').toString().toLowerCase().contains(query)).toList();
+  }
+  void renderTransactions() {
+    final list = document.getElementById('transaction-list');
+    if (list == null || currentWorker == null) return;
+    final filter = (document.getElementById('transaction-filter') as SelectElement).value ?? 'All';
+    list.children.clear();
+    final records = filteredTransactions();
+    for (final r in records.skip(_transactionOffset).take(25)) {
+      final card = DivElement()..className = 'bill-record-card';
+      card.append(HeadingElement.h3()..text = '${r['family_head_name'] ?? db.getHousehold('${r['house_id']}')?['owner_name'] ?? 'Household'} · ${r['house_id']}');
+      card.append(ParagraphElement()..text = '${r['sync_status']} · Billing status: ${r['status']}');
+      final grid = DivElement()..className = 'transaction-details';
+      final fields = {
+        'Meter': r['account_number'], 'Previous reading': r['previous_reading'],
+        'Current reading': r['current_reading'], 'Consumption (m³)': r['consumption'],
+        'Bill amount (PHP)': r['total_due'], 'Billing date': _formatTimestamp(r['date']),
+        'Reference': r['bill_id'], 'Operation': r['operation_id']
+      };
+      fields.forEach((label,value) {
+        if (value == null || '$value'.isEmpty) return;
+        final cell = DivElement()..append(SpanElement()..text = label)..append(SpanElement()..text = '$value');
+        grid.append(cell);
+      });
+      card.append(grid); list.append(card);
+    }
+    document.getElementById('transaction-message')?.text = _transactionError ?? (_loadingTransactions ? 'Loading history…' :
+      !db.isDatabaseOnline ? 'Offline Mode — showing saved device history.' : list.children.isEmpty ? 'No matching transactions.' : 'Page ${_transactionOffset ~/ 25 + 1} — newest bills first.');
+    final more = document.getElementById('transaction-more') as ButtonElement;
+    more.hidden = records.length <= _transactionOffset + 25 &&
+      (!db.isDatabaseOnline || _transactionCursor == null || filter == 'Pending Sync' || filter == 'Failed Sync');
+    more.disabled = _loadingTransactions;
+    (document.getElementById('transaction-previous') as ButtonElement).hidden = _transactionOffset == 0;
+  }
+
   // --- Billing View Controller ---
   String? selectedBillHouseId;
 
+  bool _billingBound = false;
   void initBillingView() {
+    if (_billingBound) return;
+    _billingBound = true;
+    for (final mode in ['name', 'id']) {
+      document.getElementById('bill-search-$mode')?.onClick.listen((_) {
+        _billSearchMode = mode;
+        final input = document.getElementById('bill-meter-search') as InputElement;
+        input.value = '';
+        input.placeholder = mode == 'name' ? 'Type any part of the household name' : 'Type any part of HH-…';
+        input.setAttribute('aria-label', mode == 'name' ? 'Search by Name' : 'Search by ID');
+        for (final key in ['name', 'id']) {
+          document.getElementById('bill-search-$key')?.setAttribute('aria-pressed', '${key == mode}');
+        }
+        document.getElementById('bill-meter-results')?.style.display = 'none';
+      });
+    }
     final billMeterSearch = document.getElementById('bill-meter-search') as InputElement?;
     final billMeterResults = document.getElementById('bill-meter-results');
     final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
@@ -1399,45 +1471,41 @@ class AppController {
     final households = db.getHouseholds();
     if (households.isNotEmpty) {
       selectedBillHouseId = households[0]['house_id'];
-      billMeterSearch.value = '${households[0]['owner_name']} (${households[0]['account_number']})';
+      billMeterSearch.value = '${households[0]['owner_name']} (${households[0]['house_id']})';
       renderBillingView(selectedBillHouseId);
     }
   }
 
+  String _billSearchMode = 'name';
   void showBillingSearchResults() {
-    final billMeterSearch = document.getElementById('bill-meter-search') as InputElement?;
-    final billMeterResults = document.getElementById('bill-meter-results');
-    if (billMeterSearch == null || billMeterResults == null) return;
-
-    final query = billMeterSearch.value?.toLowerCase().trim() ?? '';
-    final households = db.getHouseholds();
-
-    final matches = households.where((h) {
-      return h['owner_name'].toString().toLowerCase().contains(query) ||
-          h['account_number'].toString().toLowerCase().contains(query);
-    }).toList();
-
-    billMeterResults.innerHtml = '';
-
-    if (matches.isEmpty) {
-      billMeterResults.innerHtml = '<div class="search-result-item" style="color:var(--text-muted); cursor:default">No households found</div>';
-      billMeterResults.style.display = 'block';
-      return;
+    final input = document.getElementById('bill-meter-search') as InputElement?;
+    final results = document.getElementById('bill-meter-results');
+    if (input == null || results == null) return;
+    final query = input.value?.toLowerCase().trim() ?? '';
+    final selected = selectedBillHouseId == null ? null : db.getHousehold(selectedBillHouseId!);
+    results.children.clear();
+    final selectedLabel = selected == null ? '' : '${selected['owner_name']} (${selected['house_id']})';
+    if (query.isEmpty || input.value == selectedLabel) {
+      results.style.display = 'none'; return;
     }
-
-    matches.forEach((h) {
-      final item = document.createElement('div');
-      item.className = 'search-result-item';
-      item.text = '${h['owner_name']} (${h['account_number']})';
-      item.onClick.listen((e) {
-        billMeterSearch.value = '${h['owner_name']} (${h['account_number']})';
-        billMeterResults.style.display = 'none';
-        renderBillingView(h['house_id']);
+    final matches = db.getHouseholds().where((h) =>
+      (h[_billSearchMode == 'name' ? 'owner_name' : 'house_id'] ?? '').toString().toLowerCase().contains(query));
+    final ids = <String>{};
+    for (final h in matches) {
+      if (!ids.add('${h['house_id']}')) continue;
+      final item = ButtonElement()..type = 'button'..className = 'search-result-item'
+        ..text = '${h['owner_name']} (${h['house_id']})';
+      item.onClick.listen((_) {
+        input.value = '${h['owner_name']} (${h['house_id']})';
+        results.style.display = 'none'; renderBillingView(h['house_id']);
       });
-      billMeterResults.append(item);
-    });
-
-    billMeterResults.style.display = 'block';
+      results.append(item);
+    }
+    if (ids.isEmpty) {
+      results.append(DivElement()..className = 'search-result-item'..text = db.isDatabaseOnline
+        ? 'No households found' : 'No matching cached households. Reconnect to check availability.');
+    }
+    results.style.display = 'block';
   }
 
   void renderBillingView(String? houseId) {
@@ -1452,6 +1520,17 @@ class AppController {
 
     final billPrevReading = document.getElementById('bill-prev-reading');
     final billCurrInput = document.getElementById('bill-curr-input') as InputElement?;
+
+    final details = document.getElementById('bill-selected-details');
+    if (details != null) {
+      final issued = db.getBillingRecords().where((b) => b['house_id'] == selectedBillHouseId && !'${b['bill_id']}'.startsWith('PENDING-')).toList();
+      issued.sort((a,b) => '${b['date']}'.compareTo('${a['date']}'));
+      final latest = issued.isEmpty ? null : issued.first;
+      final balance = issued.where((b) => b['status'] != 'Paid').fold<num>(0, (sum,b) => sum + (b['total_due'] as num? ?? 0));
+      details.text = '${household['owner_name']} · ${household['house_id']}\nMeter: ${household['account_number']}\n'
+        'Current issued bill: ${latest == null ? "None" : "${latest['bill_id']} / ${latest['status']} / PHP ${latest['total_due']}"}\n'
+        'Outstanding balance: PHP ${balance.toStringAsFixed(2)}${db.isDatabaseOnline ? "" : " (cached)"}';
+    }
 
     // Load applicable previous reading (respecting pending readings if any)
     final previous = db.getApplicablePreviousReading(selectedBillHouseId!);

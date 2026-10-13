@@ -258,8 +258,8 @@ def test_request_timeout_offline_and_reconnect_preserves_queue(browser_page):
     held = []
     page.route('**/api/all-data*', lambda route: held.append(route))
     page.evaluate("window.dispatchEvent(new Event('online'))")
-    expect(page.locator('#db-offline-overlay')).to_be_visible(timeout=22000)
-    expect(page.locator('#offline-banner-text')).to_contain_text('Offline')
+    expect(page.locator('#worker-sync-status-text')).to_have_text('Offline Mode', timeout=22000)
+    expect(page.locator('#db-offline-overlay')).to_be_hidden()
     assert page.evaluate("JSON.parse(localStorage.getItem('waterhall_offline_collections'))")[0]['sync_status'] == 'PENDING'
     page.unroute('**/api/all-data*')
     for route in held:

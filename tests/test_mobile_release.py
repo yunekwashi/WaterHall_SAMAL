@@ -58,7 +58,7 @@ def test_mobile_navigation_and_responsive_layout(browser_page, role, width):
     login(page, origin, password, role)
     nav = '#resident-bottom-nav' if role == 'resident' else '#app-bottom-nav'
     targets = page.locator(nav + ' [data-target]').evaluate_all('(tabs) => tabs.map(t => t.dataset.target)')
-    assert len(targets) == 5
+    assert len(targets) == (6 if role == 'worker' else 5)
     for target in targets:
         page.locator(f'{nav} [data-target="{target}"]').click()
         expect(page.locator('#' + target)).to_be_visible()

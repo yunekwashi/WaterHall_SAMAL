@@ -244,6 +244,19 @@
 
     <!-- Directory Tab -->
     <div id="tab-directory" class="tab-content">
+      <section class="glass-panel">
+        <h2>Account recovery code</h2>
+        <p>Verify the person independently before issuing a one-use code. Privately deliver it; it expires in 30 minutes. Issuing again invalidates the previous code.</p>
+        <form id="admin-issue-recovery-form">
+          <div class="export-filters">
+            <label for="issue-recovery-role">Role</label><select id="issue-recovery-role"><option value="resident">Resident</option><option value="worker">Worker</option></select>
+            <label for="issue-recovery-account">Account ID</label><input id="issue-recovery-account" required maxlength="60" placeholder="HH-… or Worker username" autocomplete="off">
+            <button class="btn" type="submit" id="issue-recovery-submit">Issue one-use code</button>
+          </div>
+        </form>
+        <p id="issue-recovery-result" role="status" hidden></p>
+        <button type="button" class="btn btn-secondary" id="issue-recovery-clear" hidden>Clear displayed code</button>
+      </section>
       <section class="glass-panel"><h2>Resident registrations</h2><p>Review pending accounts. Matching names are a review flag; accounts are never merged automatically.</p><p id="registration-review-status" role="status"></p><p id="registration-load-status" role="status"></p>
         <div class="table-scroll table-wide" role="region" aria-label="Resident registrations" tabindex="0"><table><thead><tr><th>Resident ID</th><th>Name / review flags</th><th>Contact</th><th>Purok</th><th>Status</th><th class="no-print">Review</th></tr></thead><tbody id="registrations-tbody"></tbody></table></div>
       </section>
@@ -786,6 +799,7 @@
 
   <script src="/ui-display.js?v=1.2.4-tds-index"></script>
   <script src="/admin/app.js?v=34-sensor-history"></script>
+  <script src="/admin/recovery-tools.js?v=1.3.0"></script>
   <script src="/admin/sensor-history.js?v=1"></script>
 </body>
 </html>

@@ -50,6 +50,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _serverError = false;
   Timer? _errorTimer;
   Timer? _pollTimer;
+  bool? _keyboardOpen;
 
   void _startErrorTimer() {
     _errorTimer?.cancel();
@@ -77,6 +78,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _pollTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       NotificationService.checkAndNotify(role: AppConfig.appRole);
     });
+  }
+
+  @override
+  void didChangeMetrics() {
+    final open = WidgetsBinding
+            .instance.platformDispatcher.views.first.viewInsets.bottom >
+        0;
+    if (open == _keyboardOpen || !_initialized) return;
+    _keyboardOpen = open;
+    unawaited(_controller.runJavaScript(
+        'if(window.waterhallKeyboardChanged) window.waterhallKeyboardChanged($open);'));
   }
 
   @override
@@ -153,7 +165,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             // Sync the native session only after the private portal loads.
             if (Uri.tryParse(url)?.path == '/index.html') {
               await _controller.runJavaScript(
-                  "if(window.waterhallSetNativeSession) window.waterhallSetNativeSession(localStorage.getItem('waterhall_jwt'));");
+                  "window.waterhallBillHistoryStorage=true; if(window.waterhallSetNativeSession) window.waterhallSetNativeSession(localStorage.getItem('waterhall_jwt'));");
             }
             _errorTimer?.cancel();
             if (mounted) {

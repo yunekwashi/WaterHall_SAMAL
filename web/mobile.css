@@ -187,6 +187,31 @@ button:disabled { opacity: .55; cursor: default; }
 .login-footer-seal { border-color: var(--navy-border); box-shadow: none; }
 #btn-open-register-modal { color: #126789 !important; background: #edf5f8 !important; border: 1px solid #c6dce7; }
 .empty-state { padding: 24px 16px; color: var(--text-muted); font-size: 14px; text-align: center; }
+.worker-keyboard-open #app-bottom-nav { display: none !important; }
+#app-bottom-nav .nav-tab { font-size: 9px; padding-inline: 0; }
+.search-mode { display:flex; gap:8px; margin-bottom:12px; }
+.search-mode button { flex:1; border:1px solid var(--navy-border); border-radius:10px; background:white; color:var(--navy-primary); font-size:12px; }
+.search-mode button[aria-pressed=true] { background:#eaf4f8; border-color:var(--navy-primary); font-weight:700; }
+.bill-search-field { position:relative; display:flex; align-items:center; border:0; background:transparent; }
+.bill-search-field #bill-meter-search { padding-left:38px !important; }
+#bill-meter-results { position:relative; top:auto; max-height:220px; overflow-y:auto; margin-top:6px; }
+#bill-selected-details:empty { display:none; }
+.transaction-details { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; font-size:13px; margin-top:12px; }
+.transaction-details span { color:var(--text-muted); display:block; font-size:12px; }
+.transaction-details > div { min-width:0; overflow-wrap:anywhere; }
+#transaction-list h3 { font-size:15px; overflow-wrap:anywhere; }
+#transaction-more[hidden], #transaction-previous[hidden] { display:none; }
+#web-modal-forgot-pw { position:fixed; inset:0; height:100dvh; padding:12px; align-items:center; justify-content:center; z-index:1000; }
+.recovery-card { display:flex; flex-direction:column; gap:12px; background:white; border:1px solid var(--navy-border); border-radius:16px; padding:20px; width:100%; max-width:400px; max-height:calc(100dvh - 24px); overflow:hidden; color:var(--text-primary); }
+.recovery-card h3 { font-size:20px; }
+.recovery-card p { font-size:12px; line-height:1.5; margin:0; }
+.recovery-fields { overflow:auto; min-height:0; }
+.recovery-fields label { margin-top:10px; margin-bottom:4px; }
+.recovery-actions { display:flex; gap:10px; flex-shrink:0; }
+.recovery-actions button { flex:1; min-width:0; padding:10px; border:1px solid var(--navy-border); border-radius:10px; color:var(--text-primary); background:#f3f7fa; }
+.recovery-actions button[type=submit] { color:white; background:var(--navy-primary); }
+#web-recover-error { color:var(--danger); }
+#web-recover-success { color:#18775b; }
 @media (max-width: 374px) {
   .view-header { padding: 18px 16px; }
   .view-header h2 { font-size: 20px; }

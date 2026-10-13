@@ -251,6 +251,15 @@ class Database {
           final response = json.decode(xhr.responseText ?? '{}');
           if (version != _sessionVersion || !checkSession()) break;
           if (response['status'] != 'success') throw const ApiFailure(status: 409);
+          if (action['endpoint'] == '/api/billing-records/add') {
+            // Archive the confirmed operation before removing it from the
+            // existing queue. An interrupted write leaves the idempotent retry.
+            await cacheBillHistory([{
+              ...Map<String, dynamic>.from(action['body']),
+              'operation_id': action['operation_id'], 'bill_id': response['bill_id'],
+              'owner': action['owner'], 'sync_status': 'Synced', 'status': 'Unpaid'
+            }]);
+          }
           await mutateQueue('actions', (rows) => rows.removeWhere((r) => r['operation_id'] == action['operation_id']));
         } on ApiFailure catch (failure) {
           if (failure.sessionChanged || failure.unavailable) rethrow;
@@ -699,6 +708,45 @@ class Database {
     return byId.values.toList();
   }
 
+  List<Map<String, dynamic>> workerTransactions() {
+    final owner = currentAccount();
+    final result = <Map<String, dynamic>>[];
+    final cached = (json.decode(window.localStorage[queueKey('bill_history')] ?? '[]') as List)
+        .map((r) => Map<String, dynamic>.from(r)).where((r) => r['owner'] == owner);
+    for (final row in cached) { result.add(row); }
+    for (final action in pendingActions().where((a) => a['endpoint'] == '/api/billing-records/add')) {
+      // Never reconcile unrelated transactions by amount, customer or date.
+      if (result.any((r) => r['operation_id'] == action['operation_id'])) continue;
+      result.add({...Map<String, dynamic>.from(action['body']),
+        'operation_id': action['operation_id'],
+        'sync_status': action['sync_error'] == null ? 'Pending Sync' : 'Failed Sync',
+        'status': 'Not yet issued'});
+    }
+    result.sort((a,b) => (b['date'] ?? '').toString().compareTo((a['date'] ?? '').toString()));
+    return result;
+  }
+
+  Future<void> cacheBillHistory(List<Map<String, dynamic>> records) async {
+    final owner = currentAccount();
+    await mutateQueue('bill_history', (rows) {
+      for (final record in records) {
+        rows.removeWhere((r) => r['owner'] == owner &&
+          ((record['operation_id'] != null && r['operation_id'] == record['operation_id']) ||
+           (record['bill_id'] != null && r['bill_id'] == record['bill_id'])));
+        rows.add({...record, 'owner': owner});
+      }
+    });
+  }
+
+  Future<Map<String, dynamic>> fetchWorkerTransactions({int? before, String query = ''}) async {
+    final params = {'limit': '25', 'q': query, if (before != null) 'before': '$before'};
+    final xhr = await apiRequest('/api/worker/transactions?${Uri(queryParameters: params).query}');
+    final data = Map<String, dynamic>.from(json.decode(xhr.responseText!));
+    final records = List<Map<String, dynamic>>.from(data['records']);
+    await cacheBillHistory(records);
+    return data;
+  }
+
   List<Map<String, dynamic>> getBillingHistoryForHousehold(String houseId) {
     final records = getBillingRecords();
     final cleanHouse = houseId.toUpperCase().trim();
@@ -765,6 +813,7 @@ class Database {
       'is_synced': false,
       ...record
     };
+    newRecord['family_head_name'] = getHousehold(houseId)?['owner_name'];
 
     await queueAction('/api/billing-records/add', newRecord);
 
