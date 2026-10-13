@@ -16,7 +16,7 @@ from backend.security import principal, require_role, claims_for, text, password
 from backend.photos import save_photo, photo_for_client, report_photo_metadata
 from backend.collections import synchronize
 from backend.notifications import enqueue, drain
-from backend import operational_routes, accounts, billing, login_security, reporting, mobile_workflow
+from backend import operational_routes, accounts, billing, login_security, reporting, mobile_workflow, password_reset
 from flask import Flask, jsonify, request, send_from_directory, send_file, abort, Response
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from flask_cors import CORS
@@ -112,10 +112,10 @@ STAFF = {'sync_offline_collections', 'get_collections_history', 'update_report_s
          'update_household_status', 'add_maintenance_log', 'add_billing_record', 'add_announcement'}
 ADMIN = {'update_payment_settings', 'update_central_assets', 'add_household', 'add_worker',
          'delete_household', 'delete_worker', 'get_registrations', 'review_registration', 'save_billing_config',
-         'admin_mark_bill_paid', 'export_reports', 'get_sensor_history', 'issue_recovery_code'}
+         'admin_mark_bill_paid', 'export_reports', 'get_sensor_history', 'issue_recovery_code', 'admin_reset_password'}
 AUTHENTICATED = {'get_all_data', 'get_puroks', 'get_latest_iot', 'get_payment_settings', 'handle_reports',
                  'get_report_photo',
-                 'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events', 'get_billing_config', 'get_worker_transactions'}
+                 'get_announcements', 'poll_notifications', 'subscribe_push', 'unsubscribe_push', 'sse_events', 'get_billing_config', 'get_worker_transactions', 'change_password'}
 
 @app.before_request
 def enforce_api_policy():
@@ -235,6 +235,7 @@ def login():
         kind, account, identity = accounts.login_account(db, username)
         valid, remaining, retry_after = login_security.attempt(db, kind + ':' + identity,
             password, account['password_hash'] if account else None)
+        temporary = password_reset.temporary_state(db, identity, kind, account['password_hash']) if valid else None
     # Commit failure counters before returning errors; requests during lockout do
     # not extend its expiry, even when the supplied password is correct.
     if retry_after:
@@ -247,8 +248,15 @@ def login():
         return jsonify(msg='Registration is pending Admin approval.' if account['account_status'] == 'pending'
                        else 'Registration was rejected. Contact the administrator.', account_status=account['account_status']), 403
     role = 'resident' if kind == 'resident' else ('admin' if account['role'] == 'Admin' else 'worker')
-    token = create_access_token(identity=identity, additional_claims=claims_for(account['password_hash'], kind))
-    return jsonify(access_token=token, role=role, id=identity, name=account['family_head_name'] if kind == 'resident' else account['full_name'])
+    if password_reset.expired(temporary):
+        return jsonify(msg='Temporary password expired. Contact your administrator.'), 401
+    claims = claims_for(account['password_hash'], kind)
+    if temporary:
+        claims['purpose'] = 'password_change'
+    token = create_access_token(identity=identity, additional_claims=claims,
+                                **({'expires_delta': datetime.timedelta(minutes=15)} if temporary else {}))
+    return jsonify(access_token=token, role=role, id=identity, name=account['family_head_name'] if kind == 'resident' else account['full_name'],
+                   password_change_required=bool(temporary))
 
 @app.route('/api/recover-account', methods=['POST'])
 @limiter.limit("5 per minute")
@@ -260,7 +268,7 @@ def recover_account():
     with get_db() as db:
         if not db.is_pg:
             db.execute('BEGIN IMMEDIATE')
-        db.execute('SELECT * FROM password_resets WHERE token_hash = ?' + (' FOR UPDATE' if db.is_pg else ''), (digest,))
+        db.execute('SELECT * FROM password_resets WHERE token_hash = ?', (digest,))
         reset = db.fetchone()
         if not reset or reset['used'] or reset['expires_at'] < datetime.datetime.now(datetime.timezone.utc).isoformat():
             abort(400, description='Invalid or expired recovery code')
@@ -279,11 +287,24 @@ def recover_account():
                 staff = db.fetchone()
                 if not staff or (role == 'admin') != (staff['role'] == 'Admin'):
                     abort(400, description='Invalid or expired recovery code')
+        # Use the same account-first lock order as the new reset/change flow.
+        # Recheck the code after locking so concurrent legacy redemption stays single-use.
+        table, field = ('households', 'household_id') if reset['kind'] == 'resident' else ('users', 'username')
+        account_value = identifier(reset['account_id'], 'HH-') if reset['kind'] == 'resident' else reset['account_id']
+        db.execute(f'SELECT password_hash FROM {table} WHERE {field} = ?' + (' FOR UPDATE' if db.is_pg else ''), (account_value,))
+        current = db.fetchone()
+        db.execute('SELECT * FROM password_resets WHERE token_hash = ?' + (' FOR UPDATE' if db.is_pg else ''), (digest,))
+        reset = db.fetchone()
+        if not current or not reset or reset['used'] or reset['expires_at'] < datetime.datetime.now(datetime.timezone.utc).isoformat():
+            abort(400, description='Invalid or expired recovery code')
+        if (password_reset.temporary_state(db, reset['account_id'], reset['kind'], current['password_hash'])
+                and check_password_hash(current['password_hash'], data.get('new_password'))):
+            abort(400, description='Choose a different password')
         if reset['kind'] == 'resident':
             db.execute('UPDATE households SET password_hash = ? WHERE household_id = ?', (new_hash, identifier(reset['account_id'], 'HH-')))
         else:
             db.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_hash, reset['account_id']))
-        db.execute('UPDATE password_resets SET used = 1 WHERE token_hash = ?', (digest,))
+        db.execute('UPDATE password_resets SET used = 1 WHERE account_id = ? AND kind = ?', (reset['account_id'], reset['kind']))
     return jsonify(status='success', msg='Password reset. Please sign in again.')
 
 @app.route('/api/worker/transactions', methods=['GET'])
@@ -296,6 +317,24 @@ def get_worker_transactions():
 @limiter.limit('10 per minute')
 def issue_recovery_code():
     return mobile_workflow.issue_recovery()
+
+@app.route('/api/admin/password-resets', methods=['POST'])
+@jwt_required()
+@limiter.limit('10 per minute')
+def admin_reset_password():
+    return password_reset.issue_temporary_password()
+
+@app.route('/api/password/change', methods=['POST'])
+@jwt_required()
+@limiter.limit('5 per minute')
+def change_password():
+    return password_reset.change_password()
+
+@app.after_request
+def audit_password_failures(response):
+    if request.endpoint in ('admin_reset_password', 'change_password') and response.status_code >= 400:
+        password_reset.audit.warning('password_operation_rejected endpoint=%s status=%s', request.endpoint, response.status_code)
+    return response
 
 @app.route('/api/all-data', methods=['GET'])
 @jwt_required()

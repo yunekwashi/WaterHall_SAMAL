@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
-from flask import abort, g
+from flask import abort, g, request
 from flask_jwt_extended import get_jwt, get_jwt_identity
 from backend.db_adapter import get_db
 
@@ -72,9 +72,16 @@ def principal():
             role = 'admin' if row and row['role'] == 'Admin' else 'worker'
         else:
             abort(401, description='Please sign in again')
+        from backend.password_reset import temporary_state, expired
+        state = temporary_state(db, identity, kind, row['password_hash']) if row else None
     if not row or (kind == 'resident' and row['account_status'] != 'approved') or claims.get('credential') != hashlib.sha256(row['password_hash'].encode()).hexdigest():
         abort(401, description='Please sign in again')
-    g.principal = {'id': identity, 'role': role, 'record': row}
+    if expired(state):
+        abort(401, description='Temporary password expired. Contact your administrator.')
+    if (state or claims.get('purpose') == 'password_change') and request.endpoint != 'change_password':
+        abort(403, description='Create a new password before using the portal')
+    g.principal = {'id': identity, 'role': role, 'record': row, 'kind': kind,
+                   'password_change_required': bool(state)}
     return g.principal
 
 

@@ -118,6 +118,7 @@ class AppController {
     document.getElementById('btn-resident-profile-logout')?.onClick.listen((_) => db.endSession());
     db.onSessionEnded = (expired) {
       _closeRealtimeStream();
+      closePasswordChange();
       currentWorker = null;
       currentResidentId = null;
       _pendingNativePhotoRequestId = null;
@@ -325,7 +326,7 @@ class AppController {
     loginBtn?.onClick.listen((e) async {
       e.preventDefault();
       final empId = empIdInput?.value?.trim() ?? '';
-      final password = passwordInput?.value?.trim() ?? '';
+      final password = passwordInput?.value ?? '';
       final selectedZone = zoneSelect?.value ?? '';
 
       final uri = Uri.parse(window.location.href);
@@ -355,6 +356,12 @@ class AppController {
 
         if (userRole == 'admin' || (role == 'resident' && userRole != 'resident') || (role != 'resident' && userRole != 'worker')) {
           showLoginError('Use the portal assigned to your account role.', loginErrorMsg);
+          return;
+        }
+        if (data['password_change_required'] == true) {
+          await db.endSession();
+          passwordInput?.value = '';
+          openPasswordChange(token: token);
           return;
         }
         db.clearPrivateCache();
@@ -569,62 +576,107 @@ class AppController {
     initRecovery();
   }
 
-  bool _recovering = false;
-  int _recoveryVersion = 0;
+  String? _restrictedPasswordToken;
+  bool _passwordChanging = false;
+  int _passwordChangeVersion = 0;
+
   void initRecovery() {
     final modal = document.getElementById('web-modal-forgot-pw')!;
-    final form = document.getElementById('web-recovery-form') as FormElement;
-    final submit = document.getElementById('btn-web-recover-submit') as ButtonElement;
-    final error = document.getElementById('web-recover-error')!;
-    final success = document.getElementById('web-recover-success')!;
-    final role = document.getElementById('web-recover-role') as SelectElement;
-    final account = document.getElementById('web-recover-username') as InputElement;
-    final code = document.getElementById('web-recover-contact') as InputElement;
-    final password = document.getElementById('web-recover-new-password') as InputElement;
     void close() {
-      _recoveryVersion++;
       (document.activeElement as HtmlElement?)?.blur();
       modal.style.display = 'none';
-      form.reset(); error.hidden = true; success.hidden = true;
       document.getElementById('btn-web-forgot-password')?.focus();
     }
     document.getElementById('btn-web-forgot-password')?.onClick.listen((e) {
       e.preventDefault();
-      _recoveryVersion++;
-      role.value = Uri.base.queryParameters['role'] == 'resident' ? 'resident' : 'worker';
+      document.getElementById('web-recovery-role')?.text =
+        Uri.base.queryParameters['role'] == 'resident' ? 'Resident account' : 'Worker account';
       modal.style.display = 'flex';
-      account.value = (document.getElementById('employee-id') as InputElement?)?.value ?? '';
-      account.focus();
+      document.getElementById('btn-web-recover-cancel')?.focus();
     });
     document.getElementById('btn-web-recover-cancel')?.onClick.listen((e) { e.preventDefault(); close(); });
     modal.onKeyDown.listen((e) { if (e.key == 'Escape') close(); });
+    initPasswordChange();
+  }
+
+  void closePasswordChange() {
+    _passwordChangeVersion++;
+    _restrictedPasswordToken = null;
+    (document.activeElement as HtmlElement?)?.blur();
+    document.getElementById('web-modal-change-password')?.style.display = 'none';
+    (document.getElementById('web-change-password-form') as FormElement).reset();
+  }
+
+  void openPasswordChange({String? token}) {
+    _passwordChangeVersion++;
+    _restrictedPasswordToken = token;
+    final mandatory = token != null;
+    (document.getElementById('web-change-password-form') as FormElement).reset();
+    document.getElementById('change-password-title')?.text = mandatory ? 'Create New Password' : 'Change Password';
+    document.getElementById('change-password-help')?.text = mandatory
+      ? 'Create a new password before using your account. Your temporary sign-in expires after 15 minutes.'
+      : 'Confirm your current password. After saving, sign in with the new password.';
+    document.getElementById('change-current-field')?.hidden = mandatory;
+    final current = document.getElementById('change-current-password') as InputElement;
+    current.required = !mandatory; current.disabled = mandatory;
+    document.getElementById('btn-change-password-cancel')?.text = mandatory ? 'Return to Login' : 'Cancel';
+    document.getElementById('change-password-error')?.hidden = true;
+    for (final id in ['change-current-password', 'change-new-password', 'change-confirm-password']) {
+      (document.getElementById(id) as InputElement).type = 'password';
+    }
+    document.getElementById('web-modal-change-password')?.style.display = 'flex';
+    document.getElementById(mandatory ? 'change-new-password' : 'change-current-password')?.focus();
+  }
+
+  void initPasswordChange() {
+    final modal = document.getElementById('web-modal-change-password')!;
+    final form = document.getElementById('web-change-password-form') as FormElement;
+    final save = document.getElementById('btn-change-password-save') as ButtonElement;
+    final error = document.getElementById('change-password-error')!;
+    for (final id in ['btn-worker-change-password', 'btn-resident-change-password']) {
+      document.getElementById(id)?.onClick.listen((_) { if (db.checkSession()) openPasswordChange(); });
+    }
+    document.getElementById('btn-change-password-cancel')?.onClick.listen((_) => closePasswordChange());
+    modal.onKeyDown.listen((e) { if (e.key == 'Escape') closePasswordChange(); });
+    (document.getElementById('change-show-password') as InputElement).onChange.listen((e) {
+      final show = (e.target as InputElement).checked == true;
+      for (final id in ['change-current-password', 'change-new-password', 'change-confirm-password']) {
+        (document.getElementById(id) as InputElement).type = show ? 'text' : 'password';
+      }
+    });
     form.onSubmit.listen((e) async {
       e.preventDefault();
-      if (_recovering) return;
-      error.hidden = true; success.hidden = true;
+      if (_passwordChanging) return;
+      error.hidden = true;
       if (!form.checkValidity()) { form.reportValidity(); return; }
-      _recovering = true; submit.disabled = true; submit.text = 'Resetting…';
-      final version = _recoveryVersion;
+      final newPassword = (document.getElementById('change-new-password') as InputElement).value!;
+      final confirm = (document.getElementById('change-confirm-password') as InputElement).value!;
+      if (newPassword != confirm) { error.text = 'Passwords do not match.'; error.hidden = false; return; }
+      final token = _restrictedPasswordToken ?? window.localStorage['waterhall_jwt'];
+      if (token == null) { error.text = 'Please sign in again.'; error.hidden = false; return; }
+      final version = _passwordChangeVersion;
+      final mandatory = _restrictedPasswordToken != null;
+      _passwordChanging = true; save.disabled = true; save.text = 'Saving…';
       try {
-        await db.apiRequest('/api/recover-account', authenticated: false, method: 'POST',
-          requestHeaders: {'Content-Type': 'application/json'}, sendData: json.encode({
-            'role': role.value, 'username': account.value!.trim(),
-            'reset_token': code.value!.trim(), 'new_password': password.value
-          }));
-        if (version != _recoveryVersion) return;
-        // Do not leave a previous native/browser session active after a reset.
+        await db.apiRequest('/api/password/change', authenticated: !mandatory, method: 'POST',
+          requestHeaders: {'Content-Type': 'application/json', if (mandatory) 'Authorization': 'Bearer $token'},
+          sendData: json.encode({'new_password': newPassword, 'confirm_password': confirm,
+            if (!mandatory) 'current_password': (document.getElementById('change-current-password') as InputElement).value}));
+        if (version != _passwordChangeVersion) {
+          if (!mandatory && window.localStorage['waterhall_jwt'] == token) await db.endSession();
+          return;
+        }
         await db.endSession();
-        success.text = 'Password reset. Sign in with your new password.'; success.hidden = false;
-        code.value = ''; password.value = '';
-        showLoginError('Password reset. Sign in with your new password.', document.getElementById('login-error-msg'));
-        Future.delayed(const Duration(seconds: 2), () { if (version == _recoveryVersion) close(); });
+        closePasswordChange();
+        showLoginError('Password saved. Sign in with your new password.', document.getElementById('login-error-msg'));
       } on ApiFailure catch (failure) {
-        if (version != _recoveryVersion) return;
-        error.text = failure.status == 429 ? 'Too many attempts. Please try again shortly.'
+        if (version != _passwordChangeVersion) return;
+        error.text = failure.userMessage ?? (failure.status == 401 ? 'Sign-in expired. Return to Login and try again.'
+          : failure.status == 429 ? 'Too many attempts. Please try again shortly.'
           : failure.unavailable ? 'Unable to reach the server. Check your connection and retry.'
-          : 'Invalid or expired code, account, or password. Contact your administrator.';
+          : 'Unable to save the password. Please sign in again.');
         error.hidden = false;
-      } finally { _recovering = false; submit.disabled = false; submit.text = 'Reset Password'; }
+      } finally { _passwordChanging = false; save.disabled = false; save.text = 'Save New Password'; }
     });
   }
 

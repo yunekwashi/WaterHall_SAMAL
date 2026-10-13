@@ -168,8 +168,18 @@ class Database {
             if (response.status == 401 && remaining is int && remaining >= 0 && remaining <= 4) {
               message = 'Invalid credentials. $remaining attempts remaining.';
             }
+            if (response.status == 401 && data['msg'] == 'Temporary password expired. Contact your administrator.') {
+              message = data['msg'];
+            }
             if (response.status == 403) message = data['account_status'] == 'pending'
               ? 'Registration is pending Admin approval.' : 'Registration was rejected. Contact the administrator.';
+          } catch (_) {}
+        }
+        if (uri.path == '/api/password/change' && response.status == 400) {
+          try {
+            final detail = json.decode(response.responseText ?? '{}')['msg'];
+            if (['Passwords do not match', 'Current password is incorrect', 'Choose a different password',
+                 'Password must contain 12 to 128 characters'].contains(detail)) message = detail;
           } catch (_) {}
         }
         throw ApiFailure(status: response.status == 0 ? null : response.status, userMessage: message);

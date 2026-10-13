@@ -361,6 +361,7 @@
               <button type="button" class="submit-log-btn" id="btn-broadcast-announcement" style="background-color: var(--navy-primary); margin-top: 12px;">Broadcast Message</button>
             </div>
 
+            <button type="button" class="logout-action-full" id="btn-worker-change-password">Change Password</button>
             <!-- Logout Card -->
             <div class="logout-card-container">
               <div class="logout-avatar-circle" id="worker-logout-avatar">--</div>
@@ -739,6 +740,7 @@
           <div class="profile-scroll">
             <div class="profile-card"><div class="profile-avatar" id="resident-profile-avatar">--</div><div class="profile-info"><h3 id="resident-profile-name">Resident</h3><p>Barangay Tagpopongan</p></div></div>
             <div class="reservoir-card"><p id="resident-profile-account">Account details</p><p class="field-help">Contact the Barangay office to update your household records.</p></div>
+            <button type="button" class="logout-action-full" id="btn-resident-change-password">Change Password</button>
             <button type="button" class="logout-action-full" id="btn-resident-profile-logout">Sign out of WaterHall</button>
           </div>
         </div>
@@ -915,19 +917,28 @@
           <div class="registration-actions"><button type="button" id="btn-close-register-modal">Close</button><button type="submit" id="btn-submit-register" class="login-btn">Submit registration</button></div>
         </form>
       </div>
-      <!-- Shared Worker / Resident recovery, administrator-issued codes only. -->
+      <!-- OTP-free, administrator-verified recovery. -->
       <div class="modal-overlay" id="web-modal-forgot-pw" style="display:none" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
-        <form id="web-recovery-form" class="recovery-card">
+        <div class="recovery-card">
           <h3 id="recovery-title">Forgot Password</h3>
-          <p>Contact an administrator to verify your identity and receive a one-time recovery code. Codes expire after 30 minutes. WaterHall does not send SMS.</p>
+          <p id="web-recovery-role"></p>
+          <p>Forgot your password? Contact your WaterHall administrator to verify your account and request a password reset.</p>
+          <p>After verification, sign in with the temporary password provided privately by your administrator, then create a new password.</p>
+          <div class="recovery-actions"><button type="button" id="btn-web-recover-cancel">Return to Login</button></div>
+        </div>
+      </div>
+      <div class="modal-overlay" id="web-modal-change-password" style="display:none" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
+        <form id="web-change-password-form" class="recovery-card">
+          <h3 id="change-password-title">Create New Password</h3>
+          <p id="change-password-help">Create a new password before using your account.</p>
           <div class="recovery-fields">
-            <label for="web-recover-role">Account role</label><select id="web-recover-role" disabled><option value="resident">Resident</option><option value="worker">Worker</option></select>
-            <label for="web-recover-username">Username / Account ID</label><input id="web-recover-username" autocomplete="username" required maxlength="60">
-            <label for="web-recover-contact">One-time recovery code</label><input id="web-recover-contact" autocomplete="off" required minlength="32" maxlength="128" spellcheck="false">
-            <label for="web-recover-new-password">New password (12–128 characters)</label><input id="web-recover-new-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+            <div id="change-current-field"><label for="change-current-password">Current Password</label><input id="change-current-password" type="password" autocomplete="current-password" maxlength="128"></div>
+            <label for="change-new-password">New Password (12–128 characters)</label><input id="change-new-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+            <label for="change-confirm-password">Confirm New Password</label><input id="change-confirm-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+            <label><input id="change-show-password" type="checkbox"> Show passwords</label>
           </div>
-          <p id="web-recover-error" role="alert" hidden></p><p id="web-recover-success" role="status" hidden></p>
-          <div class="recovery-actions"><button type="button" id="btn-web-recover-cancel">Cancel</button><button type="submit" id="btn-web-recover-submit">Reset Password</button></div>
+          <p id="change-password-error" role="alert" hidden></p>
+          <div class="recovery-actions"><button type="button" id="btn-change-password-cancel">Return to Login</button><button type="submit" id="btn-change-password-save">Save New Password</button></div>
         </form>
       </div>
 
@@ -983,6 +994,6 @@
   <script src="push-client.js?v=1.1.0"></script>
   <script src="ui-display.js?v=1.2.5-announcement-time"></script>
   <script src="mobile-keyboard.js?v=1.3.0"></script>
-  <script src="app.js?v=1.3.0-workflows"></script>
+  <script src="app.js?v=1.3.1-password-reset"></script>
 </body>
 </html>

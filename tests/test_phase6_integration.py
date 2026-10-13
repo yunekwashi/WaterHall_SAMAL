@@ -13,7 +13,8 @@ def test_worker_directory_is_meter_reading_not_field_payment():
     assert 'Select a household to record a manual meter reading.' in html
     assert 'Select a household to record a payment.' not in html
     assert 'Field Collection Disabled' in html
-    assert 'WaterHall does not send SMS' in html
+    assert 'Contact your WaterHall administrator to verify your account and request a password reset.' in html
+    assert 'id="web-recover-contact"' not in html
     assert 'data-toggle-password="reg-password"' in html
 
 
