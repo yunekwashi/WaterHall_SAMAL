@@ -9,6 +9,8 @@
     if (typeof value !== 'string' || !value.trim()) return null;
     let stamp = value.trim().replace(' ', 'T');
     if (/^\d{4}-\d{2}-\d{2}$/.test(stamp)) stamp += 'T00:00:00';
+    // PostgreSQL TEXT defaults include hour-only offsets (e.g. +00).
+    stamp = stamp.replace(/([+-]\d{2})$/, '$1:00');
     if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(stamp)) stamp += 'Z';
     // Older Android WebViews accept millisecond, rather than microsecond, precision.
     stamp = stamp.replace(/(\.\d{3})\d+/, '$1');
