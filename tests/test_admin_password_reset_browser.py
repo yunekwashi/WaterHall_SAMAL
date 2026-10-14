@@ -1,6 +1,7 @@
 """Admin management through real Chrome and disposable account data."""
 import secrets
 import os
+import json
 from pathlib import Path
 
 import pytest
@@ -284,3 +285,45 @@ def test_untrusted_name_is_text_and_focus_returns_after_directory_refresh(browse
     page.locator('#reset-confirm-cancel').click()
     expect(page.locator('[data-reset-password="worker"]')).to_be_focused()
     assert browser_page[3]==[]
+
+
+@pytest.mark.parametrize('width,height',[(1920,1080),(1366,768),(1024,768),(768,1024),(390,844),(320,640)])
+def test_directory_actions_keep_horizontal_labels_and_alignment(browser_page,width,height):
+    page,_,_,errors=browser_page
+    page.set_viewport_size({'width':width,'height':height})
+    admin(browser_page)
+    expect(page.locator('[data-reset-password]')).to_have_count(4)
+    measurements=page.locator('[data-reset-password]').evaluate_all('''buttons => buttons.map(button => {
+      const cell=button.closest('td'), row=cell.closest('tr'), remove=cell.querySelector('[data-delete-worker],[data-delete-household]');
+      const rect=element => { const r=element.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right}; };
+      const range=document.createRange(); range.selectNodeContents(button);
+      return {role:button.dataset.resetRole,button:rect(button),remove:rect(remove),row:rect(row),
+        textLines:range.getClientRects().length,scrollWidth:button.scrollWidth,clientWidth:button.clientWidth};
+    })''')
+    screenshots=os.getenv('ADMIN_RESET_SCREENSHOTS')
+    if screenshots:
+        Path(screenshots).mkdir(parents=True,exist_ok=True)
+        (Path(screenshots)/f'directory-{width}.json').write_text(json.dumps(measurements,indent=2))
+        for kind in ['resident','worker']:
+            region=page.get_by_role('region',name='Resident and household directory' if kind=='resident' else 'Field worker directory',exact=True)
+            region.evaluate('el => el.scrollLeft=el.scrollWidth')
+            region.screenshot(path=str(Path(screenshots)/f'directory-{kind}-{width}.png'))
+    for item in measurements:
+        button,remove=item['button'],item['remove']
+        assert item['textLines']==1,item
+        assert button['height']<=48,item
+        assert item['scrollWidth']<=item['clientWidth']+1,item
+        assert remove['x']>=button['right'],item
+        assert abs((button['y']+button['height']/2)-(remove['y']+remove['height']/2))<=2,item
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),measurements
+    for kind in ['resident','worker']:
+        region=page.get_by_role('region',name='Resident and household directory' if kind=='resident' else 'Field worker directory',exact=True)
+        region.evaluate('el => el.scrollLeft=el.scrollWidth')
+        button=region.locator('[data-reset-password]').first
+        button.scroll_into_view_if_needed()
+        button.click()
+        expect(page.locator('#reset-confirm-modal')).to_be_visible()
+        expect(page.locator('#reset-confirm-submit')).to_be_disabled()
+        page.locator('#reset-confirm-cancel').click()
+        expect(button).to_be_focused()
+    assert errors==[]
