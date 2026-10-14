@@ -61,6 +61,8 @@ function setTableRowHtml(row, html) {
 let jwtToken = localStorage.getItem('admin_jwt');
 let sessionGeneration = 0;
 let dataRequestGeneration = 0;
+let registrationRequestGeneration = 0;
+let currentRegistrationController = null;
 let loaderRequestGeneration = 0;
 let isServerOnline = false;
 let hasAdminData = false;
@@ -152,6 +154,9 @@ function invalidateAdminRequests() {
   renderedDirectoryData = null;
   renderedBillingData = null;
   currentFetchController?.abort(new DOMException('Session ended', 'AbortError'));
+  registrationRequestGeneration++;
+  currentRegistrationController?.abort(new DOMException('Session ended', 'AbortError'));
+  currentRegistrationController = null;
   currentFetchController = null;
   isFetchingData = false;
 }
@@ -711,7 +716,8 @@ async function fetchData(silent = false) {
       document.getElementById('admin-db-offline-banner').style.display = 'none';
       document.getElementById('btn-login-data-retry').style.display = 'none';
       document.getElementById('login-error').style.display = 'none';
-      loadRegistrations(canRender, fetchController.signal);
+      // Review requests have their own lifetime; routine polling must not starve them.
+      loadRegistrations(!silent);
       // The protected Admin-only response validates a stored or fresh session.
       document.getElementById('login-screen').style.display = 'none';
     } else if (res.status === 403) {
@@ -1872,24 +1878,36 @@ document.getElementById('billing-config-form').addEventListener('submit', async 
   } catch (_) { if (isCurrent()) status.textContent = 'Rates were not confirmed. Check your session, connection and values, then retry.'; }
   finally { button.disabled = false; }
 });
-async function loadRegistrations(isCurrentRequest = () => true, signal) {
+async function loadRegistrations(force = false) {
   const token = jwtToken;
   const generation = sessionGeneration;
-  const isCurrent = () => isCurrentAdminSession(token, generation) && isCurrentRequest();
+  if (!isCurrentAdminSession(token, generation)) return;
+  if (currentRegistrationController && !force) return;
+  currentRegistrationController?.abort(new DOMException('Registrations superseded', 'AbortError'));
+  const controller = new AbortController();
+  const requestGeneration = ++registrationRequestGeneration;
+  currentRegistrationController = controller;
+  const isCurrent = () => isCurrentAdminSession(token, generation) &&
+    requestGeneration === registrationRequestGeneration;
+  const loadStatus = document.getElementById('registration-load-status');
+  loadStatus.textContent = document.getElementById('registrations-tbody').rows.length
+    ? 'Refreshing resident registrations...' : 'Loading resident registrations...';
   try {
-    const response = await apiFetch('/api/residents/registrations', {headers: {Authorization: 'Bearer ' + token}, signal, isCurrent});
+    const response = await apiFetch('/api/residents/registrations', {headers: {Authorization: 'Bearer ' + token}, signal: controller.signal, isCurrent});
     if (!isCurrent()) return;
     if (!response.ok) throw new Error('Registrations unavailable');
-    const data = await response.json();
-    if (!isCurrent()) return;
+    const data = await readAdminResponse(response, controller, 30000);
+    if (!isCurrent() || controller.signal.aborted) return;
     if (!Array.isArray(data.registrations)) throw new Error('Invalid registrations response');
     document.getElementById('registrations-tbody').innerHTML = data.registrations.map(row => `<tr>
     <td>${escapeHtml(row.house_id)}</td><td>${escapeHtml(row.family_head_name)}${row.possible_same_name ? '<br><strong>Possible same name ? review</strong>' : ''}${row.possible_duplicate_contact ? '<br><strong>Legacy duplicate contact ? review</strong>' : ''}</td>
     <td>${escapeHtml(row.contact_no)}</td><td>${escapeHtml(row.purok_name)}</td><td>${escapeHtml(row.account_status)}</td>
     <td class="no-print">${row.account_status === 'pending' ? `<button type="button" class="btn" data-review-id="${escapeHtml(row.house_id)}" data-review-status="approved">Approve</button> <button type="button" data-review-id="${escapeHtml(row.house_id)}" data-review-status="rejected">Reject</button>` : 'Reviewed'}</td></tr>`).join('') || '<tr><td colspan="6">No resident registrations.</td></tr>';
-    document.getElementById('registration-load-status').textContent = '';
+    loadStatus.textContent = '';
   } catch (_) {
-    if (isCurrent()) document.getElementById('registration-load-status').textContent = 'Registrations could not refresh. Any displayed registrations may be out of date. Retry by refreshing Admin data.';
+    if (isCurrent()) loadStatus.textContent = 'Registrations could not refresh. Any displayed registrations may be out of date. Retry by refreshing Admin data.';
+  } finally {
+    if (currentRegistrationController === controller) currentRegistrationController = null;
   }
 }
 document.getElementById('registrations-tbody').addEventListener('click', async event => {
@@ -1907,7 +1925,7 @@ document.getElementById('registrations-tbody').addEventListener('click', async e
     const response = await apiFetch('/api/residents/review', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken}, body: JSON.stringify({house_id: button.dataset.reviewId, status: button.dataset.reviewStatus})});
     if (!isCurrent()) return;
     status.textContent = response.ok ? 'Registration ' + button.dataset.reviewStatus + '.' : 'Review was not saved. Refresh and check the current status.';
-    await fetchData(true);
+    await Promise.all([fetchData(true), loadRegistrations(true)]);
   } catch (_) { if (isCurrent()) status.textContent = 'Review was not confirmed. Check connection and refresh before retrying.'; }
   finally { buttons.forEach(item => item.disabled = false); }
 });

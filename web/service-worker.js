@@ -1,4 +1,4 @@
-const CACHE_NAME = 'waterhall-shell-v12-password-reset';
+const CACHE_NAME = 'waterhall-shell-v13-registration-receipt';
 const SHELL = ['/ui-display.js', '/monitoring.css', '/landing.html', '/landing.css', '/push-client.js', '/index.html', '/app.js', '/styles.css', '/mobile.css', '/native-store.js', '/mobile-keyboard.js', '/logo.png', '/manifest.json'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

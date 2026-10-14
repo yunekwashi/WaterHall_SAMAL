@@ -2139,6 +2139,15 @@ class AppController {
             'purok': (document.getElementById('reg-res-purok') as SelectElement).value,
             'password': read('reg-password'), 'verify_password': read('reg-verify-password')}));
         final data = json.decode(xhr.responseText!);
+        // Only the created, committed pending-account receipt confirms submission.
+        if (xhr.status != 201 || data is! Map || data['status'] != 'success' ||
+            data['account_status'] != 'pending' || data['house_id'] is! String ||
+            !RegExp(r'^HH-[1-9][0-9]{0,9}$').hasMatch(data['house_id'] as String) ||
+            data['account_number'] is! String ||
+            !RegExp(r'^[A-Za-z0-9][A-Za-z0-9-]{0,99}$').hasMatch(data['account_number'] as String) ||
+            data['resident_id'] != data['account_number']) {
+          throw ApiFailure(status: xhr.status);
+        }
         form.reset();
         status?.text = 'Registration submitted. Resident ID: ${data['house_id']}. Meter ID: ${data['account_number']}. Wait for Admin approval before signing in.';
       } on ApiFailure catch (failure) {
