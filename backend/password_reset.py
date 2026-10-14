@@ -65,7 +65,8 @@ def issue_temporary_password():
         db.execute('UPDATE password_resets SET used = 1 WHERE account_id = ? AND kind = ?', (account, kind))
         db.execute('INSERT INTO password_resets (token_hash, account_id, kind, expires_at) VALUES (?, ?, ?, ?)',
                    (marker(hashed), account, kind, expires_at))
-    audit.info('temporary_password_issued actor=%s role=%s account=%s', who['id'], role, account)
+    audit.info('temporary_password_issued actor=%s role=%s account=%s at=%s result=success',
+               who['id'], role, account, datetime.datetime.now(datetime.timezone.utc).isoformat())
     response = jsonify(status='success', temporary_password=temporary, account_id=account,
                        role=role, password_change_required=True, expires_at=expires_at,
                        expires_in_hours=TEMPORARY_HOURS)

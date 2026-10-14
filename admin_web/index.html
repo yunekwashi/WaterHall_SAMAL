@@ -6,6 +6,7 @@
   <title>WATERHALL | Admin Portal</title>
   <link rel="icon" type="image/png" href="/admin/logo.png" />
   <link rel="stylesheet" href="/admin/styles.css?v=26" />
+  <link rel="stylesheet" href="/admin/password-reset.css?v=1" />
   <link rel="stylesheet" href="/admin/sensor-history.css?v=1" />
   <script src="/admin/vendor/purify.min.js"></script>
   <!-- Chart.js for premium data visualization (vendored locally to satisfy strict CSP connect-src) -->
@@ -244,19 +245,19 @@
 
     <!-- Directory Tab -->
     <div id="tab-directory" class="tab-content">
-      <section class="glass-panel">
-        <h2>Reset account password</h2>
-        <p>Verify account ownership through the authorized barangay process before resetting. The temporary password expires in 24 hours and requires a new password at sign-in. Existing sessions will be invalidated.</p>
+      <section class="glass-panel" id="reset-management" aria-labelledby="reset-management-title">
+        <h2 id="reset-management-title">Account password resets</h2>
+        <p>Find a Worker or Resident here, or use Reset Password beside their directory entry. Verify account ownership through the approved barangay process before proceeding.</p>
         <form id="admin-issue-recovery-form">
-          <div class="export-filters">
-            <label for="issue-recovery-role">Role</label><select id="issue-recovery-role"><option value="resident">Resident</option><option value="worker">Worker</option></select>
-            <label for="issue-recovery-account">Account</label><select id="issue-recovery-account" required><option value="">Select the verified account</option></select>
-            <button class="btn" type="submit" id="issue-recovery-submit">Reset Password</button>
+          <div class="reset-controls">
+            <div class="form-group"><label for="issue-recovery-role">Account role</label><select id="issue-recovery-role"><option value="resident">Resident</option><option value="worker">Worker</option></select></div>
+            <div class="form-group"><label for="reset-account-search">Find account</label><input type="search" id="reset-account-search" placeholder="Name, username or household code" maxlength="100" autocomplete="off"></div>
+            <div class="form-group"><label for="issue-recovery-account">Account</label><select id="issue-recovery-account" required><option value="">Select an account</option></select></div>
           </div>
-          <label><input id="reset-identity-verified" type="checkbox" required> I verified this account owner's identity.</label>
+          <dl id="reset-selected-account" class="reset-account-details" hidden></dl>
+          <button class="btn" type="submit" id="issue-recovery-submit" disabled>Reset Password</button>
         </form>
         <p id="issue-recovery-result" role="status" hidden></p>
-        <button type="button" class="btn btn-secondary" id="issue-recovery-clear" hidden>Clear temporary password</button>
       </section>
       <section class="glass-panel"><h2>Resident registrations</h2><p>Review pending accounts. Matching names are a review flag; accounts are never merged automatically.</p><p id="registration-review-status" role="status"></p><p id="registration-load-status" role="status"></p>
         <div class="table-scroll table-wide" role="region" aria-label="Resident registrations" tabindex="0"><table><thead><tr><th>Resident ID</th><th>Name / review flags</th><th>Contact</th><th>Purok</th><th>Status</th><th class="no-print">Review</th></tr></thead><tbody id="registrations-tbody"></tbody></table></div>
@@ -798,9 +799,36 @@
     </div>
   </div>
 
+  <div id="reset-confirm-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title" tabindex="-1" hidden>
+    <div class="modal reset-dialog">
+      <h2 id="reset-confirm-title">Reset Account Password</h2>
+      <div class="reset-dialog-body">
+      <p>You are about to reset the password for this account. Confirm that the account owner's identity has been verified before proceeding.</p>
+      <dl id="reset-confirm-account" class="reset-account-details"></dl>
+      <p>The previous password and existing sessions will stop working. The temporary password expires in 24 hours and requires a new personal password at sign-in.</p>
+      <label class="reset-verification"><input type="checkbox" id="reset-identity-verified"> <span>I have verified the account owner's identity through the approved barangay process.</span></label>
+      <p id="reset-confirm-error" role="alert" hidden></p>
+      </div>
+      <div class="reset-actions"><button type="button" class="btn btn-secondary" id="reset-confirm-cancel">Cancel</button><button type="button" class="btn" id="reset-confirm-submit" disabled>Confirm Reset</button></div>
+    </div>
+  </div>
+  <div id="reset-success-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-success-title" tabindex="-1" hidden>
+    <div class="modal reset-dialog">
+      <h2 id="reset-success-title">Password Reset Successful</h2>
+      <div class="reset-dialog-body">
+      <dl id="reset-success-account" class="reset-account-details"></dl>
+      <div class="form-group"><label for="reset-temporary-password">Temporary Password</label><input id="reset-temporary-password" type="password" readonly autocomplete="off" spellcheck="false"></div>
+      <p>This temporary password expires in 24 hours. Deliver it privately to the verified owner, who must create a new password at sign-in.</p>
+      <p>This is the only display of this password. Closing this dialog clears it; if lost, perform another authorized reset. The display also clears after two minutes.</p>
+      <p id="reset-copy-status" role="status"></p>
+      </div>
+      <div class="reset-actions"><button type="button" class="btn btn-secondary" id="reset-password-toggle" aria-pressed="false">Show Password</button><button type="button" class="btn btn-secondary" id="reset-password-copy">Copy Temporary Password</button><button type="button" class="btn" id="reset-password-done">Done</button></div>
+    </div>
+  </div>
+
   <script src="/ui-display.js?v=1.2.4-tds-index"></script>
   <script src="/admin/app.js?v=34-sensor-history"></script>
-  <script src="/admin/recovery-tools.js?v=1.3.1"></script>
+  <script src="/admin/recovery-tools.js?v=1.3.2-admin-reset"></script>
   <script src="/admin/sensor-history.js?v=1"></script>
 </body>
 </html>

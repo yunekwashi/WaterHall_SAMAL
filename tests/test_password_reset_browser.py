@@ -118,15 +118,16 @@ def test_admin_reset_identity_confirmation_private_result(browser_page):
     page.locator('#issue-recovery-account').select_option('worker')
     expect(page.locator('#issue-recovery-account')).to_contain_text('worker — worker')
     page.locator('#issue-recovery-submit').click()
-    assert page.locator('#reset-identity-verified').evaluate('e=>e.validity.valueMissing')
-    page.locator('#reset-identity-verified').check()
-    page.once('dialog',lambda d:d.dismiss());page.locator('#issue-recovery-submit').click()
-    expect(page.locator('#issue-recovery-result')).to_be_hidden()
+    expect(page.locator('#reset-confirm-submit')).to_be_disabled()
+    page.locator('#reset-confirm-cancel').click()
+    expect(page.locator('#reset-confirm-modal')).to_be_hidden()
     with get_db() as db:
         db.execute('SELECT COUNT(*) AS n FROM password_resets');assert db.fetchone()['n']==0
-    page.once('dialog',lambda d:d.accept());page.locator('#issue-recovery-submit').click()
-    expect(page.locator('#issue-recovery-result')).to_contain_text('Temporary password for worker:')
-    output=page.locator('#issue-recovery-result').inner_text()
-    assert output not in page.evaluate('JSON.stringify(localStorage)')
-    page.locator('#issue-recovery-clear').click();expect(page.locator('#issue-recovery-result')).to_be_hidden()
+    page.locator('#issue-recovery-submit').click();page.locator('#reset-identity-verified').check()
+    page.locator('#reset-confirm-submit').click()
+    expect(page.locator('#reset-success-modal')).to_be_visible()
+    output=page.locator('#reset-temporary-password').input_value()
+    assert len(output)>=12 and output not in page.evaluate('JSON.stringify(localStorage)')
+    page.locator('#reset-password-done').click();expect(page.locator('#reset-success-modal')).to_be_hidden()
+    assert page.locator('#reset-temporary-password').input_value()==''
     assert errors==[]
