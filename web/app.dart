@@ -296,7 +296,6 @@ class AppController {
     final loginBtn = document.getElementById('btn-login') as ButtonElement?;
     final empIdInput = document.getElementById('employee-id') as InputElement?;
     final passwordInput = document.getElementById('login-password') as InputElement?;
-    final zoneSelect = document.getElementById('zone-assignment') as SelectElement?;
     final loginErrorMsg = document.getElementById('login-error-msg');
 
     final btnToggleWebPw = document.getElementById('btn-toggle-web-pw');
@@ -327,7 +326,6 @@ class AppController {
       e.preventDefault();
       final empId = empIdInput?.value?.trim() ?? '';
       final password = passwordInput?.value ?? '';
-      final selectedZone = zoneSelect?.value ?? '';
 
       final uri = Uri.parse(window.location.href);
       final role = uri.queryParameters['role'];
@@ -397,7 +395,6 @@ class AppController {
             'worker_id': id,
             'name': name,
             'role': 'Collector',
-            'selected_zone': selectedZone.isNotEmpty ? selectedZone : 'Purok 1',
           };
           window.localStorage['waterhall_session'] = json.encode(currentWorker);
           window.localStorage.remove('waterhall_resident_session');
@@ -515,7 +512,6 @@ class AppController {
       final newLog = {
         'house_id': activeHouseholdId,
         'worker_id': currentWorker!['worker_id'],
-        'purok': currentWorker!['selected_zone'],
         'description': descText,
         'status_resolved': resolvedChecked,
         'date': DateTime.now().toUtc().toIso8601String()
@@ -889,7 +885,7 @@ class AppController {
 
     final dashTitle = document.getElementById('dash-worker-title');
     if (dashTitle != null) {
-      dashTitle.text = 'Field Terminal: ${currentWorker!['selected_zone']}';
+      dashTitle.text = 'WaterHall Field Terminal';
     }
 
     final latestAnnouncement = db.getLatestAnnouncement(role: 'worker');
@@ -1008,7 +1004,7 @@ class AppController {
     }
 
     // Update Interactive SVG Map Pins
-    final puroks = ['Purok 1', 'Purok 2', 'Purok 3', 'Purok 4', 'Purok 5', 'Purok 6'];
+    final puroks = List.generate(8, (i) => 'Purok ${i + 1}');
     puroks.asMap().forEach((i, pur) {
       final pinId = 'pin-p${i + 1}';
       final pinEl = document.getElementById(pinId);
@@ -1049,14 +1045,12 @@ class AppController {
       puroks.forEach((pur) {
         final totalMeters = households.where((h) => h['purok'] == pur).length;
         final zoneLeaks = households.where((h) => h['purok'] == pur && h['current_leak_status'] == 'leak').length;
-        final isAssigned = (currentWorker!['selected_zone'] == pur);
 
         final card = document.createElement('div');
-        card.className = 'zone-card ${isAssigned ? 'assigned' : ''}';
+        card.className = 'zone-card';
         card.innerHtml = '''
           <div class="zone-card-header">
             <span class="zone-name">$pur</span>
-            ${isAssigned ? '<span class="zone-badge">ASSIGNED</span>' : ''}
           </div>
           <div class="zone-stats">
             <span>Meters: <strong>$totalMeters</strong></span>
@@ -1372,12 +1366,10 @@ class AppController {
 
     final workerNameEl = document.getElementById('worker-name');
     final workerRoleEl = document.getElementById('worker-role');
-    final workerZoneLbl = document.getElementById('worker-zone-lbl');
     final workerAvatarEl = document.getElementById('worker-avatar');
 
     if (workerNameEl != null) workerNameEl.text = currentWorker!['name'];
     if (workerRoleEl != null) workerRoleEl.text = currentWorker!['role'];
-    if (workerZoneLbl != null) workerZoneLbl.text = 'Assigned Zone: ${currentWorker!['selected_zone']}';
 
     if (workerAvatarEl != null) {
       final List<String> parts = currentWorker!['name'].toString().split(' ');

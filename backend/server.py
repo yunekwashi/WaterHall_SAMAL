@@ -12,7 +12,7 @@ from backend import config
 from backend import turbidity_index as local_turbidity
 from backend import tds_index as local_tds
 from backend import sensor_history
-from backend.security import principal, require_role, claims_for, text, password, number, identifier, timestamp, validate_push
+from backend.security import principal, require_role, claims_for, staff_role, text, password, number, identifier, timestamp, validate_push
 from backend.photos import save_photo, photo_for_client, report_photo_metadata
 from backend.collections import synchronize
 from backend.notifications import enqueue, drain
@@ -247,7 +247,9 @@ def login():
     if kind == 'resident' and account['account_status'] != 'approved':
         return jsonify(msg='Registration is pending Admin approval.' if account['account_status'] == 'pending'
                        else 'Registration was rejected. Contact the administrator.', account_status=account['account_status']), 403
-    role = 'resident' if kind == 'resident' else ('admin' if account['role'] == 'Admin' else 'worker')
+    role = 'resident' if kind == 'resident' else staff_role(account['role'])
+    if role is None:
+        return jsonify(msg='Account is not authorized. Contact the administrator.'), 403
     if password_reset.expired(temporary):
         return jsonify(msg='Temporary password expired. Contact your administrator.'), 401
     claims = claims_for(account['password_hash'], kind)
@@ -420,7 +422,7 @@ def get_all_data():
                     'worker_id': w_row['username'],
                     'name': w_row['full_name'],
                     'role': w_row['role'],
-                    'zone': w_row.get('assigned_zone', 'Purok 1')
+                    'zone': w_row.get('assigned_zone')
                 })
 
         db.execute('''

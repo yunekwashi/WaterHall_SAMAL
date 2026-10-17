@@ -953,7 +953,7 @@ function renderDirectory(data) {
   const workTbody = document.getElementById('worker-tbody');
   workTbody.innerHTML = '';
   if (!data.workers || data.workers.length === 0) {
-    workTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">No workers registered yet. Click "+ Register Worker" to add one.</td></tr>';
+    workTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:32px;">No workers registered yet. Click "+ Register Worker" to add one.</td></tr>';
   } else {
     data.workers.forEach(w => {
       const tr = document.createElement('tr');
@@ -962,7 +962,6 @@ function renderDirectory(data) {
         '<td><span class="badge worker">' + escapeHtml(w.worker_id) + '</span></td>' +
         '<td style="font-weight:600;">' + escapeHtml(w.name) + '</td>' +
         '<td>' + escapeHtml(w.role) + '</td>' +
-        '<td style="color:var(--text-muted);">' + (w.zone || '—') + '</td>' +
         '<td class="no-print" style="text-align:center;">' + deleteBtn + '</td>');
       workTbody.appendChild(tr);
     });
@@ -1190,13 +1189,21 @@ document.getElementById('btn-work-save').addEventListener('click', async () => {
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
       if (!isCurrent()) return;
+      const workerId = data.worker_id || data.employee_id;
+      if (data.status !== 'success' || data.role !== 'Collector' ||
+          typeof workerId !== 'string' || !/^EMP-\d{3,}$/.test(workerId) ||
+          (data.worker_id && data.employee_id && data.worker_id !== data.employee_id)) {
+        alert('Worker registration could not be confirmed. Refresh the directory before retrying.');
+        fetchData(false);
+        return;
+      }
       document.getElementById('modal-worker').classList.remove('active');
       document.getElementById('work-name').value = '';
       document.getElementById('work-contact').value = '';
       document.getElementById('work-password').value = '';
       document.getElementById('work-verify-password').value = '';
       fetchData(false);
-      alert(`Field worker registered successfully!\nEmployee ID: ${data.worker_id || data.employee_id}`);
+      alert(`Field worker registered successfully!\nEmployee ID: ${workerId}`);
     } else {
       const err = await res.json().catch(() => ({}));
       if (!isCurrent()) return;

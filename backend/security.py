@@ -53,6 +53,11 @@ def timestamp(value):
         abort(400, description='Invalid date')
 
 
+def staff_role(value):
+    # Only existing authorized staff roles grant access, never an unknown state.
+    return {'Admin': 'admin', 'Collector': 'worker'}.get(value)
+
+
 def principal():
     if hasattr(g, 'principal'):
         return g.principal
@@ -69,12 +74,12 @@ def principal():
         elif kind == 'staff':
             db.execute('SELECT user_id, username, password_hash, full_name, role FROM users WHERE username = ?', (identity,))
             row = db.fetchone()
-            role = 'admin' if row and row['role'] == 'Admin' else 'worker'
+            role = staff_role(row['role']) if row else None
         else:
             abort(401, description='Please sign in again')
         from backend.password_reset import temporary_state, expired
         state = temporary_state(db, identity, kind, row['password_hash']) if row else None
-    if not row or (kind == 'resident' and row['account_status'] != 'approved') or claims.get('credential') != hashlib.sha256(row['password_hash'].encode()).hexdigest():
+    if not row or role is None or (kind == 'resident' and row['account_status'] != 'approved') or claims.get('credential') != hashlib.sha256(row['password_hash'].encode()).hexdigest():
         abort(401, description='Please sign in again')
     if expired(state):
         abort(401, description='Temporary password expired. Contact your administrator.')

@@ -70,9 +70,16 @@ def create_worker(data):
     name, contact, hashed = fields(data)
     if data.get('role', 'Collector') != 'Collector':
         abort(400, description='Create administrators with the secure CLI')
-    zone = text(data.get('zone') or data.get('assigned_zone') or 'Purok 1', 'assigned zone', 80)
     with get_db() as db:
         registration_lock(db)
+        db.execute('SELECT contact_no FROM users')
+        for existing_contact in db.fetchall():
+            try:
+                duplicate = normalize_contact(existing_contact['contact_no']) == contact
+            except ValueError:
+                duplicate = False
+            if duplicate:
+                abort(409, description='Contact number is already registered to a staff account.')
         db.execute("SELECT username FROM users WHERE LOWER(username) LIKE 'emp-%'")
         existing = {r['username'].upper() for r in db.fetchall()}
         seq = 1
@@ -80,7 +87,7 @@ def create_worker(data):
             seq += 1
         worker = f'EMP-{seq:03d}'
         db.execute('''INSERT INTO users (username, password_hash, full_name, role, assigned_zone, contact_no)
-                      VALUES (?, ?, ?, 'Collector', ?, ?)''', (worker, hashed, name, zone, contact))
+                      VALUES (?, ?, ?, 'Collector', NULL, ?)''', (worker, hashed, name, contact))
     return {'status': 'success', 'worker_id': worker, 'employee_id': worker, 'role': 'Collector'}
 
 

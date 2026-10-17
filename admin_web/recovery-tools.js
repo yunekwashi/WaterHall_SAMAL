@@ -217,14 +217,15 @@
     const indexed = new Map(records().map(row => [row.role + ':' + row.id, row]));
     for (const [id, kind] of [['resident-tbody','resident'],['worker-tbody','worker']]) {
       for (const tr of $(id).rows) {
-        if (tr.cells.length !== 5 || tr.querySelector('[data-reset-password]')) continue;
+        const expectedCells = kind === 'worker' ? 4 : 5;
+        if (tr.cells.length !== expectedCells || tr.querySelector('[data-reset-password]')) continue;
         const row = indexed.get(kind + ':' + tr.cells[0].textContent.trim());
         if (!eligible(row)) continue;
         const button = document.createElement('button');
         button.type = 'button'; button.className = 'btn btn-secondary';
         button.textContent = 'Reset Password'; button.dataset.resetPassword = row.id; button.dataset.resetRole = kind;
         button.setAttribute('aria-label', 'Reset password for ' + row.name + ' (' + row.id + ')');
-        tr.cells[4].prepend(button);
+        tr.cells[tr.cells.length - 1].prepend(button);
       }
     }
     refreshAccounts();
