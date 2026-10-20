@@ -442,12 +442,6 @@
               <option value="Cash">Cash</option>
             </select>
           </div>
-          <div class="export-buttons">
-            <button type="button" class="btn-export btn-csv" id="btn-export-col-csv" title="Export CSV file">CSV</button>
-            <button type="button" class="btn-export btn-xlsx" id="btn-export-col-xlsx" title="Export Excel spreadsheet">Excel (XLSX)</button>
-            <button type="button" class="btn-export btn-pdf" id="btn-export-col-pdf" title="Export PDF document">PDF</button>
-            <button type="button" class="btn-export btn-print" id="btn-print-col" title="Print-friendly view">Print</button>
-          </div>
         </div>
         <div class="table-scroll table-wide" role="region" aria-label="Synchronized field collections" tabindex="0">
         <table>
@@ -495,16 +489,17 @@
             <input type="month" id="export-filter-bill-month" aria-label="Filter by Billing Month" style="max-width:140px;">
           </div>
           <div class="export-buttons">
-            <button type="button" class="btn-export btn-csv" id="btn-export-bill-csv" title="Export CSV file">CSV</button>
-            <button type="button" class="btn-export btn-xlsx" id="btn-export-bill-xlsx" title="Export Excel spreadsheet">Excel (XLSX)</button>
-            <button type="button" class="btn-export btn-pdf" id="btn-export-bill-pdf" title="Export PDF document">PDF</button>
             <button type="button" class="btn-export btn-print" id="btn-billing-print" aria-haspopup="menu" aria-expanded="false" aria-controls="billing-print-menu">Print <span class="billing-print-caret" aria-hidden="true"></span></button>
             <div id="billing-print-menu" class="billing-print-menu" role="menu" aria-label="Billing print options" hidden>
+              <button type="button" role="menuitem" tabindex="-1" id="btn-export-bill-pdf">Export PDF</button>
+              <button type="button" role="menuitem" tabindex="-1" id="btn-export-bill-xlsx">Export Excel (XLSX)</button>
+              <button type="button" role="menuitem" tabindex="-1" id="btn-export-bill-csv">Export CSV</button>
               <button type="button" role="menuitem" tabindex="-1" id="btn-print-billing-table">Print Billing Table</button>
               <button type="button" role="menuitem" tabindex="-1" id="btn-print-receipts">Print Receipt by Name</button>
               <button type="button" role="menuitem" tabindex="-1" id="btn-print-all-receipts">Print All Receipts</button>
             </div>
           </div>
+          <p id="billing-print-status" role="status" hidden></p>
         </div>
         <div class="table-scroll table-wide" role="region" aria-label="Billing statements" tabindex="0">
         <table>
@@ -831,10 +826,10 @@
   </div>
 
   <script src="/ui-display.js?v=1.2.4-tds-index"></script>
-  <link rel="stylesheet" href="/admin/receipts.css?v=2">
+  <link rel="stylesheet" href="/admin/receipts.css?v=3">
   <script src="/admin/app.js?v=37-receipt-preview"></script>
   <script src="/admin/recovery-tools.js?v=1.3.3-worker-all-puroks"></script>
   <script src="/admin/sensor-history.js?v=1"></script>
-  <script src="/admin/receipts.js?v=2"></script>
+  <script src="/admin/receipts.js?v=3"></script>
 </body>
 </html>

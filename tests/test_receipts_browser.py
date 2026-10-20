@@ -1,5 +1,8 @@
 import io
 import os
+import csv
+import zipfile
+import xml.etree.ElementTree as ET
 import pytest
 from pathlib import Path
 from pypdf import PdfReader
@@ -105,20 +108,23 @@ def test_changed_records_require_new_review_and_logout_clears_private_preview(br
 
 
 @pytest.mark.parametrize('width', [320, 390, 768, 1280])
-def test_single_print_dropdown_preserves_exports_and_filtered_table(browser_page, receipt_data, width):
+def test_single_six_action_print_dropdown_and_filtered_table(browser_page, receipt_data, width):
     page = browser_page[0]; page.set_viewport_size({'width': width, 'height': 850})
     before = snapshot(); open_billing(browser_page)
     page.locator('#export-filter-bill-status').select_option('Paid')
     expect(page.locator('#admin-billing-tbody tr')).to_have_count(5)
     original_table = page.locator('#admin-billing-tbody').inner_html()
     toolbar = page.locator('.export-toolbar').filter(has=page.locator('#btn-billing-print'))
-    assert toolbar.locator('button:visible').all_text_contents() == ['CSV', 'Excel (XLSX)', 'PDF', 'Print ']
+    assert toolbar.locator('button:visible').all_text_contents() == ['Print ']
+    assert page.locator('#tab-billing .export-buttons button:visible').all_text_contents() == ['Print ']
+    expect(page.locator('#btn-print-col')).to_have_count(0)
+    expect(page.locator('#btn-export-col-csv, #btn-export-col-xlsx, #btn-export-col-pdf')).to_have_count(0)
     expect(page.get_by_role('button', name='Receipts', exact=True)).to_have_count(0)
     trigger = page.locator('#btn-billing-print'); menu = page.locator('#billing-print-menu')
     trigger.click(); expect(trigger).to_have_attribute('aria-expanded', 'true')
     page.evaluate("document.querySelector('.main-content').dispatchEvent(new Event('scroll'))")
     expect(menu).to_be_visible()
-    assert menu.get_by_role('menuitem').all_text_contents() == ['Print Billing Table', 'Print Receipt by Name', 'Print All Receipts']
+    assert menu.get_by_role('menuitem').all_text_contents() == ['Export PDF', 'Export Excel (XLSX)', 'Export CSV', 'Print Billing Table', 'Print Receipt by Name', 'Print All Receipts']
     assert page.evaluate('window.printCalls') == 0
     box = menu.bounding_box()
     assert 0 <= box['x'] and box['x']+box['width'] <= width
@@ -177,12 +183,15 @@ def test_print_dropdown_keyboard_dismissal_and_session_cleanup(browser_page, rec
     page = open_billing(browser_page); before = snapshot()
     trigger = page.locator('#btn-billing-print'); menu = page.locator('#billing-print-menu')
     trigger.focus(); trigger.press('ArrowDown')
-    expect(page.locator('#btn-print-billing-table')).to_be_focused()
+    expect(page.locator('#btn-export-bill-pdf')).to_be_focused()
+    page.keyboard.press('ArrowDown'); expect(page.locator('#btn-export-bill-xlsx')).to_be_focused()
+    page.keyboard.press('ArrowDown'); expect(page.locator('#btn-export-bill-csv')).to_be_focused()
+    page.keyboard.press('ArrowDown'); expect(page.locator('#btn-print-billing-table')).to_be_focused()
     page.keyboard.press('ArrowDown'); expect(page.locator('#btn-print-receipts')).to_be_focused()
     page.keyboard.press('ArrowDown'); expect(page.locator('#btn-print-all-receipts')).to_be_focused()
-    page.keyboard.press('ArrowDown'); expect(page.locator('#btn-print-billing-table')).to_be_focused()
+    page.keyboard.press('ArrowDown'); expect(page.locator('#btn-export-bill-pdf')).to_be_focused()
     page.keyboard.press('End'); expect(page.locator('#btn-print-all-receipts')).to_be_focused()
-    page.keyboard.press('Home'); expect(page.locator('#btn-print-billing-table')).to_be_focused()
+    page.keyboard.press('Home'); expect(page.locator('#btn-export-bill-pdf')).to_be_focused()
     page.keyboard.press('Escape'); expect(menu).to_be_hidden(); expect(trigger).to_be_focused()
     trigger.press('ArrowUp'); expect(page.locator('#btn-print-all-receipts')).to_be_focused()
     page.keyboard.press('Tab'); expect(menu).to_be_hidden()
@@ -212,3 +221,134 @@ def test_billing_table_print_month_and_purok_scope_without_live_table_mutation(b
     page.evaluate("dispatchEvent(new Event('afterprint'))")
     expect(paper).to_be_empty()
     assert snapshot() == before and browser_page[3] == []
+
+
+def downloaded_report_text(path, fmt):
+    if fmt == 'pdf':
+        return '\n'.join(page.extract_text() for page in PdfReader(path).pages)
+    if fmt == 'xlsx':
+        with zipfile.ZipFile(path) as workbook:
+            assert workbook.testzip() is None
+            assert '[Content_Types].xml' in workbook.namelist()
+            root = ET.fromstring(workbook.read('xl/worksheets/sheet1.xml'))
+            return ' '.join(root.itertext())
+    with open(path, encoding='utf-8-sig', newline='') as stream:
+        rows = list(csv.reader(stream))
+    assert any('Bill ID' in row for row in rows)
+    return '\n'.join(','.join(row) for row in rows)
+
+
+@pytest.mark.parametrize('width', [390, 1280])
+@pytest.mark.parametrize('fmt,mime', [('pdf', 'application/pdf'),
+    ('xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+    ('csv', 'text/csv')])
+def test_print_menu_downloads_real_filtered_files(browser_page, receipt_data, tmp_path, width, fmt, mime):
+    page = browser_page[0]; page.set_viewport_size({'width': width, 'height': 850})
+    before = snapshot(); open_billing(browser_page)
+    for month, purok, included, excluded in [
+        ('2026-10', 'All', ['BILL-2', 'BILL-3', '170.25', '222.50'], ['BILL-4', 'BILL-5', '987.00']),
+        ('2026-09', 'Purok 1', ['BILL-4', '99.00'], ['BILL-2', 'BILL-3', 'BILL-5', '222.50']),
+        ('2026-10', 'Purok 8', ['No records found matching the specified filters'], ['BILL-2', 'BILL-3', 'BILL-5'])]:
+        page.locator('#export-filter-bill-month').fill(month)
+        page.locator('#export-filter-bill-purok').select_option(purok)
+        page.locator('#export-filter-bill-status').select_option('Paid')
+        page.locator('#btn-billing-print').click()
+        with page.expect_download() as download, page.expect_response('**/api/reports/export') as response:
+            page.locator(f'#btn-export-bill-{fmt}').click()
+        assert response.value.status == 200
+        assert mime in response.value.headers['content-type']
+        assert response.value.request.post_data_json == {'report_type': 'billing', 'format': fmt,
+            'filters': {'billing_month': month, 'purok': purok, 'payment_status': 'Paid'}}
+        assert download.value.failure() is None
+        assert download.value.suggested_filename.startswith('WaterHall_Billing_Records')
+        assert download.value.suggested_filename.endswith('.' + fmt)
+        destination = tmp_path / f'{month}-{purok}.{fmt}'
+        download.value.save_as(destination)
+        text = downloaded_report_text(destination, fmt)
+        assert all(value in text for value in included), text
+        assert not any(value in text for value in excluded), text
+        expect(page.locator('#billing-print-menu')).to_be_hidden()
+        expect(page.locator(f'#btn-export-bill-{fmt}')).to_be_enabled()
+        if os.getenv('TEST_ARTIFACT_DIR'):
+            target = Path(os.environ['TEST_ARTIFACT_DIR']); target.mkdir(parents=True, exist_ok=True)
+            (target / f'export-{width}-{month}-{purok}.{fmt}').write_bytes(destination.read_bytes())
+    assert page.evaluate('window.printCalls') == 0
+    assert snapshot() == before and browser_page[3] == []
+
+
+@pytest.mark.parametrize('kind', ['table', 'name', 'all'])
+def test_print_actions_invoke_native_browser_print(browser_page, receipt_data, kind):
+    browser_page[0].add_init_script('window.realBrowserPrint=window.print.bind(window)')
+    page = open_billing(browser_page); before = snapshot()
+    # Use the native Chrome function, not only a counter stub. Headless Chrome
+    # exposes beforeprint/afterprint; an OS print-dialog appearance remains manual.
+    page.evaluate('''()=>{
+      window.print=window.realBrowserPrint;
+      window.nativePrintEvents=[];
+      addEventListener('beforeprint',()=>window.nativePrintEvents.push({
+        paper:document.getElementById('receipt-print-area').textContent,
+        sheets:document.querySelectorAll('#receipt-print-area .receipt-sheet').length
+      }));
+    }''')
+    page.locator('#export-filter-bill-status').select_option('Paid')
+    page.locator('#btn-billing-print').click()
+    if kind == 'table': page.locator('#btn-print-billing-table').click()
+    else:
+        page.locator('#btn-print-all-receipts' if kind == 'all' else '#btn-print-receipts').click()
+        if kind == 'name':
+            page.locator('#receipt-search').fill('Same Resident')
+            page.locator('#receipt-matches [data-house-id="HH-2"]').click()
+            page.locator('#receipt-preview-button').click()
+            expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(1)
+        else:
+            expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(2)
+            expect(page.locator('#receipt-print')).to_be_disabled()
+            page.locator('#receipt-bulk-confirm').check()
+        page.locator('#receipt-print').click()
+    page.wait_for_function('()=>window.nativePrintEvents.length===1')
+    event = page.evaluate('window.nativePrintEvents[0]')
+    assert '222.50' in event['paper'] and '987.00' not in event['paper']
+    assert event['sheets'] == {'table': 0, 'name': 1, 'all': 2}[kind]
+    assert snapshot() == before and browser_page[3] == []
+
+
+def test_print_menu_opens_before_billing_data_ready_and_receipts_still_load(browser_page, receipt_data):
+    page = open_billing(browser_page); before = snapshot()
+    page.evaluate('hasAdminData=false')
+    page.locator('#btn-billing-print').click()
+    expect(page.locator('#billing-print-menu')).to_be_visible()
+    expect(page.locator('#btn-print-billing-table')).to_be_disabled()
+    expect(page.locator('#billing-print-status')).to_contain_text('Billing table data is not ready')
+    page.keyboard.press('End'); page.keyboard.press('ArrowUp')
+    expect(page.locator('#btn-print-receipts')).to_be_focused()
+    page.keyboard.press('ArrowUp')
+    expect(page.locator('#btn-export-bill-csv')).to_be_focused()
+    page.locator('#btn-print-all-receipts').click()
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(2)
+    page.locator('#receipt-cancel').click()
+    page.evaluate('hasAdminData=true')
+    page.locator('#btn-billing-print').click()
+    expect(page.locator('#btn-print-billing-table')).to_be_enabled()
+    expect(page.locator('#billing-print-status')).to_be_hidden()
+    assert snapshot() == before and browser_page[3] == []
+
+
+def test_print_menu_scroll_short_viewport_and_reopen(browser_page, receipt_data):
+    page = open_billing(browser_page)
+    page.set_viewport_size({'width': 320, 'height': 360})
+    trigger = page.locator('#btn-billing-print'); menu = page.locator('#billing-print-menu')
+    trigger.click(); expect(menu).to_be_visible()
+    box = menu.bounding_box()
+    assert box['y'] >= 0 and box['y'] + box['height'] <= 360
+    menu.hover(); page.mouse.wheel(0, 100)
+    expect(menu).to_be_visible()
+    page.keyboard.press('End')
+    expect(page.locator('#btn-print-all-receipts')).to_be_focused()
+    page.keyboard.press('Escape'); expect(menu).to_be_hidden()
+    trigger.click(); expect(menu).to_be_visible()
+    # Mobile uses document scrolling; desktop uses the main-content scroller.
+    page.evaluate("()=>{document.querySelector('.main-content').scrollTop=0;window.scrollTo(0,0);}")
+    expect(menu).to_be_hidden()
+    trigger.click(); expect(menu).to_be_visible()
+    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+    assert browser_page[3] == []

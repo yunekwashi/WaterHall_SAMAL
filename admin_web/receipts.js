@@ -11,6 +11,10 @@
   const printTrigger = document.getElementById('btn-billing-print');
   const printMenu = document.getElementById('billing-print-menu');
   const printOptions = Array.from(printMenu.querySelectorAll('[role="menuitem"]'));
+  const printStatus = document.getElementById('billing-print-status');
+  const billingTableButton = document.getElementById('btn-print-billing-table');
+  const setPrintStatus = text => { printStatus.textContent = text; printStatus.hidden = !text; };
+  const availablePrintOptions = () => printOptions.filter(button => !button.disabled);
   // Keep the menu clear of scrolling/backdrop-filter containers without changing them.
   document.body.append(printMenu);
   function closePrintMenu(restoreFocus = false) {
@@ -30,11 +34,14 @@
     return true;
   }
   function showPrintMenu(last = false) {
-    if (!jwtToken || !hasAdminData) return;
+    // Opening the menu must never silently depend on an asynchronous data load.
+    billingTableButton.disabled = !hasAdminData;
+    setPrintStatus(hasAdminData ? '' : 'Billing table data is not ready. Refresh billing data before printing the table; exports and receipts load records separately.');
     printMenu.hidden = false;
     if (!positionPrintMenu()) return;
     printTrigger.setAttribute('aria-expanded', 'true');
-    printOptions[last ? printOptions.length - 1 : 0].focus({preventScroll: true});
+    const options = availablePrintOptions();
+    options[last ? options.length - 1 : 0]?.focus({preventScroll: true});
   }
   printTrigger.addEventListener('click', () => printMenu.hidden ? showPrintMenu() : closePrintMenu());
   printTrigger.addEventListener('keydown', event => {
@@ -43,17 +50,18 @@
     } else if (event.key === 'Escape') closePrintMenu(true);
   });
   printMenu.addEventListener('keydown', event => {
-    const index = printOptions.indexOf(document.activeElement);
+    const options = availablePrintOptions();
+    const index = options.indexOf(document.activeElement);
     let next;
-    if (event.key === 'ArrowDown') next = (index + 1) % printOptions.length;
-    else if (event.key === 'ArrowUp') next = (index + printOptions.length - 1) % printOptions.length;
+    if (event.key === 'ArrowDown') next = (index + 1) % options.length;
+    else if (event.key === 'ArrowUp') next = (index + options.length - 1) % options.length;
     else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = printOptions.length - 1;
+    else if (event.key === 'End') next = options.length - 1;
     else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePrintMenu(true); return; }
     else if (event.key === 'Tab') { closePrintMenu(true); return; }
-    if (next !== undefined) { event.preventDefault(); printOptions[next].focus(); }
+    if (next !== undefined) { event.preventDefault(); options[next]?.focus(); }
   });
-  // Close before the existing table-print callback or either receipt action runs.
+  // All six actions own real handlers; dismiss the menu before dispatching them.
   printMenu.addEventListener('click', () => closePrintMenu(), true);
   document.addEventListener('pointerdown', event => {
     if (!printTrigger.contains(event.target) && !printMenu.contains(event.target)) closePrintMenu();
@@ -104,6 +112,7 @@
   };
   function close() {
     closePrintMenu();
+    setPrintStatus('');
     controller?.abort(); clearTimeout(debounce); searchVersion++;
     modal.hidden = true; modal.classList.remove('active');
     clearPreview(); matches.replaceChildren(); selectedHouse = null; selected.textContent = ''; name.value = ''; owner = null;
@@ -203,7 +212,10 @@
     finally { if (owner === own) { busy = false; enabled(); } }
   }
   function printBillingTable() {
-    if (!jwtToken || !hasAdminData) return;
+    if (!jwtToken || !hasAdminData) {
+      setPrintStatus('Billing data is not available. Refresh billing data and try again.'); return;
+    }
+    setPrintStatus('');
     clearPaper();
     const source = document.getElementById('admin-billing-tbody');
     const panel = source.closest('.glass-panel').cloneNode(true);
@@ -218,7 +230,9 @@
       (statusFilter === 'All' || row.status === statusFilter) &&
       (purokFilter === 'All' || households.get(row.house_id)?.purok === purokFilter));
     // Copy verified displayed values; never reconstruct amounts or mutate the live table.
-    if (records.some(row => !originalRows.has(row.bill_id))) return;
+    if (records.some(row => !originalRows.has(row.bill_id))) {
+      setPrintStatus('Billing records changed while preparing the table. Refresh billing data and try again.'); return;
+    }
     tbody.replaceChildren(...records.map(row => originalRows.get(row.bill_id).cloneNode(true)));
     if (!records.length) {
       const tr = create('tr'), td = create('td', 'No billing statements match the selected filters.');
@@ -232,11 +246,14 @@
     }
     paper.replaceChildren(header, context, panel);
     document.body.classList.add('billing-table-printing');
-    try { window.print(); } catch (_) { clearPaper(); }
+    try { window.print(); } catch (_) {
+      clearPaper(); setPrintStatus('The browser could not open printing. Please try again.');
+    }
   }
   document.getElementById('btn-print-billing-table').addEventListener('click', printBillingTable);
   function openReceipts(kind) {
-    if (!jwtToken || !hasAdminData) return;
+    if (!jwtToken) { setPrintStatus('Sign in as Administrator to load receipts.'); return; }
+    setPrintStatus('');
     closePrintMenu(); controller?.abort(); clearTimeout(debounce); searchVersion++;
     owner = {token: jwtToken, generation: sessionGeneration}; selectedHouse = null; busy = false;
     mode.value = kind; name.value = ''; selected.textContent = ''; matches.replaceChildren(); more.hidden = true;
