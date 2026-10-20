@@ -7,6 +7,60 @@
     return element;
   };
   const openButton = document.getElementById('btn-print-receipts');
+  const allButton = document.getElementById('btn-print-all-receipts');
+  const printTrigger = document.getElementById('btn-billing-print');
+  const printMenu = document.getElementById('billing-print-menu');
+  const printOptions = Array.from(printMenu.querySelectorAll('[role="menuitem"]'));
+  // Keep the menu clear of scrolling/backdrop-filter containers without changing them.
+  document.body.append(printMenu);
+  function closePrintMenu(restoreFocus = false) {
+    printMenu.hidden = true; printTrigger.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) printTrigger.focus({preventScroll: true});
+  }
+  function positionPrintMenu() {
+    if (printMenu.hidden) return false;
+    const anchor = printTrigger.getBoundingClientRect();
+    if (!anchor.width || anchor.bottom <= 0 || anchor.top >= innerHeight || anchor.right <= 0 || anchor.left >= innerWidth) {
+      closePrintMenu(); return false;
+    }
+    const menu = printMenu.getBoundingClientRect();
+    printMenu.style.left = Math.max(12, Math.min(anchor.right - menu.width, innerWidth - menu.width - 12)) + 'px';
+    const below = anchor.bottom + 8;
+    printMenu.style.top = (below + menu.height <= innerHeight - 12 ? below : Math.max(12, anchor.top - menu.height - 8)) + 'px';
+    return true;
+  }
+  function showPrintMenu(last = false) {
+    if (!jwtToken || !hasAdminData) return;
+    printMenu.hidden = false;
+    if (!positionPrintMenu()) return;
+    printTrigger.setAttribute('aria-expanded', 'true');
+    printOptions[last ? printOptions.length - 1 : 0].focus({preventScroll: true});
+  }
+  printTrigger.addEventListener('click', () => printMenu.hidden ? showPrintMenu() : closePrintMenu());
+  printTrigger.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); showPrintMenu(event.key === 'ArrowUp');
+    } else if (event.key === 'Escape') closePrintMenu(true);
+  });
+  printMenu.addEventListener('keydown', event => {
+    const index = printOptions.indexOf(document.activeElement);
+    let next;
+    if (event.key === 'ArrowDown') next = (index + 1) % printOptions.length;
+    else if (event.key === 'ArrowUp') next = (index + printOptions.length - 1) % printOptions.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = printOptions.length - 1;
+    else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePrintMenu(true); return; }
+    else if (event.key === 'Tab') { closePrintMenu(true); return; }
+    if (next !== undefined) { event.preventDefault(); printOptions[next].focus(); }
+  });
+  // Close before the existing table-print callback or either receipt action runs.
+  printMenu.addEventListener('click', () => closePrintMenu(), true);
+  document.addEventListener('pointerdown', event => {
+    if (!printTrigger.contains(event.target) && !printMenu.contains(event.target)) closePrintMenu();
+  });
+  document.addEventListener('scroll', event => { if (!printMenu.contains(event.target)) positionPrintMenu(); }, true);
+  window.addEventListener('resize', positionPrintMenu);
+
   const modal = create('div', undefined, 'modal-overlay receipt-modal');
   modal.id = 'receipt-modal'; modal.hidden = true;
   modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
@@ -38,7 +92,7 @@
   const paper = create('div'); paper.id = 'receipt-print-area'; document.body.append(paper);
   let owner, controller, debounce, selectedHouse, snapshot, scope, busy = false, searchVersion = 0, matchPage = 1, purok = 'All';
   const current = () => owner && owner.token === jwtToken && owner.generation === sessionGeneration && !modal.hidden;
-  const clearPaper = () => { document.body.classList.remove('receipt-printing'); paper.replaceChildren(); };
+  const clearPaper = () => { document.body.classList.remove('receipt-printing', 'billing-table-printing'); paper.replaceChildren(); };
   const clearPreview = () => {
     snapshot = null; scope = null; preview.replaceChildren(); check.checked = false;
     confirmation.hidden = true; print.disabled = true; clearPaper();
@@ -49,10 +103,11 @@
     for (const element of [mode, month, name, check]) element.disabled = busy;
   };
   function close() {
+    closePrintMenu();
     controller?.abort(); clearTimeout(debounce); searchVersion++;
     modal.hidden = true; modal.classList.remove('active');
     clearPreview(); matches.replaceChildren(); selectedHouse = null; selected.textContent = ''; name.value = ''; owner = null;
-    busy = false; openButton.focus({preventScroll: true});
+    busy = false; printTrigger.focus({preventScroll: true});
   }
   async function request(params) {
     if (!current()) throw new Error('Session changed');
@@ -147,14 +202,53 @@
     catch (_) { if (current() && owner === own) { clearPreview(); message.textContent = 'Unable to verify receipts. Check the period/connection and preview again.'; } }
     finally { if (owner === own) { busy = false; enabled(); } }
   }
-  openButton.addEventListener('click', () => {
+  function printBillingTable() {
     if (!jwtToken || !hasAdminData) return;
-    owner = {token: jwtToken, generation: sessionGeneration}; selectedHouse = null;
-    mode.value = 'name'; name.closest('label').hidden = false;
+    clearPaper();
+    const source = document.getElementById('admin-billing-tbody');
+    const panel = source.closest('.glass-panel').cloneNode(true);
+    const tbody = panel.querySelector('#admin-billing-tbody');
+    const monthFilter = document.getElementById('export-filter-bill-month').value;
+    const purokFilter = document.getElementById('export-filter-bill-purok').value;
+    const statusFilter = document.getElementById('export-filter-bill-status').value;
+    const households = new Map(globalData.households.map(row => [row.house_id, row]));
+    const originalRows = new Map(Array.from(source.rows).map(row => [row.cells[0]?.textContent.trim(), row]));
+    const records = globalData.billingRecords.filter(row =>
+      (!monthFilter || row.billing_month === monthFilter) &&
+      (statusFilter === 'All' || row.status === statusFilter) &&
+      (purokFilter === 'All' || households.get(row.house_id)?.purok === purokFilter));
+    // Copy verified displayed values; never reconstruct amounts or mutate the live table.
+    if (records.some(row => !originalRows.has(row.bill_id))) return;
+    tbody.replaceChildren(...records.map(row => originalRows.get(row.bill_id).cloneNode(true)));
+    if (!records.length) {
+      const tr = create('tr'), td = create('td', 'No billing statements match the selected filters.');
+      td.colSpan = 8; tr.append(td); tbody.append(tr);
+    }
+    const header = document.querySelector('.main-content > .header').cloneNode(true);
+    const context = create('p', `Billing month: ${monthFilter || 'All'} | Purok: ${purokFilter} | Status: ${statusFilter}`);
+    for (const copy of [header, panel]) {
+      copy.removeAttribute('id');
+      copy.querySelectorAll('[id]').forEach(element => element.removeAttribute('id'));
+    }
+    paper.replaceChildren(header, context, panel);
+    document.body.classList.add('billing-table-printing');
+    try { window.print(); } catch (_) { clearPaper(); }
+  }
+  document.getElementById('btn-print-billing-table').addEventListener('click', printBillingTable);
+  function openReceipts(kind) {
+    if (!jwtToken || !hasAdminData) return;
+    closePrintMenu(); controller?.abort(); clearTimeout(debounce); searchVersion++;
+    owner = {token: jwtToken, generation: sessionGeneration}; selectedHouse = null; busy = false;
+    mode.value = kind; name.value = ''; selected.textContent = ''; matches.replaceChildren(); more.hidden = true;
+    name.closest('label').hidden = kind === 'all';
     month.value = document.getElementById('export-filter-bill-month').value || new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit'}).format(new Date());
     purok = document.getElementById('export-filter-bill-purok').value || 'All';
-    clearPreview(); message.textContent = ''; modal.hidden = false; modal.classList.add('active'); enabled(); name.focus(); search();
-  });
+    clearPreview(); message.textContent = ''; modal.hidden = false; modal.classList.add('active'); enabled();
+    if (kind === 'all') loadPreview().then(() => { if (current()) (confirmation.hidden ? previewButton : check).focus(); });
+    else { name.focus(); search(); }
+  }
+  openButton.addEventListener('click', () => openReceipts('name'));
+  allButton.addEventListener('click', () => openReceipts('all'));
   name.addEventListener('input', () => { searchVersion++; controller?.abort(); matches.replaceChildren(); more.hidden = true; selectedHouse = null; selected.textContent = ''; clearPreview(); enabled(); clearTimeout(debounce); debounce = setTimeout(() => search(), 200); });
   mode.addEventListener('change', () => { searchVersion++; controller?.abort(); selectedHouse = null; selected.textContent = ''; matches.replaceChildren(); more.hidden = true; name.closest('label').hidden = mode.value === 'all'; clearPreview(); enabled(); if (mode.value === 'name') search(); });
   month.addEventListener('change', () => { selectedHouse = null; selected.textContent = ''; clearPreview(); enabled(); if (mode.value === 'name') search(); });

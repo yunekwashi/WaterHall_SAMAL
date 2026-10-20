@@ -1,3 +1,8 @@
+.billing-print-caret { display: inline-block; margin-left: 6px; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+.billing-print-menu[hidden] { display: none !important; }
+.billing-print-menu { position: fixed; z-index: 1500; display: grid; gap: 2px; width: 248px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; box-sizing: border-box; padding: 6px; background: #174969; color: var(--text-main); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,.3); }
+.billing-print-menu [role="menuitem"] { border: 0; border-radius: 6px; padding: 11px 12px; background: transparent; color: inherit; font: inherit; font-size: 13px; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.billing-print-menu [role="menuitem"]:hover, .billing-print-menu [role="menuitem"]:focus-visible { background: var(--surface-hover); outline: 2px solid var(--primary); outline-offset: -2px; }
 .receipt-modal[hidden], .receipt-modal [hidden] { display: none !important; }
 .receipt-modal .modal { width: min(900px, calc(100vw - 32px)); max-width: 900px; max-height: calc(100dvh - 32px); overflow: auto; }
 .receipt-modal h2, .receipt-modal p { margin-bottom: 16px; }
@@ -20,8 +25,9 @@
 #receipt-print-area { display: none; }
 @media (max-width: 600px) { .receipt-controls { grid-template-columns: minmax(0, 1fr); } .receipt-modal .modal { padding: 18px; } .receipt-sheet { padding: 8px; } }
 @media print {
-  body.receipt-printing > :not(#receipt-print-area) { display: none !important; }
-  body.receipt-printing #receipt-print-area { display: block !important; }
+  .billing-print-menu { display: none !important; }
+  body:is(.receipt-printing, .billing-table-printing) > :not(#receipt-print-area) { display: none !important; }
+  body:is(.receipt-printing, .billing-table-printing) #receipt-print-area { display: block !important; }
   #receipt-print-area .receipt-sheet { border: 0; color: #000; break-inside: avoid; break-after: page; border-radius: 0; padding: 0; }
   #receipt-print-area .receipt-sheet:last-child { break-after: auto; }
   #receipt-print-area .header { display: block; }

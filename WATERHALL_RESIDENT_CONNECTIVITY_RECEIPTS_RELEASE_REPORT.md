@@ -10,7 +10,7 @@ The existing 60-second foreground poll, sensor freshness handling and unchanged-
 Native cold-page errors require a Resident APK update. Hosted assets cover in-page connectivity and cached current-shell recovery. Resident 1.3.2+8 uses the same package and signing certificate as 1.3.1+7, with the production HTTPS origin. Native Retry reuses the controller; auth/photo/notification channels remain intact.
 
 ## Read-only Admin receipts
-Billing now has a separate Receipts action; original Print/CSV/Excel/PDF actions remain unchanged. The dialog supports full/partial/case-insensitive name search, explicit household selection for duplicate names, All within the chosen billing month and purok scope, record count, preview and bulk confirmation. Print revalidates the selected records; changed records require review again. Logout/session changes clear the preview.
+Billing now has one Print dropdown: Print Billing Table, Print Receipt by Name, and Print All Receipts. CSV/Excel/PDF controls remain unchanged. Billing Table prints a filtered copy of the existing markup using the selected billing month, purok and payment status; it does not change the live table. All Receipts opens the existing scoped preview directly. The dialog supports full/partial/case-insensitive name search, explicit household selection for duplicate names, All within the chosen billing month and purok scope, record count, preview and bulk confirmation. Print revalidates the selected records; changed records require review again. Logout/session changes clear the preview.
 
 GET /api/admin/receipts is authenticated and Admin-only. It validates filters and returns bounded pages (25 default, maximum 50). It reads existing Paid billing_records joined to water_meters, households, puroks and receiver users. Existing payment_collections supply recorded transaction IDs/methods. No duplicate storage, migration, rate recomputation, settlement or transaction mutation is introduced. Missing legacy dates/receiver/collection details show Not recorded; bill references are labelled Bill reference, not an invented official receipt number. Existing WaterHall print branding is retained.
 
@@ -61,3 +61,8 @@ Rollback: restore the previous verified Vercel deployment or revert this focused
 - web/resident-connection.css
 - web/resident_connection.dart
 - web/service-worker.js
+
+## Admin Print dropdown follow-up (2026-10-20)
+The prior generic table-print callback ignored the export filters. The focused follow-up uses a print-only copy of the existing table, with original displayed values and WaterHall print styling. Receipt format, search, duplicate-household handling, paid-record rules and bulk confirmation remain unchanged. The single dropdown supports keyboard navigation, Escape/outside dismissal, scroll-aware positioning and 320/390/768/1280px layouts. Cache versions for its CSS/JS advance to v2.
+
+Current follow-up checks: 25 backend receipt/export regressions passed; 16 browser tests passed, including PDF output, selected month/status/purok, empty selection, exact stored amounts, unchanged live table/payment snapshots, direct All preview, bulk confirmation, duplicate-name selection, keyboard and logout cleanup. No backend, schema, mobile, firmware or landing changes are included. Both APKs remain byte-identical; no rebuild is needed. Resident 1.3.2+8 physical phone verification is explicitly PENDING per the user.
