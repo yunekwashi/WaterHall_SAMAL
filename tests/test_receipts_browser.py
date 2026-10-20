@@ -15,18 +15,27 @@ from backend.db_adapter import get_db
 pytestmark = pytest.mark.skipif(os.getenv('RUN_BROWSER_TESTS') != '1', reason='Opt-in Chrome')
 
 
-def open_billing(surface, month='2026-10', purok='All'):
+def open_billing(surface, month='2026-10', purok='All', native_receipts=False):
     page = admin(surface)
     page.context.on('page', lambda output: output.on('pageerror', lambda error: surface[3].append(str(error))))
+    if native_receipts:
+        hook = "addEventListener('beforeprint',()=>localStorage.setItem('__receipt_native',JSON.stringify([{paper:document.body.textContent,sheets:document.querySelectorAll('.receipt-sheet').length}])));"
+    else:
+        hook = "window.print=()=>localStorage.setItem('__receipt_print_calls',String(Number(localStorage.getItem('__receipt_print_calls')||0)+1));"
+    # Inject only test instrumentation into the static helper; normal receipt
+    # logic/assets are unchanged. Native cases keep Chrome's real print function.
+    print_html = (Path(__file__).resolve().parents[1] / 'admin_web/receipt-print.html').read_text(encoding='utf8')
+    page.context.route('**/admin/receipt-print.html*', lambda route: route.fulfill(status=200,content_type='text/html',body=print_html.replace('</body>', '<script>'+hook+'</script></body>')))
     page.wait_for_function('()=>hasAdminData')
     page.locator('[data-tab="tab-billing"]').click()
     page.locator('#export-filter-bill-month').fill(month)
     page.locator('#export-filter-bill-purok').select_option(purok)
     page.evaluate('''()=>{
-      window.printCalls=0; window.print=()=>{window.printCalls++};
+      localStorage.removeItem('__receipt_print_calls');localStorage.removeItem('__receipt_native');
+      window.tablePrintCalls=0;
+      Object.defineProperty(window,'printCalls',{configurable:true,get:()=>window.tablePrintCalls+Number(localStorage.getItem('__receipt_print_calls')||0)});
+      window.print=()=>{window.tablePrintCalls++};
       window.realBrowserOpen=window.open.bind(window);
-      window.open=(...args)=>{const output=window.realBrowserOpen(...args);
-        if(output) output.print=()=>{window.printCalls++}; return output;};
     }''')
     return page
 
@@ -287,7 +296,7 @@ def test_print_menu_downloads_real_filtered_files(browser_page, receipt_data, tm
 @pytest.mark.parametrize('kind', ['table', 'name', 'all'])
 def test_print_actions_invoke_native_browser_print(browser_page, receipt_data, kind):
     browser_page[0].add_init_script('window.realBrowserPrint=window.print.bind(window)')
-    page = open_billing(browser_page); before = snapshot()
+    page = open_billing(browser_page, native_receipts=True); before = snapshot()
     # Use the native Chrome function, not only a counter stub. Headless Chrome
     # exposes beforeprint/afterprint; an OS print-dialog appearance remains manual.
     page.evaluate('''()=>{
@@ -297,11 +306,6 @@ def test_print_actions_invoke_native_browser_print(browser_page, receipt_data, k
         paper:document.getElementById('receipt-print-area').textContent,
         sheets:document.querySelectorAll('#receipt-print-area .receipt-sheet').length
       }));
-      window.open=(...args)=>{const output=window.realBrowserOpen(...args);
-        if(output) output.addEventListener('beforeprint',()=>window.nativePrintEvents.push({
-          paper:output.document.body.textContent,
-          sheets:output.document.querySelectorAll('.receipt-sheet').length
-        })); return output;};
     }''')
     page.locator('#export-filter-bill-status').select_option('Paid')
     page.locator('#btn-billing-print').click()
@@ -318,8 +322,8 @@ def test_print_actions_invoke_native_browser_print(browser_page, receipt_data, k
             expect(page.locator('#receipt-print')).to_be_disabled()
             page.locator('#receipt-bulk-confirm').check()
         page.locator('#receipt-print').click()
-    page.wait_for_function('()=>window.nativePrintEvents.length===1')
-    event = page.evaluate('window.nativePrintEvents[0]')
+    page.wait_for_function("()=>window.nativePrintEvents.length+JSON.parse(localStorage.getItem('__receipt_native')||'[]').length===1")
+    event = page.evaluate("window.nativePrintEvents.concat(JSON.parse(localStorage.getItem('__receipt_native')||'[]'))[0]")
     assert '222.50' in event['paper'] and '987.00' not in event['paper']
     assert event['sheets'] == {'table': 0, 'name': 1, 'all': 2}[kind]
     assert snapshot() == before and browser_page[3] == []
@@ -534,3 +538,15 @@ def test_print_window_reserved_before_slow_paid_record_verification(browser_page
     popup.value.get_by_role('button', name='Print Receipt').click()
     page.wait_for_function('()=>window.printCalls===2')
     assert browser_page[3] == []
+
+
+def test_receipt_print_resource_failure_is_bounded_and_visible(browser_page, receipt_data):
+    page = open_receipts(browser_page, 'all'); before = snapshot()
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(2)
+    page.locator('#receipt-bulk-confirm').check()
+    page.context.route('**/admin/receipt-print.html*', lambda route: route.fulfill(status=503,content_type='text/html',body='Print document temporarily unavailable'))
+    with page.expect_popup() as popup: page.locator('#receipt-print').click()
+    expect(page.locator('#receipt-message')).to_contain_text('Output stopped', timeout=15000)
+    assert popup.value.is_closed()
+    assert page.evaluate('window.printCalls') == 0
+    assert snapshot() == before and browser_page[3] == []

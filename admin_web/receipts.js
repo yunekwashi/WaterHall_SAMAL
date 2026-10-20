@@ -198,7 +198,7 @@
   function receipt(row) {
     const sheet = create('section', undefined, 'receipt-sheet');
     const header = create('header', undefined, 'header');
-    const logo = create('img'); logo.src = '/admin/logo.png'; logo.alt = 'WaterHall';
+    const logo = create('img'); logo.src = new URL('/admin/logo.png', location.origin).href; logo.alt = 'WaterHall';
     header.append(logo, create('h3', 'WaterHall — Payment receipt'));
     const table = create('table');
     for (const [label, value] of receiptFields(row)) {
@@ -293,25 +293,28 @@
   function reservePrintWindow() {
     // Reserve the visible window during the click, before network verification can
     // consume transient browser activation. No token is copied to this document.
-    const output = window.open('', '_blank', 'popup,width=900,height=720');
+    const output = window.open('/admin/receipt-print.html?v=1', '_blank', 'popup,width=900,height=720');
     if (!output) { message.textContent = 'Printing was blocked. Allow popups for WaterHall and try again, or choose Download PDF.'; return null; }
-    output.opener = null; outputWindows.add(output);
-    const doc = output.document;
-    doc.title = 'WaterHall - Receipt printing';
-    doc.documentElement.lang = 'en';
-    const viewport = doc.createElement('meta'); viewport.name = 'viewport'; viewport.content = 'width=device-width, initial-scale=1';
-    const style = doc.createElement('link'); style.rel = 'stylesheet'; style.href = new URL('/admin/receipt-print.css?v=1', location.origin).href;
+    output.opener = null; outputWindows.add(output); output.focus();
+    // A real same-origin document avoids blank-window asset loading differences
+    // between HTTP development and HTTPS production. It contains no account data.
     const ready = new Promise(resolve => {
-      const timer = setTimeout(() => resolve(false), 10000);
-      style.onload = () => { clearTimeout(timer); resolve(true); };
-      style.onerror = () => { clearTimeout(timer); resolve(false); };
+      const started = Date.now();
+      const checkReady = () => {
+        if (output.closed || Date.now() - started >= 10000) { resolve(null); return; }
+        try {
+          if (output.location.origin === location.origin && output.location.pathname === '/admin/receipt-print.html' &&
+              output.document.readyState === 'complete' && output.document.styleSheets.length) {
+            const button = output.document.getElementById('receipt-window-print');
+            const status = output.document.getElementById('receipt-window-status');
+            if (button && status && typeof output.WaterHallReceiptPrint?.print === 'function') { resolve({button, status}); return; }
+          }
+        } catch (_) { /* Navigation is not ready yet. */ }
+        setTimeout(checkReady, 25);
+      };
+      checkReady();
     });
-    doc.head.append(viewport, style);
-    const toolbar = doc.createElement('div'); toolbar.className = 'print-controls';
-    const button = doc.createElement('button'); button.type = 'button'; button.textContent = 'Print Receipt'; button.disabled = true;
-    const status = doc.createElement('span'); status.setAttribute('role', 'status'); status.textContent = 'Verifying selected paid receipts…';
-    toolbar.append(button, status); doc.body.replaceChildren(toolbar);
-    return {output, ready, button, status};
+    return {output, ready};
   }
   async function outputReceipts(kind) {
     const action = kind === 'print' ? print : download;
@@ -334,20 +337,26 @@
         document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
         message.textContent = 'Verified receipt PDF downloaded.';
       } else {
-        const {output, ready, button, status} = reserved;
+        const {output, ready} = reserved;
         if (output.closed) { message.textContent = 'Print window was closed. Select Print Receipt to try again.'; return; }
+        const controls = await ready;
+        if (!controls) throw new Error('Print document unavailable');
+        const {button, status} = controls;
         output.document.body.append(...fresh.map(receipt));
-        const styled = await ready;
-        const images = await Promise.all(Array.from(output.document.images, image => image.decode().then(() => true).catch(() => false)));
+        let imageTimer;
+        const images = await Promise.race([
+          Promise.all(Array.from(output.document.images, image => image.decode().then(() => true).catch(() => false))),
+          new Promise(resolve => { imageTimer = setTimeout(() => resolve([false]), 10000); })
+        ]);
+        clearTimeout(imageTimer);
         if (!current() || owner !== own || snapshot !== reviewed || output.closed) { if (!output.closed) output.close(); return; }
-        if (!styled || images.some(loaded => !loaded)) throw new Error('Print assets unavailable');
+        if (images.some(loaded => !loaded)) throw new Error('Print assets unavailable');
         button.disabled = false;
         const invokePrint = () => {
           if (!current() || owner !== own || snapshot !== reviewed) { output.close(); return; }
-          try { output.focus(); output.print(); }
+          try { output.WaterHallReceiptPrint.print(); }
           catch (_) { status.textContent = 'Choose Print Receipt here to open your browser print dialog, or return and Download PDF.'; }
         };
-        button.addEventListener('click', invokePrint);
         status.textContent = 'Verified receipts ready. If no dialog appears, choose Print Receipt here; select your printer or Save as PDF.';
         message.textContent = 'Verified receipt print window opened. If your browser did not show its dialog, choose Print Receipt in that window.';
         invokePrint();

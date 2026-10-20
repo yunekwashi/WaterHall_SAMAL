@@ -13,6 +13,10 @@
 - The old handler waited for paid-record revalidation before calling `window.print()`
   in the modal's page. It offered no dedicated visible print view, user-gesture
   reservation or popup-blocked feedback. Those failure/recovery states are now tested.
+- HTTPS verification also found a blank print-window resource wait. The final flow
+  loads an explicit same-origin `receipt-print.html` and runs native printing in that
+  document's own script/context. Its real `beforeprint` event updates the visible
+  status; stylesheet/script/logo readiness is bounded instead of waiting indefinitely.
 - No receipt PDF-download action existed. The Billing PDF export is a different report.
 
 ## Focused implementation
@@ -46,7 +50,7 @@ PDF output uses locally hosted jsPDF 4.2.1 and embedded Roboto Regular with lice
 provenance recorded in `admin_web/vendor/RECEIPT-PDF-SOURCES.md`. The official npm package
 integrity was verified. No new backend package, route, business logic, schema or API
 contract was introduced. The public logo is the only PDF resource fetched during output.
-Receipt JS/CSS references advance to `v=4`; the new PDF/print assets are separately versioned.
+Receipt JS advances to `v=5` (receipt CSS remains `v=4`); PDF/print assets are separately versioned.
 
 ## Files
 
@@ -54,6 +58,8 @@ Receipt JS/CSS references advance to `v=4`; the new PDF/print assets are separat
 - `admin_web/receipts.js`
 - `admin_web/receipt-pdf.js`
 - `admin_web/receipt-print.css`
+- `admin_web/receipt-print.html`
+- `admin_web/receipt-print.js`
 - `admin_web/vendor/jspdf-4.2.1.umd.min.js`
 - `admin_web/vendor/jspdf-LICENSE.txt`
 - `admin_web/vendor/receipt-font.js`
@@ -64,8 +70,11 @@ Receipt JS/CSS references advance to `v=4`; the new PDF/print assets are separat
 
 ## Checks and evidence
 
-Backend receipt/report regression: **25 passed**. Browser: **39 distinct cases passed**
-(10 focused + 28 remaining regression passes + one corrected metadata-assertion rerun).
+Backend receipt/report regression: **25 passed**. Browser: **40 distinct cases passed**,
+including the bounded print-resource-failure case. All 12 cases covering the changed
+print path passed their final rerun. A production-origin HTTPS preflight also passed,
+including real native `beforeprint` events and named/bulk PDF downloads. Final post-deploy
+counts/status are recorded in the permanent release proof.
 The original failed assertion and its passing rerun are retained: jsPDF's inert page-fit
 destination is allowed; embedded JavaScript actions and attachments remain rejected.
 No application logic changed to satisfy that assertion.
