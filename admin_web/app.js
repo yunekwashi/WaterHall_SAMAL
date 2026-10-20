@@ -288,6 +288,7 @@ function performAutomaticLogoutDueToServerOffline() {
 }
 
 function clearAdminSession(message = '', preserveStoredToken = false) {
+  window.dispatchEvent(new Event('waterhall-admin-session-ending'));
   invalidateAdminRequests();
 
   // 1. Invalidate authentication credentials completely

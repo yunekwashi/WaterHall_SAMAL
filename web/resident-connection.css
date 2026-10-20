@@ -1,0 +1,8 @@
+.resident-connection-screen[hidden] { display: none; }
+.resident-connection-screen { position: fixed; inset: 0; z-index: 11000; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 24px; box-sizing: border-box; background: #f3f7fa; color: #183448; font-family: inherit; }
+.resident-connection-card { width: 100%; max-width: 380px; text-align: center; overflow-wrap: anywhere; }
+.resident-connection-card img { width: 110px; height: auto; margin-bottom: 24px; }
+.resident-connection-card h2 { font-size: 24px; margin: 0 0 16px; }
+.resident-connection-card p { color: #526877; line-height: 1.6; margin: 0 0 28px; }
+.resident-connection-card button { min-width: 130px; min-height: 48px; background: #126789; color: white; border: 0; border-radius: 10px; cursor: pointer; font: inherit; font-weight: 700; padding: 12px 24px; }
+.resident-connection-card button:disabled { opacity: .65; cursor: wait; }

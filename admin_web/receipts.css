@@ -1,0 +1,29 @@
+.receipt-modal[hidden], .receipt-modal [hidden] { display: none !important; }
+.receipt-modal .modal { width: min(900px, calc(100vw - 32px)); max-width: 900px; max-height: calc(100dvh - 32px); overflow: auto; }
+.receipt-modal h2, .receipt-modal p { margin-bottom: 16px; }
+.receipt-controls { display: grid; grid-template-columns: 160px 130px minmax(160px, 1fr); gap: 12px; }
+.receipt-controls label { display: grid; gap: 6px; font-size: 13px; }
+.receipt-controls input, .receipt-controls select { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px; }
+.receipt-matches { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.receipt-matches button { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.receipt-preview { max-height: 45vh; overflow: auto; }
+.receipt-sheet { margin: 12px 0 24px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.receipt-sheet .header { display: flex; gap: 12px; align-items: center; justify-content: flex-start; }
+.receipt-sheet img { width: 48px; height: auto; }
+.receipt-sheet table { width: 100%; min-width: 0; table-layout: fixed; }
+.receipt-sheet th, .receipt-sheet td { padding: 8px; }
+.receipt-sheet th { text-align: left; width: 40%; white-space: normal; }
+.receipt-sheet td { white-space: normal; overflow-wrap: anywhere; }
+.receipt-confirmation { display: flex; gap: 10px; align-items: center; margin: 16px 0; }
+.receipt-confirmation input { width: auto; flex: 0 0 auto; }
+.receipt-modal .form-actions { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; background: var(--surface, #174969); }
+#receipt-print-area { display: none; }
+@media (max-width: 600px) { .receipt-controls { grid-template-columns: minmax(0, 1fr); } .receipt-modal .modal { padding: 18px; } .receipt-sheet { padding: 8px; } }
+@media print {
+  body.receipt-printing > :not(#receipt-print-area) { display: none !important; }
+  body.receipt-printing #receipt-print-area { display: block !important; }
+  #receipt-print-area .receipt-sheet { border: 0; color: #000; break-inside: avoid; break-after: page; border-radius: 0; padding: 0; }
+  #receipt-print-area .receipt-sheet:last-child { break-after: auto; }
+  #receipt-print-area .header { display: block; }
+  #receipt-print-area img { float: right; }
+}

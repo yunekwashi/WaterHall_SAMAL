@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:js' as js;
 import 'db.dart';
 import 'offline_store.dart';
+import 'resident_connection.dart';
 
 void main() {
   document.addEventListener('DOMContentLoaded', (event) {
@@ -29,6 +30,7 @@ class AppController {
   void Function()? _restoreReportDraft;
   Timer? _reportDraftTimer;
   bool _refreshingView = false;
+  ResidentConnection? _residentConnection;
   static const _reportDraftKey = 'waterhall_resident_report_draft';
 
   // Cached UI Elements
@@ -82,6 +84,12 @@ class AppController {
     // Check URL parameters for role specialization
     final uri = Uri.parse(window.location.href);
     final role = uri.queryParameters['role'];
+    if (role == 'resident') {
+      _residentConnection = ResidentConnection(db, () {
+        if (currentResidentId != null && db.isDatabaseOnline) renderResidentDashboard();
+        _refreshTelemetryDisplay();
+      });
+    }
 
     final portalTitle = document.getElementById('web-portal-title');
     if (role == 'resident') {
@@ -194,6 +202,7 @@ class AppController {
     if (db.lastSyncError == sessionExpiredMessage) {
       showLoginError(sessionExpiredMessage, document.getElementById('login-error-msg'));
     }
+    await _residentConnection?.start();
   }
 
   Future<void> _refreshVisibleView() async {
@@ -217,7 +226,6 @@ class AppController {
     final pill = document.getElementById('worker-sync-status-pill');
     final textEl = document.getElementById('worker-sync-status-text');
     final offlineBanner = document.getElementById('db-offline-overlay');
-    final offlineBannerText = document.getElementById('offline-banner-text');
     final String st = status['status'] ?? 'online';
     final int pendingCount = (status['pendingCount'] as int?) ?? 0;
     final bool isOnline = (status['isOnline'] as bool?) ?? true;
@@ -242,11 +250,9 @@ class AppController {
       }
     }
 
-    // Preserve Resident connection feedback; Worker uses the compact terminal pill.
+    // Resident uses its own connection gate; Worker retains the compact pill.
     if (offlineBanner != null) {
-      final residentOffline = Uri.base.queryParameters['role'] == 'resident' && authenticated && !isOnline;
-      offlineBanner.style.display = residentOffline ? 'flex' : 'none';
-      if (residentOffline) offlineBannerText?.text = 'Offline Mode Active: Local SQLite storage enabled. Data will auto-sync when online.';
+      offlineBanner.style.display = 'none';
     }
     var reviewButton = document.getElementById('btn-review-collections');
     if (reviewButton == null && pill?.parent != null) {
@@ -2453,6 +2459,7 @@ class AppController {
     // Offline banner retry button
     final btnRetry = document.getElementById('btn-retry-db-connection');
     btnRetry?.onClick.listen((e) async {
+      if (_residentConnection != null) { await _residentConnection!.retry(); return; }
       showToast("Testing server connection...");
       final ok = await db.refreshData();
       if (ok) {

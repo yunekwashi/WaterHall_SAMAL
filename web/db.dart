@@ -55,6 +55,8 @@ class Database {
   Map<String, dynamic> getBillingConfig() => Map.of(_billingConfig);
   
   bool isDatabaseOnline = false;
+  int? lastConnectionStatus;
+  bool get isRefreshing => _refreshing;
   String? lastSyncError;
   bool _refreshing = false;
   String? _refreshOwner;
@@ -117,9 +119,11 @@ class Database {
     return false;
   }
 
-  void _markOffline() {
+  void _markOffline({int? status}) {
     isDatabaseOnline = false;
+    lastConnectionStatus = status;
     lastSyncError = 'Server unavailable. Pending operations remain saved and will retry.';
+    window.dispatchEvent(CustomEvent('waterhall-api-unavailable', detail: status));
     _notifySyncStatus();
   }
 
@@ -188,7 +192,7 @@ class Database {
     } catch (error) {
       if (version != _sessionVersion) throw const ApiFailure(sessionChanged: true);
       final failure = error is ApiFailure ? error : const ApiFailure();
-      if (!failure.sessionChanged && failure.unavailable) _markOffline();
+      if (!failure.sessionChanged && failure.unavailable) _markOffline(status: failure.status);
       throw failure;
     } finally {
       deadline?.cancel();
@@ -374,6 +378,7 @@ class Database {
         _saveToLocalCache();
       }
       isDatabaseOnline = true;
+      lastConnectionStatus = null;
       _notifySyncStatus();
 
       // Upload durable actions before collections that may depend on new bills.
@@ -381,7 +386,7 @@ class Database {
       if (isDatabaseOnline && checkSession()) unawaited(syncOfflineCollections());
       return isDatabaseOnline && hasUsableSession();
     } catch (e) {
-      if (e is! ApiFailure || !e.sessionChanged) _markOffline();
+      if (e is! ApiFailure || !e.sessionChanged) _markOffline(status: e is ApiFailure ? e.status : 502);
       return false;
     } finally { if (_refreshOwner == owner) { _refreshing = false; _refreshOwner = null; } }
   }

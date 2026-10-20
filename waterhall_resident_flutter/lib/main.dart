@@ -64,6 +64,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _isLoading = true;
   bool _initialized = false;
   bool _serverError = false;
+  bool _pageFailed = false;
+  bool _serviceError = false;
+  Uri? _loadingPage;
   Timer? _errorTimer;
   Timer? _pollTimer;
 
@@ -71,11 +74,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _errorTimer?.cancel();
     _errorTimer = Timer(const Duration(seconds: 20), () {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _serverError = true;
-        });
+        _showConnectionError();
       }
+    });
+  }
+
+  void _showConnectionError({bool service = false}) {
+    _errorTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _pageFailed = true;
+      _serviceError = service;
+      _isLoading = false;
+      _serverError = true;
     });
   }
 
@@ -158,6 +169,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 : NavigationDecision.prevent;
           },
           onPageStarted: (String url) {
+            _loadingPage = Uri.tryParse(url);
+            _pageFailed = false;
+            _serviceError = false;
             _photoPageGeneration++;
             _startErrorTimer();
             setState(() {
@@ -166,10 +180,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             });
           },
           onPageFinished: (String url) async {
+            if (_pageFailed || !mounted) return;
             await _controller.runJavaScript(
                 "if(window.waterhallSetNativeSession) window.waterhallSetNativeSession(localStorage.getItem('waterhall_jwt'));");
             _errorTimer?.cancel();
-            if (mounted) {
+            if (mounted && !_pageFailed) {
               setState(() {
                 _isLoading = false;
                 _serverError = false;
@@ -177,10 +192,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             }
           },
           onWebResourceError: (WebResourceError error) {
-            debugPrint("Web Resource Error: ${error.description}");
-            if (_isLoading && error.isForMainFrame == true) {
-              _startErrorTimer();
-            }
+            if (error.isForMainFrame == true) _showConnectionError();
+          },
+          onHttpError: (error) {
+            if (_loadingPage != null && error.request?.uri == _loadingPage) _showConnectionError(service: true);
           },
         ),
       );
@@ -322,6 +337,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _retryConnection() async {
+    if (_isLoading) return;
     setState(() {
       _isLoading = true;
       _serverError = false;
@@ -333,7 +349,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _activeServerUrl = resolved;
     });
 
-    await _controller.loadRequest(Uri.parse(_getAppUrl()));
+    _pageFailed = false;
+    _startErrorTimer();
+    try {
+      await _controller.loadRequest(Uri.parse(_getAppUrl()));
+    } catch (_) {
+      _showConnectionError();
+    }
   }
 
   @override
@@ -354,9 +376,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         body: SafeArea(
           child: Stack(
             children: [
-              if (_initialized && !_serverError)
-                WebViewWidget(controller: _controller)
-              else if (_serverError)
+              if (_initialized) WebViewWidget(controller: _controller),
+              if (_serverError)
                 Container(
                   color: Theme.of(context).scaffoldBackgroundColor,
                   child: Center(
@@ -368,19 +389,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           const Icon(Icons.cloud_off,
                               size: 90, color: Colors.blueGrey),
                           const SizedBox(height: 24),
-                          const Text(
-                            "Service Offline",
-                            style: TextStyle(
+                          Text(
+                            _serviceError ? 'Service Unavailable' : 'Internet Error',
+                            style: const TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
                                 color: Color(0xff183448)),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
-                            "Unable to reach the WaterHall cloud server at this time.\n\n"
-                            "Please ensure your device is connected to the internet, or tap retry to connect once the service is restored.",
+                          Text(
+                            _serviceError ? 'WaterHall is temporarily unavailable. Please try again.'
+                              : 'No internet connection. Please check your connection and try again.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
+                            style: const TextStyle(
                                 color: Color(0xff526877),
                                 fontSize: 14,
                                 height: 1.5),
@@ -389,7 +410,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           ElevatedButton.icon(
                             onPressed: _retryConnection,
                             icon: const Icon(Icons.refresh),
-                            label: const Text("Retry Connection"),
+                            label: const Text('Retry'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.blue.shade700,
                               foregroundColor: Colors.white,
@@ -402,7 +423,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 )
-              else
+              else if (!_initialized)
                 const Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.water_drop_rounded,
