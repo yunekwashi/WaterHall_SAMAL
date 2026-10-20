@@ -1,0 +1,17 @@
+/* Dedicated read-only receipt window; never styles the Admin portal. */
+body { margin: 24px; color: #162d3e; background: #fff; font: 14px Arial, sans-serif; }
+.print-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 14px; margin-bottom: 24px; border: 1px solid #ccd9e2; border-radius: 8px; background: #eef5fa; }
+button { border: 0; border-radius: 6px; padding: 12px 18px; background: #dfb721; color: #142f42; font: inherit; font-weight: bold; cursor: pointer; }
+button:disabled { opacity: .5; cursor: wait; }
+button:focus-visible { outline: 3px solid #174969; outline-offset: 3px; }
+.receipt-sheet { margin: 0 auto 32px; max-width: 760px; break-after: page; break-inside: avoid; }
+.receipt-sheet:last-child { break-after: auto; }
+.header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; border-bottom: 2px solid #174969; padding-bottom: 14px; }
+.header::before { content: 'BARANGAY TAGPOPONGAN WATER SYSTEM (WATERHALL)'; display: block; flex-basis: 100%; font-size: 12px; font-weight: bold; }
+.header img { width: 48px; height: auto; }
+h3 { font-size: 20px; }
+table { margin-top: 20px; width: 100%; border-collapse: collapse; table-layout: fixed; }
+th, td { padding: 10px; border: 1px solid #bccbd5; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+th { width: 40%; background: #f0f5f8; }
+@media (max-width: 480px) { body { margin: 12px; } th, td { padding: 8px; } }
+@media print { @page { margin: 16mm; } body { margin: 0; } .print-controls { display: none !important; } }

@@ -93,21 +93,26 @@
   const actions = create('div', undefined, 'form-actions');
   const cancel = create('button', 'Cancel', 'btn btn-secondary'); cancel.type = 'button'; cancel.id = 'receipt-cancel';
   const previewButton = create('button', 'Preview', 'btn'); previewButton.type = 'button'; previewButton.id = 'receipt-preview-button';
-  const print = create('button', 'Print', 'btn'); print.type = 'button'; print.id = 'receipt-print'; print.disabled = true;
-  actions.append(cancel, previewButton, print);
+  const print = create('button', 'Print Receipt', 'btn'); print.type = 'button'; print.id = 'receipt-print'; print.disabled = true;
+  const download = create('button', 'Download PDF', 'btn'); download.type = 'button'; download.id = 'receipt-download'; download.disabled = true;
+  actions.append(cancel, previewButton, print, download);
   card.append(title, note, controls, matches, more, selected, message, preview, confirmation, actions);
   modal.append(card); document.body.append(modal);
   const paper = create('div'); paper.id = 'receipt-print-area'; document.body.append(paper);
   let owner, controller, debounce, selectedHouse, snapshot, scope, busy = false, searchVersion = 0, matchPage = 1, purok = 'All';
+  const outputWindows = new Set();
   const current = () => owner && owner.token === jwtToken && owner.generation === sessionGeneration && !modal.hidden;
   const clearPaper = () => { document.body.classList.remove('receipt-printing', 'billing-table-printing'); paper.replaceChildren(); };
   const clearPreview = () => {
+    for (const output of outputWindows) { if (!output.closed) output.close(); }
+    outputWindows.clear();
     snapshot = null; scope = null; preview.replaceChildren(); check.checked = false;
-    confirmation.hidden = true; print.disabled = true; clearPaper();
+    confirmation.hidden = true; print.disabled = true; download.disabled = true; clearPaper();
   };
   const enabled = () => {
     previewButton.disabled = busy || !(mode.value === 'all' || selectedHouse);
     print.disabled = busy || !snapshot?.length || (snapshot.length > 1 && !check.checked);
+    download.disabled = print.disabled;
     for (const element of [mode, month, name, check]) element.disabled = busy;
   };
   function close() {
@@ -142,6 +147,8 @@
     const version = ++searchVersion;
     if (!append) { matchPage = 1; matches.replaceChildren(); }
     more.hidden = true;
+    // Empty input is not a request to enumerate every eligible household.
+    if (!name.value.trim()) { matches.replaceChildren(); return; }
     try {
       const data = await request({billing_month: month.value, purok, search: name.value.trim(), view: 'recipients', page: matchPage, limit: 25});
       if (version !== searchVersion || !current()) return;
@@ -152,12 +159,13 @@
         button.addEventListener('click', () => {
           clearTimeout(debounce); searchVersion++;
           selectedHouse = row; selected.textContent = `${row.name} — ${row.house_id}`;
-          matches.replaceChildren(); more.hidden = true; clearPreview(); message.textContent = ''; enabled();
+          matches.replaceChildren(); more.hidden = true; clearPreview();
+          message.textContent = 'Recipient selected. Choose Preview to verify paid receipts and enable Print Receipt and Download PDF.'; enabled();
         });
         matches.append(button);
       }
       more.hidden = !data.has_more;
-      if (!data.total) matches.textContent = 'No eligible paid records match this name and period.';
+      if (!data.total) matches.textContent = 'No matching recipients found.';
     } catch (_) { if (current() && version === searchVersion) message.textContent = 'Unable to load recipients. Check the connection and try again.'; }
   }
   async function readAll(params) {
@@ -178,19 +186,22 @@
     if (records.length !== total) throw new Error('Incomplete receipts');
     return records;
   }
+  function receiptFields(row) {
+    const transactions = row.transactions.map(tx => [tx.reference, tx.method].filter(Boolean).join(' / ')).join('; ');
+    return [
+      ['Recipient', row.name], ['Household', row.house_id], ['Meter / account', row.account_number],
+      ['Billing period', row.billing_month], ['Bill reference', row.bill_id], ['Status', row.status],
+      ['Amount paid', '₱' + row.amount_paid], ['Payment date', row.payment_date ? WaterHallDisplay.formatTimestamp(row.payment_date) : null],
+      ['Received by', row.received_by], ['Collection transaction reference / method', transactions]
+    ];
+  }
   function receipt(row) {
     const sheet = create('section', undefined, 'receipt-sheet');
     const header = create('header', undefined, 'header');
     const logo = create('img'); logo.src = '/admin/logo.png'; logo.alt = 'WaterHall';
     header.append(logo, create('h3', 'WaterHall — Payment receipt'));
     const table = create('table');
-    const transactions = row.transactions.map(tx => [tx.reference, tx.method].filter(Boolean).join(' / ')).join('; ');
-    for (const [label, value] of [
-      ['Recipient', row.name], ['Household', row.house_id], ['Meter / account', row.account_number],
-      ['Billing period', row.billing_month], ['Bill reference', row.bill_id], ['Status', row.status],
-      ['Amount paid', '₱' + row.amount_paid], ['Payment date', row.payment_date ? WaterHallDisplay.formatTimestamp(row.payment_date) : null],
-      ['Received by', row.received_by], ['Collection transaction reference / method', transactions]
-    ]) {
+    for (const [label, value] of receiptFields(row)) {
       const tr = create('tr'); tr.append(create('th', label), create('td', value || 'Not recorded')); table.append(tr);
     }
     sheet.append(header, table); return sheet;
@@ -262,26 +273,93 @@
     purok = document.getElementById('export-filter-bill-purok').value || 'All';
     clearPreview(); message.textContent = ''; modal.hidden = false; modal.classList.add('active'); enabled();
     if (kind === 'all') loadPreview().then(() => { if (current()) (confirmation.hidden ? previewButton : check).focus(); });
-    else { name.focus(); search(); }
+    else { message.textContent = 'Type a recipient name, select the correct household, then choose Preview to enable Print Receipt and Download PDF.'; name.focus(); }
   }
   openButton.addEventListener('click', () => openReceipts('name'));
   allButton.addEventListener('click', () => openReceipts('all'));
-  name.addEventListener('input', () => { searchVersion++; controller?.abort(); matches.replaceChildren(); more.hidden = true; selectedHouse = null; selected.textContent = ''; clearPreview(); enabled(); clearTimeout(debounce); debounce = setTimeout(() => search(), 200); });
-  mode.addEventListener('change', () => { searchVersion++; controller?.abort(); selectedHouse = null; selected.textContent = ''; matches.replaceChildren(); more.hidden = true; name.closest('label').hidden = mode.value === 'all'; clearPreview(); enabled(); if (mode.value === 'name') search(); });
-  month.addEventListener('change', () => { selectedHouse = null; selected.textContent = ''; clearPreview(); enabled(); if (mode.value === 'name') search(); });
+  function resetSelection() {
+    searchVersion++; controller?.abort(); clearTimeout(debounce); selectedHouse = null;
+    selected.textContent = ''; matches.replaceChildren(); more.hidden = true; message.textContent = '';
+    clearPreview(); enabled();
+    if (mode.value === 'name') message.textContent = name.value.trim()
+      ? 'Choose a matching household, then Preview to enable receipt output.'
+      : 'Type a recipient name, select the correct household, then choose Preview to enable Print Receipt and Download PDF.';
+  }
+  name.addEventListener('input', () => { resetSelection(); if (name.value.trim()) debounce = setTimeout(() => search(), 200); });
+  mode.addEventListener('change', () => { resetSelection(); name.closest('label').hidden = mode.value === 'all'; if (mode.value === 'name' && name.value.trim()) search(); });
+  month.addEventListener('change', () => { resetSelection(); if (mode.value === 'name' && name.value.trim()) search(); });
   more.addEventListener('click', () => { matchPage++; search(true); });
   check.addEventListener('change', enabled); previewButton.addEventListener('click', loadPreview);
-  print.addEventListener('click', async () => {
-    if (print.disabled || !current()) return;
+  function reservePrintWindow() {
+    // Reserve the visible window during the click, before network verification can
+    // consume transient browser activation. No token is copied to this document.
+    const output = window.open('', '_blank', 'popup,width=900,height=720');
+    if (!output) { message.textContent = 'Printing was blocked. Allow popups for WaterHall and try again, or choose Download PDF.'; return null; }
+    output.opener = null; outputWindows.add(output);
+    const doc = output.document;
+    doc.title = 'WaterHall - Receipt printing';
+    doc.documentElement.lang = 'en';
+    const viewport = doc.createElement('meta'); viewport.name = 'viewport'; viewport.content = 'width=device-width, initial-scale=1';
+    const style = doc.createElement('link'); style.rel = 'stylesheet'; style.href = new URL('/admin/receipt-print.css?v=1', location.origin).href;
+    const ready = new Promise(resolve => {
+      const timer = setTimeout(() => resolve(false), 10000);
+      style.onload = () => { clearTimeout(timer); resolve(true); };
+      style.onerror = () => { clearTimeout(timer); resolve(false); };
+    });
+    doc.head.append(viewport, style);
+    const toolbar = doc.createElement('div'); toolbar.className = 'print-controls';
+    const button = doc.createElement('button'); button.type = 'button'; button.textContent = 'Print Receipt'; button.disabled = true;
+    const status = doc.createElement('span'); status.setAttribute('role', 'status'); status.textContent = 'Verifying selected paid receipts…';
+    toolbar.append(button, status); doc.body.replaceChildren(toolbar);
+    return {output, ready, button, status};
+  }
+  async function outputReceipts(kind) {
+    const action = kind === 'print' ? print : download;
+    if (action.disabled || !current()) return;
+    const reserved = kind === 'print' ? reservePrintWindow() : null;
+    if (kind === 'print' && !reserved) return;
     const own = owner;
-    busy = true; enabled();
+    const reviewed = snapshot;
+    busy = true; enabled(); message.textContent = 'Verifying selected paid receipts…';
     try {
       const fresh = await readAll(scope);
-      if (JSON.stringify(fresh) !== JSON.stringify(snapshot)) { showPreview(fresh, scope); message.textContent += ' · Records changed; review and confirm again.'; return; }
-      paper.replaceChildren(...fresh.map(receipt)); document.body.classList.add('receipt-printing'); window.print();
-    } catch (_) { if (current() && owner === own) { clearPreview(); message.textContent = 'Printing stopped: receipts could not be verified. Preview again.'; } }
+      if (JSON.stringify(fresh) !== JSON.stringify(reviewed)) {
+        reserved?.output.close(); showPreview(fresh, scope); message.textContent += ' · Records changed; review and confirm again.'; return;
+      }
+      if (kind === 'pdf') {
+        const blob = await WaterHallReceiptPDF.build(fresh, receiptFields);
+        if (!current() || owner !== own || snapshot !== reviewed) return;
+        const url = URL.createObjectURL(blob), link = create('a');
+        link.href = url; link.download = `WaterHall_Receipts_${scope.billing_month}_${scope.house_id || 'All'}.pdf`;
+        document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+        message.textContent = 'Verified receipt PDF downloaded.';
+      } else {
+        const {output, ready, button, status} = reserved;
+        if (output.closed) { message.textContent = 'Print window was closed. Select Print Receipt to try again.'; return; }
+        output.document.body.append(...fresh.map(receipt));
+        const styled = await ready;
+        const images = await Promise.all(Array.from(output.document.images, image => image.decode().then(() => true).catch(() => false)));
+        if (!current() || owner !== own || snapshot !== reviewed || output.closed) { if (!output.closed) output.close(); return; }
+        if (!styled || images.some(loaded => !loaded)) throw new Error('Print assets unavailable');
+        button.disabled = false;
+        const invokePrint = () => {
+          if (!current() || owner !== own || snapshot !== reviewed) { output.close(); return; }
+          try { output.focus(); output.print(); }
+          catch (_) { status.textContent = 'Choose Print Receipt here to open your browser print dialog, or return and Download PDF.'; }
+        };
+        button.addEventListener('click', invokePrint);
+        status.textContent = 'Verified receipts ready. If no dialog appears, choose Print Receipt here; select your printer or Save as PDF.';
+        message.textContent = 'Verified receipt print window opened. If your browser did not show its dialog, choose Print Receipt in that window.';
+        invokePrint();
+      }
+    } catch (_) {
+      if (reserved && !reserved.output.closed) reserved.output.close();
+      if (current() && owner === own) { clearPreview(); message.textContent = 'Output stopped: receipts or output resources could not be verified. Preview again.'; }
+    }
     finally { if (owner === own) { busy = false; enabled(); } }
-  });
+  }
+  print.addEventListener('click', () => outputReceipts('print'));
+  download.addEventListener('click', () => outputReceipts('pdf'));
   cancel.addEventListener('click', close);
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
   document.addEventListener('keydown', e => { if (!modal.hidden && e.key === 'Escape') close(); });

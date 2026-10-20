@@ -17,11 +17,17 @@ pytestmark = pytest.mark.skipif(os.getenv('RUN_BROWSER_TESTS') != '1', reason='O
 
 def open_billing(surface, month='2026-10', purok='All'):
     page = admin(surface)
+    page.context.on('page', lambda output: output.on('pageerror', lambda error: surface[3].append(str(error))))
     page.wait_for_function('()=>hasAdminData')
     page.locator('[data-tab="tab-billing"]').click()
     page.locator('#export-filter-bill-month').fill(month)
     page.locator('#export-filter-bill-purok').select_option(purok)
-    page.evaluate('()=>{window.printCalls=0; window.print=()=>{window.printCalls++};}')
+    page.evaluate('''()=>{
+      window.printCalls=0; window.print=()=>{window.printCalls++};
+      window.realBrowserOpen=window.open.bind(window);
+      window.open=(...args)=>{const output=window.realBrowserOpen(...args);
+        if(output) output.print=()=>{window.printCalls++}; return output;};
+    }''')
     return page
 
 
@@ -44,12 +50,13 @@ def test_receipt_name_search_duplicate_identity_preview_print_is_read_only(brows
     expect(page.locator('#receipt-preview')).to_contain_text('HH-2')
     page.locator('#receipt-print').click()
     page.wait_for_function('()=>window.printCalls===1')
-    page.emulate_media(media='print')
-    pdf = PdfReader(io.BytesIO(page.pdf(format='A4')))
+    output = next(p for p in page.context.pages if p != page)
+    output.emulate_media(media='print')
+    pdf = PdfReader(io.BytesIO(output.pdf(format='A4')))
     text = '\n'.join(p.extract_text() for p in pdf.pages)
     assert '222.50' in text and 'HH-2' in text and 'TAGPOPONGAN' in text
     assert '987.00' not in text and '99.00' not in text
-    page.emulate_media(media='screen'); page.evaluate("dispatchEvent(new Event('afterprint'))")
+    output.emulate_media(media='screen')
     assert snapshot() == before
     assert browser_page[3] == []
 
@@ -73,14 +80,15 @@ def test_all_receipts_period_count_bulk_confirmation_and_responsive_preview(brow
     assert actions_box['y'] >= confirmation_box['y'] + confirmation_box['height']
     page.locator('#receipt-bulk-confirm').check(); page.locator('#receipt-print').click()
     page.wait_for_function('()=>window.printCalls===1')
-    page.emulate_media(media='print')
-    pdf = PdfReader(io.BytesIO(page.pdf(format='A4')))
+    output = next(p for p in page.context.pages if p != page)
+    output.emulate_media(media='print')
+    pdf = PdfReader(io.BytesIO(output.pdf(format='A4')))
     assert len(pdf.pages) == 2
     text = '\n'.join(p.extract_text() for p in pdf.pages)
     # Chrome's PDF font extraction represents the rendered hyphen as U+2212.
     assert all(x in text.replace('\u2212', '-') for x in ['170.25', '222.50', 'HH-1', 'HH-2', '2026-10']), repr(text)
     assert '987.00' not in text and '99.00' not in text
-    page.emulate_media(media='screen'); page.evaluate("dispatchEvent(new Event('afterprint'))")
+    output.emulate_media(media='screen')
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
     page.locator('#receipt-month').fill('2026-09')
     page.locator('#receipt-preview-button').click()
@@ -289,6 +297,11 @@ def test_print_actions_invoke_native_browser_print(browser_page, receipt_data, k
         paper:document.getElementById('receipt-print-area').textContent,
         sheets:document.querySelectorAll('#receipt-print-area .receipt-sheet').length
       }));
+      window.open=(...args)=>{const output=window.realBrowserOpen(...args);
+        if(output) output.addEventListener('beforeprint',()=>window.nativePrintEvents.push({
+          paper:output.document.body.textContent,
+          sheets:output.document.querySelectorAll('.receipt-sheet').length
+        })); return output;};
     }''')
     page.locator('#export-filter-bill-status').select_option('Paid')
     page.locator('#btn-billing-print').click()
@@ -351,4 +364,173 @@ def test_print_menu_scroll_short_viewport_and_reopen(browser_page, receipt_data)
     expect(menu).to_be_hidden()
     trigger.click(); expect(menu).to_be_visible()
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+    assert browser_page[3] == []
+
+
+@pytest.mark.parametrize('blank', ['', '   '])
+def test_recipient_search_requires_non_whitespace_input(browser_page, receipt_data, blank):
+    page = browser_page[0]; requests = []
+    page.on('request', lambda request: requests.append(request.url) if 'view=recipients' in request.url else None)
+    open_receipts(browser_page)
+    expect(page.locator('#receipt-matches')).to_be_empty()
+    page.locator('#receipt-search').fill(blank)
+    page.wait_for_timeout(300)
+    assert requests == []
+    expect(page.locator('#receipt-preview-button')).to_be_disabled()
+    expect(page.locator('#receipt-print')).to_be_disabled()
+    expect(page.locator('#receipt-download')).to_be_disabled()
+    expect(page.locator('#receipt-message')).to_contain_text('then choose Preview')
+    page.locator('#receipt-search').fill('s')
+    expect(page.locator('#receipt-matches button')).to_have_count(2)
+    page.locator('#receipt-search').fill('')
+    expect(page.locator('#receipt-matches')).to_be_empty()
+    page.locator('#receipt-search').fill('No Such Recipient')
+    expect(page.locator('#receipt-matches')).to_have_text('No matching recipients found.')
+    assert browser_page[3] == []
+
+
+@pytest.mark.parametrize('width', [390, 1280])
+@pytest.mark.parametrize('kind,count,amounts', [('name', 1, ['222.50']), ('all', 2, ['170.25', '222.50'])])
+def test_receipt_pdf_download_matches_verified_preview(browser_page, receipt_data, tmp_path, width, kind, count, amounts):
+    page = browser_page[0]; page.set_viewport_size({'width': width, 'height': 850})
+    before = snapshot(); open_receipts(browser_page, kind)
+    if kind == 'name':
+        page.locator('#receipt-search').fill('s')
+        page.locator('#receipt-matches [data-house-id="HH-2"]').click()
+        expect(page.locator('#receipt-preview-button')).to_be_enabled()
+        expect(page.locator('#receipt-print')).to_be_disabled()
+        expect(page.locator('#receipt-download')).to_be_disabled()
+        expect(page.locator('#receipt-message')).to_contain_text('Choose Preview')
+        page.locator('#receipt-preview-button').click()
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(count)
+    if kind == 'all':
+        expect(page.locator('#receipt-download')).to_be_disabled()
+        page.locator('#receipt-bulk-confirm').check()
+    expect(page.locator('#receipt-print')).to_be_enabled()
+    with page.expect_download() as downloaded:
+        page.locator('#receipt-download').click()
+    assert downloaded.value.failure() is None
+    assert downloaded.value.suggested_filename == f'WaterHall_Receipts_2026-10_{"All" if kind == "all" else "HH-2"}.pdf'
+    path = tmp_path / 'receipt.pdf'; downloaded.value.save_as(path)
+    assert path.read_bytes().startswith(b'%PDF-')
+    pdf = PdfReader(path); text = '\n'.join(p.extract_text() for p in pdf.pages)
+    assert len(pdf.pages) == count
+    assert all(value in text for value in amounts + ['Same Resident', 'HH-2', '2026-10', 'WaterHall', 'TAGPOPONGAN'])
+    assert '987.00' not in text and '99.00' not in text
+    assert 'Not recorded' in text  # Legacy missing transaction details remain explicit.
+    if kind == 'name': assert '170.25' not in text
+    if os.getenv('TEST_ARTIFACT_DIR'):
+        target = Path(os.environ['TEST_ARTIFACT_DIR']); target.mkdir(parents=True, exist_ok=True)
+        (target / f'receipt-{kind}-{width}.pdf').write_bytes(path.read_bytes())
+        page.screenshot(path=str(target / f'receipt-output-{kind}-{width}.png'), full_page=True)
+    assert snapshot() == before and browser_page[3] == []
+
+
+def test_pdf_preserves_unicode_zero_amount_and_missing_date(browser_page, receipt_data, tmp_path):
+    with get_db() as db:
+        db.execute("UPDATE households SET family_head_name='Tañaña Dela Cruz' WHERE household_id=2")
+        db.execute("UPDATE billing_records SET total_amount=0,payment_date=NULL,collected_by=NULL WHERE bill_id=3")
+    before = snapshot(); page = open_receipts(browser_page)
+    page.locator('#receipt-search').fill('tañ')
+    page.locator('#receipt-matches [data-house-id="HH-2"]').click()
+    page.locator('#receipt-preview-button').click()
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(1)
+    with page.expect_download() as downloaded: page.locator('#receipt-download').click()
+    path = tmp_path / 'unicode.pdf'; downloaded.value.save_as(path)
+    pdf = PdfReader(path); text = '\n'.join(p.extract_text() for p in pdf.pages)
+    assert 'Tañaña Dela Cruz' in text and '₱0.00' in text and text.count('Not recorded') >= 3
+    assert not pdf.attachments
+    # jsPDF's default OpenAction is an inert page-fit destination array, not JS.
+    catalog = pdf.trailer['/Root']
+    assert isinstance(catalog.get('/OpenAction'), list)
+    assert '/AA' not in catalog and '/JavaScript' not in catalog.get('/Names', {})
+    if os.getenv('TEST_ARTIFACT_DIR'):
+        (Path(os.environ['TEST_ARTIFACT_DIR']) / 'receipt-unicode.pdf').write_bytes(path.read_bytes())
+    assert snapshot() == before and browser_page[3] == []
+
+
+def test_receipt_selection_month_and_clear_invalidate_output(browser_page, receipt_data):
+    page = open_receipts(browser_page)
+    page.locator('#receipt-search').fill('same')
+    page.locator('#receipt-matches [data-house-id="HH-2"]').click()
+    expect(page.locator('#receipt-print')).to_be_disabled()
+    page.locator('#receipt-preview-button').click()
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(1)
+    with page.expect_popup() as popup: page.locator('#receipt-print').click()
+    page.wait_for_function('()=>window.printCalls===1')
+    page.locator('#receipt-search').fill('   ')
+    expect(page.locator('#receipt-matches')).to_be_empty()
+    expect(page.locator('#receipt-selected')).to_be_empty()
+    expect(page.locator('#receipt-preview')).to_be_empty()
+    expect(page.locator('#receipt-print')).to_be_disabled()
+    expect(page.locator('#receipt-download')).to_be_disabled()
+    assert popup.value.is_closed()
+    page.locator('#receipt-search').fill('same')
+    page.locator('#receipt-matches [data-house-id="HH-2"]').click()
+    page.locator('#receipt-month').fill('2026-09')
+    expect(page.locator('#receipt-selected')).to_be_empty()
+    expect(page.locator('#receipt-preview-button')).to_be_disabled()
+    expect(page.locator('#receipt-matches button')).to_have_count(1)
+    expect(page.locator('#receipt-matches button')).to_have_attribute('data-house-id', 'HH-1')
+    assert browser_page[3] == []
+
+
+def test_cleared_query_cannot_receive_late_results(browser_page, receipt_data):
+    page = open_receipts(browser_page)
+    page.evaluate('''()=>{const original=window.fetch;window.fetch=async(...args)=>{
+      const result=await original(...args);
+      if(String(args[0]).includes('view=recipients')) await new Promise(resolve=>setTimeout(resolve,800));
+      return result;};}''')
+    page.locator('#receipt-search').fill('same'); page.wait_for_timeout(300)
+    page.locator('#receipt-search').fill(''); page.wait_for_timeout(900)
+    expect(page.locator('#receipt-matches')).to_be_empty()
+    expect(page.locator('#receipt-preview-button')).to_be_disabled()
+    assert browser_page[3] == []
+
+
+def test_changed_paid_records_cannot_be_downloaded(browser_page, receipt_data):
+    page = open_receipts(browser_page, 'all')
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(2)
+    page.locator('#receipt-bulk-confirm').check()
+    downloads = []; page.on('download', lambda download: downloads.append(download))
+    with get_db() as db: db.execute("UPDATE billing_records SET payment_status='Unpaid' WHERE meter_id=2")
+    page.locator('#receipt-download').click()
+    expect(page.locator('#receipt-message')).to_contain_text('Records changed')
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(1)
+    assert downloads == [] and browser_page[3] == []
+
+
+def test_popup_blocking_is_visible_and_pdf_still_works(browser_page, receipt_data, tmp_path):
+    page = open_receipts(browser_page, 'all')
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(2)
+    page.locator('#receipt-bulk-confirm').check()
+    page.evaluate('window.open=()=>null')
+    page.locator('#receipt-print').click()
+    expect(page.locator('#receipt-message')).to_contain_text('Allow popups for WaterHall')
+    expect(page.locator('#receipt-download')).to_be_enabled()
+    with page.expect_download() as downloaded: page.locator('#receipt-download').click()
+    path = tmp_path / 'blocked-popup.pdf'; downloaded.value.save_as(path)
+    assert len(PdfReader(path).pages) == 2
+    assert page.evaluate('window.printCalls') == 0 and browser_page[3] == []
+
+
+def test_print_window_reserved_before_slow_paid_record_verification(browser_page, receipt_data):
+    page = open_receipts(browser_page, 'all')
+    expect(page.locator('#receipt-preview .receipt-sheet')).to_have_count(2)
+    page.locator('#receipt-bulk-confirm').check()
+    page.evaluate('''()=>{const originalFetch=window.fetch,originalOpen=window.open;
+      window.open=(...args)=>{window.outputActivation=navigator.userActivation.isActive;return originalOpen(...args);};
+      window.fetch=async(...args)=>{const response=await originalFetch(...args);
+        if(String(args[0]).includes('/api/admin/receipts?')) await new Promise(resolve=>setTimeout(resolve,6000));
+        return response;};}''')
+    with page.expect_popup() as popup: page.locator('#receipt-print').click()
+    assert page.evaluate('window.outputActivation') is True
+    expect(popup.value.get_by_role('status')).to_have_text('Verifying selected paid receipts…')
+    expect(popup.value.get_by_role('button', name='Print Receipt')).to_be_disabled()
+    expect(page.locator('#receipt-print')).to_be_disabled()
+    page.wait_for_function('()=>window.printCalls===1', timeout=20000)
+    expect(popup.value.locator('.receipt-sheet')).to_have_count(2)
+    expect(popup.value.get_by_role('button', name='Print Receipt')).to_be_enabled()
+    popup.value.get_by_role('button', name='Print Receipt').click()
+    page.wait_for_function('()=>window.printCalls===2')
     assert browser_page[3] == []
