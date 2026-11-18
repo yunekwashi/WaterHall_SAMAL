@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WATERHALL | Admin Portal</title>
   <link rel="icon" type="image/png" href="/admin/logo.png" />
-  <link rel="stylesheet" href="/admin/styles.css?v=26" />
+  <link rel="stylesheet" href="/admin/styles.css?v=27-directory-pagination" />
   <link rel="stylesheet" href="/admin/password-reset.css?v=2" />
   <link rel="stylesheet" href="/admin/sensor-history.css?v=1" />
   <script src="/admin/vendor/purify.min.js"></script>
@@ -260,7 +260,12 @@
         <p id="issue-recovery-result" role="status" hidden></p>
       </section>
       <section class="glass-panel"><h2>Resident registrations</h2><p>Review pending accounts. Matching names are a review flag; accounts are never merged automatically.</p><p id="registration-review-status" role="status"></p><p id="registration-load-status" role="status"></p>
+        <div class="directory-controls" aria-label="Resident registrations search and pagination">
+          <label class="directory-search" for="registration-directory-search"><span>Search</span><input type="search" id="registration-directory-search" placeholder="Name, household ID, contact or status" maxlength="100" autocomplete="off"></label>
+          <label class="directory-page-size" for="registration-directory-page-size"><span>Show</span><select id="registration-directory-page-size" aria-label="Resident registrations records per page"><option value="10">10</option><option value="25">25</option><option value="50">50</option></select><span>records</span></label>
+        </div>
         <div class="table-scroll table-wide" role="region" aria-label="Resident registrations" tabindex="0"><table><thead><tr><th>Resident ID</th><th>Name / review flags</th><th>Contact</th><th>Purok</th><th>Status</th><th class="no-print">Review</th></tr></thead><tbody id="registrations-tbody"></tbody></table></div>
+        <div class="directory-pagination" aria-label="Resident registrations pagination"><span id="registration-directory-summary" aria-live="polite"></span><div><button type="button" class="btn btn-secondary" id="registration-directory-prev">Previous</button><button type="button" class="btn btn-secondary" id="registration-directory-next">Next</button></div></div>
       </section>
       <div class="glass-panel">
         <div class="panel-header">
@@ -294,6 +299,10 @@
             <button type="button" class="btn-export btn-print" id="btn-print-dir" title="Print-friendly view">Print</button>
           </div>
         </div>
+        <div class="directory-controls" aria-label="Resident and household directory search and pagination">
+          <label class="directory-search" for="resident-directory-search"><span>Search</span><input type="search" id="resident-directory-search" placeholder="Name, username, household, meter or purok" maxlength="100" autocomplete="off"></label>
+          <label class="directory-page-size" for="resident-directory-page-size"><span>Show</span><select id="resident-directory-page-size" aria-label="Resident and household records per page"><option value="10">10</option><option value="25">25</option><option value="50">50</option></select><span>records</span></label>
+        </div>
         <div class="table-scroll" role="region" aria-label="Resident and household directory" tabindex="0">
         <table>
           <thead>
@@ -310,12 +319,17 @@
           </tbody>
         </table>
         </div>
+        <div class="directory-pagination" aria-label="Resident and household directory pagination"><span id="resident-directory-summary" aria-live="polite"></span><div><button type="button" class="btn btn-secondary" id="resident-directory-prev">Previous</button><button type="button" class="btn btn-secondary" id="resident-directory-next">Next</button></div></div>
       </div>
 
       <div class="glass-panel">
         <div class="panel-header">
           <div class="panel-title">Field Worker Directory</div>
           <button class="btn" id="btn-add-worker">+ Register Worker</button>
+        </div>
+        <div class="directory-controls" aria-label="Field worker directory search and pagination">
+          <label class="directory-search" for="worker-directory-search"><span>Search</span><input type="search" id="worker-directory-search" placeholder="Name, username, worker ID or role" maxlength="100" autocomplete="off"></label>
+          <label class="directory-page-size" for="worker-directory-page-size"><span>Show</span><select id="worker-directory-page-size" aria-label="Field worker records per page"><option value="10">10</option><option value="25">25</option><option value="50">50</option></select><span>records</span></label>
         </div>
         <div class="table-scroll" role="region" aria-label="Field worker directory" tabindex="0">
         <table>
@@ -332,6 +346,7 @@
           </tbody>
         </table>
         </div>
+        <div class="directory-pagination" aria-label="Field worker directory pagination"><span id="worker-directory-summary" aria-live="polite"></span><div><button type="button" class="btn btn-secondary" id="worker-directory-prev">Previous</button><button type="button" class="btn btn-secondary" id="worker-directory-next">Next</button></div></div>
       </div>
     </div>
 
@@ -827,7 +842,7 @@
 
   <script src="/ui-display.js?v=1.2.4-tds-index"></script>
   <link rel="stylesheet" href="/admin/receipts.css?v=4">
-  <script src="/admin/app.js?v=37-receipt-preview"></script>
+  <script src="/admin/app.js?v=38-directory-pagination"></script>
   <script src="/admin/recovery-tools.js?v=1.3.3-worker-all-puroks"></script>
   <script src="/admin/sensor-history.js?v=1"></script>
   <script src="/admin/vendor/jspdf-4.2.1.umd.min.js"></script>

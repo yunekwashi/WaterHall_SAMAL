@@ -68,6 +68,12 @@ let isServerOnline = false;
 let hasAdminData = false;
 let renderedDirectoryData = null;
 let renderedBillingData = null;
+const DIRECTORY_PAGE_SIZES = new Set([10, 25, 50]);
+const directoryView = {
+  residents: {page: 1, pageSize: 10, query: '', records: []},
+  workers: {page: 1, pageSize: 10, query: '', records: []},
+  registrations: {page: 1, pageSize: 10, query: '', records: []}
+};
 let globalData = {
   households: [],
   workers: [],
@@ -926,17 +932,55 @@ function renderCharts(data) {
   renderTdsIndex(ca);
 }
 
+function directoryMatches(record, fields, query) {
+  const term = String(query || '').trim().toLocaleLowerCase();
+  return !term || fields.some(field => String(record[field] ?? '').toLocaleLowerCase().includes(term));
+}
+
+function directoryPage(section, fields) {
+  const view = directoryView[section];
+  const matching = view.records.filter(record => directoryMatches(record, fields, view.query));
+  const totalPages = Math.max(1, Math.ceil(matching.length / view.pageSize));
+  view.page = Math.min(Math.max(1, view.page), totalPages);
+  const start = (view.page - 1) * view.pageSize;
+  return {matching, totalPages, records: matching.slice(start, start + view.pageSize)};
+}
+
+function updateDirectoryPagination(section, matchingCount, totalPages) {
+  const view = directoryView[section];
+  const prefix = section.slice(0, -1);
+  const summary = document.getElementById(prefix + '-directory-summary');
+  const previous = document.getElementById(prefix + '-directory-prev');
+  const next = document.getElementById(prefix + '-directory-next');
+  if (summary) {
+    summary.textContent = matchingCount
+      ? `${matchingCount} matching record${matchingCount === 1 ? '' : 's'} · Page ${view.page} of ${totalPages}`
+      : '0 matching records';
+  }
+  if (previous) previous.disabled = matchingCount === 0 || view.page <= 1;
+  if (next) next.disabled = matchingCount === 0 || view.page >= totalPages;
+}
+
 function renderDirectory(data) {
   const signature = JSON.stringify({households:data.households, workers:data.workers, puroks:data.puroks});
   if (signature === renderedDirectoryData) return;
   if (data.puroks && Array.isArray(data.puroks)) {
     populatePurokDropdown(data.puroks);
   }
+  directoryView.residents.records = Array.isArray(data.households) ? data.households : [];
+  directoryView.workers.records = Array.isArray(data.workers) ? data.workers : [];
+  const residents = directoryPage('residents', ['house_id', 'owner_name', 'account_number', 'username', 'meter_id', 'purok']);
+  const workers = directoryPage('workers', ['worker_id', 'name', 'username', 'role', 'employee_id', 'contact']);
+  const hasResidentRecords = directoryView.residents.records.length > 0;
+  const hasWorkerRecords = directoryView.workers.records.length > 0;
+  data = {...data, households: residents.records, workers: workers.records};
   // Households
   const resTbody = document.getElementById('resident-tbody');
   resTbody.innerHTML = '';
   if (!data.households || data.households.length === 0) {
-    resTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">No registered households yet. Click "+ Register Resident" to add one.</td></tr>';
+    resTbody.innerHTML = hasResidentRecords
+      ? '<tr><td colspan="5" class="directory-empty">No matching records found.</td></tr>'
+      : '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">No registered households yet. Click "+ Register Resident" to add one.</td></tr>';
   } else {
     data.households.forEach(h => {
       const tr = document.createElement('tr');
@@ -954,7 +998,9 @@ function renderDirectory(data) {
   const workTbody = document.getElementById('worker-tbody');
   workTbody.innerHTML = '';
   if (!data.workers || data.workers.length === 0) {
-    workTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:32px;">No workers registered yet. Click "+ Register Worker" to add one.</td></tr>';
+    workTbody.innerHTML = hasWorkerRecords
+      ? '<tr><td colspan="4" class="directory-empty">No matching records found.</td></tr>'
+      : '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:32px;">No workers registered yet. Click "+ Register Worker" to add one.</td></tr>';
   } else {
     data.workers.forEach(w => {
       const tr = document.createElement('tr');
@@ -967,8 +1013,73 @@ function renderDirectory(data) {
       workTbody.appendChild(tr);
     });
   }
+  updateDirectoryPagination('residents', residents.matching.length, residents.totalPages);
+  updateDirectoryPagination('workers', workers.matching.length, workers.totalPages);
   renderedDirectoryData = signature;
 }
+
+function refreshDirectoryTables() {
+  renderedDirectoryData = null;
+  renderDirectory({
+    households: directoryView.residents.records,
+    workers: directoryView.workers.records,
+    puroks: globalData.puroks || []
+  });
+}
+
+function renderRegistrations() {
+  const tbody = document.getElementById('registrations-tbody');
+  const {matching, totalPages, records} = directoryPage('registrations', ['house_id', 'family_head_name', 'contact_no', 'purok_name', 'account_status', 'account_number', 'resident_id']);
+  if (!directoryView.registrations.records.length) {
+    tbody.innerHTML = '<tr><td colspan="6">No resident registrations.</td></tr>';
+  } else if (!matching.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="directory-empty">No matching records found.</td></tr>';
+  } else {
+    tbody.innerHTML = records.map(row => `<tr>
+      <td>${escapeHtml(row.house_id)}</td><td>${escapeHtml(row.family_head_name)}${row.possible_same_name ? '<br><strong>Possible same name ? review</strong>' : ''}${row.possible_duplicate_contact ? '<br><strong>Legacy duplicate contact ? review</strong>' : ''}</td>
+      <td>${escapeHtml(row.contact_no)}</td><td>${escapeHtml(row.purok_name)}</td><td>${escapeHtml(row.account_status)}</td>
+      <td class="no-print">${row.account_status === 'pending' ? `<button type="button" class="btn" data-review-id="${escapeHtml(row.house_id)}" data-review-status="approved">Approve</button> <button type="button" class="btn" data-review-id="${escapeHtml(row.house_id)}" data-review-status="rejected">Reject</button>` : 'Reviewed'}</td></tr>`).join('');
+  }
+  updateDirectoryPagination('registrations', matching.length, totalPages);
+}
+
+function setupDirectoryControls() {
+  const sections = {
+    residents: {refresh: refreshDirectoryTables},
+    workers: {refresh: refreshDirectoryTables},
+    registrations: {refresh: renderRegistrations}
+  };
+  Object.entries(sections).forEach(([section, config]) => {
+    const prefix = section.slice(0, -1);
+    const search = document.getElementById(prefix + '-directory-search');
+    const pageSize = document.getElementById(prefix + '-directory-page-size');
+    const previous = document.getElementById(prefix + '-directory-prev');
+    const next = document.getElementById(prefix + '-directory-next');
+    search?.addEventListener('input', () => {
+      directoryView[section].query = search.value;
+      directoryView[section].page = 1;
+      config.refresh();
+    });
+    pageSize?.addEventListener('change', () => {
+      const size = Number(pageSize.value);
+      directoryView[section].pageSize = DIRECTORY_PAGE_SIZES.has(size) ? size : 10;
+      directoryView[section].page = 1;
+      config.refresh();
+    });
+    previous?.addEventListener('click', () => {
+      if (directoryView[section].page > 1) {
+        directoryView[section].page--;
+        config.refresh();
+      }
+    });
+    next?.addEventListener('click', () => {
+      directoryView[section].page++;
+      config.refresh();
+    });
+  });
+}
+
+setupDirectoryControls();
 
 
 
@@ -1907,10 +2018,8 @@ async function loadRegistrations(force = false) {
     const data = await readAdminResponse(response, controller, 30000);
     if (!isCurrent() || controller.signal.aborted) return;
     if (!Array.isArray(data.registrations)) throw new Error('Invalid registrations response');
-    document.getElementById('registrations-tbody').innerHTML = data.registrations.map(row => `<tr>
-    <td>${escapeHtml(row.house_id)}</td><td>${escapeHtml(row.family_head_name)}${row.possible_same_name ? '<br><strong>Possible same name ? review</strong>' : ''}${row.possible_duplicate_contact ? '<br><strong>Legacy duplicate contact ? review</strong>' : ''}</td>
-    <td>${escapeHtml(row.contact_no)}</td><td>${escapeHtml(row.purok_name)}</td><td>${escapeHtml(row.account_status)}</td>
-    <td class="no-print">${row.account_status === 'pending' ? `<button type="button" class="btn" data-review-id="${escapeHtml(row.house_id)}" data-review-status="approved">Approve</button> <button type="button" data-review-id="${escapeHtml(row.house_id)}" data-review-status="rejected">Reject</button>` : 'Reviewed'}</td></tr>`).join('') || '<tr><td colspan="6">No resident registrations.</td></tr>';
+    directoryView.registrations.records = data.registrations;
+    renderRegistrations();
     loadStatus.textContent = '';
   } catch (_) {
     if (isCurrent()) loadStatus.textContent = 'Registrations could not refresh. Any displayed registrations may be out of date. Retry by refreshing Admin data.';

@@ -1180,6 +1180,72 @@ body.server-offline > *:not(#admin-offline-overlay) {
   gap: 6px;
 }
 
+/* User Directory controls keep long account lists compact without changing records. */
+.directory-controls,
+.directory-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.directory-controls {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(15, 55, 82, 0.45);
+}
+
+.directory-search,
+.directory-page-size {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.directory-search { flex: 1 1 260px; }
+
+.directory-search input,
+.directory-page-size select {
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(20, 60, 90, 0.85);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.directory-search input { width: min(100%, 420px); flex: 1; }
+
+.directory-pagination {
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.directory-pagination > div {
+  display: flex;
+  gap: 8px;
+}
+
+.directory-pagination .btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.directory-empty {
+  padding: 32px !important;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .btn-export {
   min-height: 34px;
   display: inline-flex;
@@ -1326,6 +1392,19 @@ body.server-offline > *:not(#admin-offline-overlay) {
   .main-content {
     padding: 24px 16px;
   }
+
+  .directory-controls,
+  .directory-pagination {
+    align-items: stretch;
+  }
+
+  .directory-search,
+  .directory-page-size,
+  .directory-pagination > div {
+    width: 100%;
+  }
+
+  .directory-pagination .btn { flex: 1; }
 
   .header {
     align-items: flex-start;
