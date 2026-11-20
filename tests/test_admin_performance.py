@@ -119,15 +119,20 @@ def test_admin_local_endpoint_measurements(system, request_probe):
     with get_db() as db:
         db.execute("SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'index'")
         indexes = db.fetchall()
-        db.execute('EXPLAIN QUERY PLAN SELECT consumption_m3 FROM billing_records WHERE meter_id = ? ORDER BY bill_id DESC LIMIT 4', (1,))
-        history_plan = db.fetchall()
+        db.execute('''EXPLAIN QUERY PLAN
+            SELECT b.bill_id, b.meter_id, b.consumption_m3
+            FROM billing_records b
+            JOIN water_meters m ON b.meter_id = m.meter_id
+            ORDER BY b.bill_id DESC
+        ''')
+        billing_plan = db.fetchall()
     imports = []
     for _ in range(3):
         child = subprocess.run([sys.executable, '-c', 'import time; t=time.perf_counter(); import backend.server; print((time.perf_counter()-t)*1000)'],
                                capture_output=True, text=True, check=True, timeout=30, env=os.environ.copy())
         imports.append(float(child.stdout.strip()))
     save_measurement(os.getenv('ADMIN_PERF_ENDPOINT_FILE', 'endpoints.json'), dict(samples=samples, local_fresh_import_ms=imports,
-                                          sqlite_indexes=indexes, sqlite_history_plan=history_plan,
+                                          sqlite_indexes=indexes, sqlite_billing_plan=billing_plan,
                                           note='Sequential loopback HTTP; SQLite fixtures; warm endpoint requests; no remote/production traffic.'))
 
 
