@@ -352,19 +352,14 @@ def get_all_data():
         rows = db.fetchall()
 
         households = []
+        households_by_meter = {}
         for row in rows:
             if principal()['role'] == 'worker' and row['account_status'] != 'approved':
                 continue
             hh_id = row['household_id']
             meter_id = row['meter_id']
 
-            monthly_history = []
-            if meter_id:
-                db.execute("SELECT consumption_m3 FROM billing_records WHERE meter_id = ? ORDER BY bill_id DESC LIMIT 4;", (meter_id,))
-                hist_rows = db.fetchall()
-                monthly_history = [hr['consumption_m3'] for hr in reversed(hist_rows)]
-
-            households.append({
+            household = {
                 'house_id': f"HH-{hh_id}",
                 'owner_name': row['family_head_name'],
                 'purok': row['purok_name'],
@@ -373,8 +368,11 @@ def get_all_data():
                 'current_leak_status': row['current_leak_status'] or 'normal',
                 'contact_no': row['contact_no'], 'account_status': row['account_status'],
                 'leak_detected_at': row['leak_detected_at'],
-                'monthly_history': monthly_history
-            })
+                'monthly_history': []
+            }
+            households.append(household)
+            if meter_id:
+                households_by_meter[meter_id] = household
 
         db.execute("SELECT reading_id, water_level_percentage, turbidity_ntu, tds_ppm, recorded_at, turbidity_index_json, tds_index_json FROM reservoir_quality_readings ORDER BY reading_id DESC LIMIT 1;")
         row = db.fetchone()
@@ -426,7 +424,7 @@ def get_all_data():
                 })
 
         db.execute('''
-            SELECT b.bill_id, b.previous_reading, b.present_reading, b.consumption_m3, b.total_amount, b.payment_status, b.payment_date, b.billed_at, b.billing_snapshot,
+            SELECT b.bill_id, b.meter_id, b.previous_reading, b.present_reading, b.consumption_m3, b.total_amount, b.payment_status, b.payment_date, b.billed_at, b.billing_snapshot,
                    b.collected_by, u_col.username AS collector_username,
                    u.username AS biller_username, m.serial_number, m.household_id, h.family_head_name
             FROM billing_records b
@@ -438,6 +436,9 @@ def get_all_data():
         ''')
         billing_records = []
         for b_row in db.fetchall():
+            household = households_by_meter.get(b_row['meter_id'])
+            if household is not None and len(household['monthly_history']) < 4:
+                household['monthly_history'].append(b_row['consumption_m3'])
             dt = b_row.get('billed_at')
             month_str = dt[:7] if dt else 'Unknown (legacy record)'
 
@@ -461,6 +462,8 @@ def get_all_data():
                 'payment_date': b_row.get('payment_date') or '',
                 'status': b_row['payment_status']
             })
+        for household in households_by_meter.values():
+            household['monthly_history'].reverse()
 
         role = principal()['role']
         if role == 'resident':
